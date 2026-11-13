@@ -127,7 +127,7 @@ mod tests {
     fn attempt(save: &mut Save, id: &str, kind: PuzzleKind, scale: f64) -> bool {
         let puzzle = Instance::new(kind, &Ch1Layout::generate(save.seed));
         let mut inputs = puzzle.solution().inputs();
-        let key = if kind == PuzzleKind::Gravity { "g" } else { "speed" };
+        let key = puzzle.inputs().last().unwrap().key;
         inputs.get_mut(key).unwrap().value *= scale;
         let outcome = puzzle.evaluate(&inputs).unwrap();
         save.record(id, Vec::new(), &outcome);
@@ -138,6 +138,9 @@ mod tests {
     fn puzzles_unlock_in_order() {
         let chapter = chapter_1_1();
         let mut save = Save::new(42);
+        assert!(save.is_unlocked(&chapter, "1.1.0"));
+        assert!(!save.is_unlocked(&chapter, "1.1.1"));
+        assert!(attempt(&mut save, "1.1.0", PuzzleKind::Rail, 1.0));
         assert!(save.is_unlocked(&chapter, "1.1.1"));
         assert!(!save.is_unlocked(&chapter, "1.1.2"));
         assert!(attempt(&mut save, "1.1.1", PuzzleKind::Gravity, 1.0));

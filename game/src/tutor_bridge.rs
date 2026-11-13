@@ -3,7 +3,7 @@
 //! The game copies a snapshot of the current puzzle into the tutor crate and shows the text that
 //! comes back. Nothing the tutor returns is interpreted: it cannot change the game.
 
-use crate::state::{Game, Ui};
+use crate::state::{Game, PUZZLES, Ui};
 use bevy::prelude::*;
 use std::path::PathBuf;
 use tutor::{Conversation, Tutor, TutorContext};
@@ -12,7 +12,7 @@ use tutor::{Conversation, Tutor, TutorContext};
 pub struct Lumen {
     pub tutor: Tutor,
     /// One conversation per puzzle, so advice about one does not leak into another.
-    pub conversations: [Conversation; 3],
+    pub conversations: [Conversation; PUZZLES],
 }
 
 impl Lumen {

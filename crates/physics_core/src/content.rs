@@ -102,11 +102,15 @@ mod tests {
     fn chapter_1_1_loads_and_is_consistent() {
         let chapter = chapter_1_1();
         assert_eq!(chapter.problems(), Vec::<String>::new());
-        assert_eq!(chapter.puzzles.len(), 3);
+        assert_eq!(chapter.puzzles.len(), 4);
         assert_eq!(
             chapter.puzzles.iter().map(|p| p.kind).collect::<Vec<_>>(),
-            [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge]
+            [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge]
         );
+        // The tutorial comes first and everything else waits for it.
+        assert_eq!(chapter.puzzles[0].id, "1.1.0");
+        assert!(chapter.puzzles[0].requires.is_empty());
+        assert_eq!(chapter.puzzles[1].requires, ["1.1.0"]);
     }
 
     #[test]

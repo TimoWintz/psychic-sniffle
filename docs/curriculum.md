@@ -4,7 +4,7 @@ Ordered by difficulty, not by domain. Three tiers; each tier visits mechanics (M
 and thermodynamics (T) at a deeper level. A chapter unlocks when its prerequisites are complete.
 
 Each chapter has 4 to 6 puzzles and ends in a capstone that installs a ship part. Only tier 1,
-chapter 1 is built in the slice; its three puzzles are specified at the end of this document.
+chapter 1 is built in the slice; its tutorial and three puzzles are specified at the end of this document.
 
 Reading the tables: **Maths** is the hardest mathematics the chapter needs. **Needs** lists
 prerequisite chapters.
@@ -69,6 +69,21 @@ Special relativity, an introduction to quantum physics, and statistical mechanic
 
 Planet gravity `g` is drawn per save from 6.5 to 13.5 m/s², excluding 9.3 to 10.3 so that the familiar
 value never works. All lengths are whole metres so they can be checked by counting blocks.
+
+### Puzzle 0 — The supply rail (tutorial)
+
+- **Purpose.** Teach the station loop before any physics: brief, ruler, notebook, blueprint, units,
+  commit, result, charges. It needs no mathematics; the answer is the measurement itself.
+- **Brief.** A powered cart on a straight, level rail beside the wreck drives exactly as far as it is
+  told and stops. Send it to the orange marker.
+- **Investigate.** Ruler: the cart's starting point to the marker centre (both pinned, on the near
+  side of the rail so the cart does not hide them). The distance is a whole number of metres, 9 to 17,
+  drawn after every other number so existing saves keep their layout.
+- **Predict.** Enter the run distance: the notebook name (`d1`) or the number with its unit. A bare
+  number is refused with the reason and costs no charge, which is the lesson about units.
+- **Pass.** The cart stops on the marker (one block, so centre ± 0.5 m). Too short or too far is
+  reported in metres. The rail is 24 m long; longer runs are refused.
+- **Gates.** Puzzle 1 requires it.
 
 ### Puzzle 1 — Local gravity
 

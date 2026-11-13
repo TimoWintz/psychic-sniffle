@@ -8,6 +8,11 @@ Chapter(
     intro: "The frame beam for the skiff lies at the wreck, on the wrong side of a canyon and a ridge. The old cargo launchers still work. They will throw anything, exactly as fast and as steep as you tell them to.",
     concepts: [
         Concept(
+            id: "units",
+            title: "Measurements carry units",
+            card: "A measurement is a number and a unit together. 12 m is a length, 1.5 s is a time; the number 12 on its own says neither.\n\nEvery value you enter at a station must have the kind of unit it asks for. Type the unit after the number (12 m), or use a reading from the notebook by its name (d1): the notebook keeps the unit with the number. A value of the wrong kind is refused before anything runs, and a refusal costs no charge.",
+        ),
+        Concept(
             id: "free_fall",
             title: "Free fall",
             card: "An object released from rest and pulled only by gravity gains speed at a steady rate g, the gravitational acceleration. After a time t it has fallen\n\n    h = (1/2) g t^2\n\nThe mass of the object does not appear: heavy and light things fall together. g belongs to the planet, and this is not the planet you learned the number for.",
@@ -30,6 +35,17 @@ Chapter(
     ],
     puzzles: [
         PuzzleDef(
+            id: "1.1.0",
+            kind: Rail,
+            title: "The supply rail",
+            task: "Send the rail cart to the orange marker.",
+            brief: "Every job on this island runs through a station like this one: read what is needed, measure the world, enter values, commit, and watch what happens.\n\nStart with something that needs no physics. The supply rail by the wreck carries a cart, and its motor drives the cart exactly as far as you tell it, then stops. Send the cart to the orange marker across the rail.\n\nEach test uses one of the station's prototype charges. When they run out the station recharges, which takes a while, so measure before you commit.",
+            investigate: "Ruler (R): click the cart's starting point, then the marker's centre (yellow pins mark both), and note the horizontal distance. It goes into the notebook (N) under a short name such as d1. Enter that name, or the number with its unit, in the blueprint below. Try the number without a unit first if you like: the station refuses it and says why, and no charge is used.",
+            concepts: ["units"],
+            requires: [],
+            charges: 3,
+        ),
+        PuzzleDef(
             id: "1.1.1",
             kind: Gravity,
             title: "Local gravity",
@@ -37,7 +53,7 @@ Chapter(
             brief: "The launcher's computer was calibrated for another world. Before it can aim, it needs the gravitational acceleration here.\n\nThe drop tower beside this station holds a test mass. Measure how far it falls and how long that takes. When you commit a value, a second mass is released from the taller survey mast and timed against your prediction.",
             investigate: "Ruler (R): click the release point at the top of the drop tower, then the landing plate below it. Stopwatch: release the test mass from this panel, as often as you like.",
             concepts: ["free_fall"],
-            requires: [],
+            requires: ["1.1.0"],
             charges: 3,
         ),
         PuzzleDef(

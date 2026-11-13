@@ -195,7 +195,12 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         };
                     }
                 }
-                ui.label(RichText::new("Numbers need units. Notebook names work: sqrt(2*h1/g)").small().color(DIM));
+                let hint = if def.kind == PuzzleKind::Rail {
+                    "Numbers need units: 12 m, not 12. Notebook names work: d1"
+                } else {
+                    "Numbers need units. Notebook names work: sqrt(2*h1/g)"
+                };
+                ui.label(RichText::new(hint).small().color(DIM));
 
                 let charges = game.charges_left(puzzle);
                 ui.add_space(4.0);

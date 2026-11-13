@@ -3,6 +3,7 @@
 //! Every distance a puzzle depends on is built here in whole blocks from [`Ch1Layout`], so the number
 //! the player measures and the number the simulator uses are the same.
 
+use crate::state::PUZZLES;
 use crate::voxel::{VoxelWorld, hash01};
 use bevy::prelude::*;
 use physics_core::materials::Material;
@@ -42,6 +43,8 @@ impl LaunchSite {
 #[derive(Resource, Clone, Debug)]
 pub struct Sites {
     pub spawn: Vec3,
+    /// Underside centre of the rail cart where it starts; it runs along +x.
+    pub rail_start: Vec3,
     /// Underside of the test mass at rest, and where it lands.
     pub tower_release: Vec3,
     #[cfg_attr(not(test), expect(dead_code, reason = "the game reads it through its pin; tests check it directly"))]
@@ -51,13 +54,16 @@ pub struct Sites {
     pub canyon_launch: LaunchSite,
     pub ridge_launch: LaunchSite,
     /// Console block of each station, in puzzle order.
-    pub stations: [IVec3; 3],
+    pub stations: [IVec3; PUZZLES],
     pub pins: Vec<Pin>,
     pub wreck: Vec3,
     /// Centre of the shipyard floor, where the ship is assembled.
     pub shipyard: Vec3,
 }
 
+/// Block the rail cart starts on, and the row the supply rail runs along (eastward).
+const RAIL_X: i32 = 28;
+const RAIL_ROW: i32 = 47;
 const TOWER: IVec3 = IVec3::new(36, GROUND, 30);
 const MAST: IVec3 = IVec3::new(28, GROUND, 22);
 /// Near (west) rim of the canyon, where the ledge launcher releases.
@@ -74,6 +80,22 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
 
     let ground = GROUND as f32;
     let mut pins = Vec::new();
+
+    // --- Puzzle 0 (tutorial): the supply rail ------------------------------------------------
+    // A steel rail flush with the grass, a buffer stop past its far end, a start mark and a marker
+    // across the rail. The survey pins sit on the near side of the rail, where the cart does not hide
+    // them, so the ruler reads the run along the rail exactly.
+    let rail_len = Ch1Layout::RAIL_LENGTH as i32;
+    world.fill(IVec3::new(RAIL_X - 2, GROUND - 1, RAIL_ROW), IVec3::new(RAIL_X + rail_len, GROUND - 1, RAIL_ROW), Material::Steel);
+    world.set(IVec3::new(RAIL_X + rail_len + 1, GROUND, RAIL_ROW), Material::Steel);
+    world.set(IVec3::new(RAIL_X, GROUND - 1, RAIL_ROW - 1), Material::Concrete);
+    let marker_x = RAIL_X + layout.rail_target as i32;
+    world.fill(IVec3::new(marker_x, GROUND - 1, RAIL_ROW - 1), IVec3::new(marker_x, GROUND - 1, RAIL_ROW + 1), Material::Marker);
+    let rail_start = Vec3::new(RAIL_X as f32 + 0.5, ground, RAIL_ROW as f32 + 0.5);
+    let beside = Vec3::new(0.0, 0.0, -1.0);
+    let rail_start_pin = Pin { position: rail_start + beside, label: "Rail cart: starting point" };
+    let rail_marker_pin = Pin { position: rail_start + beside + Vec3::X * layout.rail_target as f32, label: "Rail marker: centre" };
+    let station0 = IVec3::new(RAIL_X - 1, GROUND, RAIL_ROW - 3);
 
     // --- Puzzle 1: drop tower and survey mast -------------------------------------------------
     let gantry = |world: &mut VoxelWorld, base: IVec3, height: i32| -> (Vec3, Vec3) {
@@ -175,14 +197,20 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     world.fill(wreck + IVec3::new(0, 0, 1), wreck + IVec3::new(0, 2, 4), Material::HullAlloy);
     world.fill(wreck + IVec3::new(1, -1, 1), wreck + IVec3::new(7, -1, 4), Material::HullAlloy);
 
+    // Pins are numbered in the order they were added (the scripted tour picks them by number), so the
+    // tutorial's go last.
+    pins.push(rail_start_pin);
+    pins.push(rail_marker_pin);
+
     // Station consoles.
-    let stations = [station1, station2, station3];
+    let stations = [station0, station1, station2, station3];
     for console in stations {
         world.set(console, Material::Steel);
     }
 
     let sites = Sites {
         spawn: Vec3::new(30.5, ground, 40.5),
+        rail_start,
         tower_release,
         tower_plate,
         mast_release,
@@ -303,6 +331,29 @@ mod tests {
             assert!(world.is_solid(sites.spawn.floor().as_ivec3() - IVec3::Y));
             assert!(!world.is_solid(sites.spawn.floor().as_ivec3()));
             assert!(sites.shipyard.x + 12.0 < WORLD_SIZE.x as f32 - 8.0, "seed {seed}: shipyard runs off the island");
+        }
+    }
+
+    #[test]
+    fn the_supply_rail_is_clear_and_measures_true() {
+        for seed in 0..200 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            let pin = |label: &str| sites.pins.iter().find(|p| p.label == label).unwrap().position;
+            let (start, marker) = (pin("Rail cart: starting point"), pin("Rail marker: centre"));
+
+            // The ruler's horizontal reading between the two pins is the distance the puzzle judges.
+            assert_eq!((marker - start).with_y(0.0).length(), layout.rail_target as f32, "seed {seed}");
+            assert_eq!(world.get((marker - Vec3::Y * 0.5).floor().as_ivec3()), Material::Marker, "seed {seed}");
+            let cart_stop = sites.rail_start + Vec3::X * layout.rail_target as f32;
+            assert_eq!(world.get((cart_stop - Vec3::Y * 0.5).floor().as_ivec3()), Material::Marker, "seed {seed}");
+
+            // Nothing stands in the cart's way over the whole length of the rail.
+            for x in 0..=Ch1Layout::RAIL_LENGTH {
+                let p = sites.rail_start + Vec3::X * x as f32;
+                assert_eq!(world.surface(p.x.floor() as i32, p.z.floor() as i32), GROUND, "seed {seed}: rail blocked at {x} m");
+                assert!(!world.box_collides(p + Vec3::new(-0.45, 0.01, -0.45), p + Vec3::new(0.45, 0.9, 0.45)), "seed {seed}: cart hits something at {x} m");
+            }
         }
     }
 }

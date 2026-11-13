@@ -475,7 +475,6 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
 
 /// A station with no charges left recharges after a wait.
 fn recharge(time: Res<Time>, mut game: ResMut<Game>, mut ui: ResMut<Ui>, sim: Res<Sim>) {
-    #[expect(clippy::needless_range_loop, reason = "the index names the puzzle in three places")]
     for puzzle in 0..game.chapter.puzzles.len() {
         if game.charges_left(puzzle) > 0 || sim.busy() {
             continue;

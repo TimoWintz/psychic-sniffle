@@ -6,8 +6,8 @@ use crate::prompt::system_prompt;
 use crate::provider::{ChatRequest, Message, Provider, Role, TutorError};
 use crate::settings::TutorSettings;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::{Arc, Mutex};
 
 /// The configured tutor, or the reason there is none.
 #[derive(Clone)]
@@ -64,7 +64,8 @@ enum Event {
 }
 
 struct Pending {
-    events: Receiver<Event>,
+    /// In a mutex only so that a conversation can be shared between threads; one thread polls it.
+    events: Mutex<Receiver<Event>>,
     raw: String,
     filter: LeakFilter,
 }
@@ -112,7 +113,7 @@ impl Conversation {
                 });
             })
             .expect("a thread can be started");
-        self.pending = Some(Pending { events, raw: String::new(), filter: LeakFilter::for_context(ctx, &player_text) });
+        self.pending = Some(Pending { events: Mutex::new(events), raw: String::new(), filter: LeakFilter::for_context(ctx, &player_text) });
         true
     }
 
@@ -120,8 +121,9 @@ impl Conversation {
     pub fn poll(&mut self) -> bool {
         let Some(pending) = &mut self.pending else { return false };
         let mut changed = false;
+        let events = pending.events.get_mut().unwrap_or_else(|poisoned| poisoned.into_inner());
         let finished = loop {
-            match pending.events.try_recv() {
+            match events.try_recv() {
                 Ok(Event::Text(piece)) => {
                     pending.raw.push_str(&piece);
                     changed = true;

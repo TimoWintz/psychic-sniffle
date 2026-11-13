@@ -40,6 +40,7 @@ impl Dim {
         self == Dim::NONE
     }
 
+    #[expect(clippy::should_implement_trait, reason = "usable in const-like table code without importing the operator traits")]
     pub fn mul(self, other: Dim) -> Dim {
         let mut out = [0i8; BASES];
         for (i, slot) in out.iter_mut().enumerate() {
@@ -48,6 +49,7 @@ impl Dim {
         Dim(out)
     }
 
+    #[expect(clippy::should_implement_trait, reason = "see `mul`")]
     pub fn div(self, other: Dim) -> Dim {
         let mut out = [0i8; BASES];
         for (i, slot) in out.iter_mut().enumerate() {

@@ -1,5 +1,6 @@
 /target
 /settings.toml
 /saves
+/shots
 *.swp
 .DS_Store

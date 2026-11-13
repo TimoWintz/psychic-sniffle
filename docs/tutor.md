@@ -50,8 +50,10 @@ before it is shown:
 
 - every number in the reply is compared with the private answer values (in SI and in the units a
   player would naturally use, such as degrees for an angle);
-- a number within 1 % of an answer is replaced with `[worked out by you]`;
-- numbers the player already has (notebook readings, values in the brief) are never redacted;
+- a number within 2 % of an answer is replaced with `[yours to work out]`;
+- where many answers work (the ridge), the whole working range is guarded when followed by its unit;
+- numbers the player already has (notebook readings, values in the brief, numbers they typed in the
+  chat) are never redacted;
 - while a reply is still streaming, a number that is still arriving is held back until it is complete.
 
 The filter is deliberately simple and errs on the side of redacting.

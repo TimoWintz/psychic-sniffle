@@ -1,0 +1,15 @@
+# Copy to settings.toml (next to where you run the game) to give Lumen a language model.
+# Without a [tutor] section the game runs with Lumen offline.
+#
+# Any service that accepts the "chat completions" request format works.
+
+[tutor]
+base_url    = "https://openrouter.ai/api/v1"
+model       = "<model name as the service spells it>"
+api_key_env = "OPENROUTER_API_KEY"   # the NAME of the environment variable holding your key
+# max_tokens = 500
+
+# A model running on your own machine, no key:
+# [tutor]
+# base_url = "http://localhost:11434/v1"
+# model    = "<local model name>"

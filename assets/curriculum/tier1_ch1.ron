@@ -1,0 +1,66 @@
+// Tier 1, chapter 1: kinematics. Words only; the numbers are generated per save.
+Chapter(
+    id: "1.1",
+    tier: 1,
+    domain: Mechanics,
+    title: "The Salvage Launcher",
+    part: "Skiff frame",
+    intro: "The frame beam for the skiff lies at the wreck, on the wrong side of a canyon and a ridge. The old cargo launchers still work. They will throw anything, exactly as fast and as steep as you tell them to.",
+    concepts: [
+        Concept(
+            id: "free_fall",
+            title: "Free fall",
+            card: "An object released from rest and pulled only by gravity gains speed at a steady rate g, the gravitational acceleration. After a time t it has fallen\n\n    h = (1/2) g t^2\n\nThe mass of the object does not appear: heavy and light things fall together. g belongs to the planet, and this is not the planet you learned the number for.",
+        ),
+        Concept(
+            id: "independence",
+            title: "Horizontal and vertical motion are independent",
+            card: "A thrown object does two things at once and neither affects the other.\n\n    sideways: nothing pushes it, so its horizontal speed stays constant     x = vx t\n    vertically: gravity acts exactly as in free fall                        y = vy t - (1/2) g t^2\n\nA crate fired horizontally off a ledge and a crate simply dropped from the same ledge reach the ground at the same moment.",
+        ),
+        Concept(
+            id: "components",
+            title: "Splitting a launch into components",
+            card: "A launch at speed v and angle theta above the horizontal has\n\n    vx = v cos(theta)        vy = v sin(theta)\n\nSteeper means more of the speed goes into height and time in the air, less into covering ground.",
+        ),
+        Concept(
+            id: "range",
+            title: "Range on level ground",
+            card: "If launch and landing are at the same height, the time in the air is t = 2 v sin(theta) / g, and in that time the object travels\n\n    R = v^2 sin(2 theta) / g\n\nTwo different angles give the same range: a flat one and a steep one, equally far either side of 45 degrees. They are not the same path.",
+        ),
+    ],
+    puzzles: [
+        PuzzleDef(
+            id: "1.1.1",
+            kind: Gravity,
+            title: "Local gravity",
+            task: "Measure this planet's gravitational acceleration.",
+            brief: "The launcher's computer was calibrated for another world. Before it can aim, it needs the gravitational acceleration here.\n\nThe drop tower beside this station holds a test mass. Measure how far it falls and how long that takes. When you commit a value, a second mass is released from the taller survey mast and timed against your prediction.",
+            investigate: "Ruler (R): click the release point at the top of the drop tower, then the landing plate below it. Stopwatch: release the test mass from this panel, as often as you like.",
+            concepts: ["free_fall"],
+            requires: [],
+            charges: 3,
+        ),
+        PuzzleDef(
+            id: "1.1.2",
+            kind: Canyon,
+            title: "Across the canyon",
+            task: "Land a salvage crate on the platform across the canyon.",
+            brief: "This launcher sits on the canyon's high rim and fires horizontally. The orange platform on the far side is where salvage has to land. Too slow and the crate goes into the canyon; too fast and it overshoots.\n\nSet the launch speed.",
+            investigate: "Ruler (R): click the launcher's release point, then the centre of the platform. The ruler reports the horizontal and the vertical separation.",
+            concepts: ["free_fall", "independence"],
+            requires: ["1.1.1"],
+            charges: 3,
+        ),
+        PuzzleDef(
+            id: "1.1.3",
+            kind: Ridge,
+            title: "Over the ridge",
+            task: "Launch the frame beam over the ridge onto the shipyard pad.",
+            brief: "The shipyard pad is on level ground beyond the ridge. This launcher can tilt, but it has a rated maximum speed and will refuse anything faster.\n\nThe beam must pass over the ridge and come down on the pad. Set the launch angle and the launch speed. Leave some margin over the ridge: the beam is not a point.",
+            investigate: "Ruler (R): measure from the release point to the pad centre, and to the top of the ridge on the side facing you.",
+            concepts: ["components", "range", "independence"],
+            requires: ["1.1.2"],
+            charges: 3,
+        ),
+    ],
+)

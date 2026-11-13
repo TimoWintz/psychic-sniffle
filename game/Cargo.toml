@@ -1,0 +1,24 @@
+[package]
+name = "game"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+physics_core = { path = "../crates/physics_core" }
+tutor = { path = "../crates/tutor" }
+serde.workspace = true
+ron.workspace = true
+bevy = { version = "0.20.1", default-features = false, features = [
+    "default_app",
+    "std",
+    "bevy_winit",
+    "default_font",
+    "multi_threaded",
+    "x11",
+    "wayland",
+    "3d_bevy_render",
+] }
+bevy_egui = "0.43.1"
+avian3d = "0.8"

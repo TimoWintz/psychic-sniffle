@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = ["crates/physics_core", "crates/tutor", "game"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.12"
+thiserror = "2"
+
+# Fast-ish debug builds of our code, optimised dependencies (Bevy is unusable unoptimised).
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

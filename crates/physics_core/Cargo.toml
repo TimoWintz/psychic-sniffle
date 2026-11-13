@@ -1,0 +1,12 @@
+[package]
+name = "physics_core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Units, exact simulators and puzzle model. No engine dependency."
+
+[dependencies]
+serde.workspace = true
+ron.workspace = true
+thiserror.workspace = true

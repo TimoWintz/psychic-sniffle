@@ -1,0 +1,5 @@
+/target
+/settings.toml
+/saves
+*.swp
+.DS_Store

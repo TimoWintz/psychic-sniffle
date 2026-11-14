@@ -12,6 +12,22 @@ use serde::Serialize;
 pub struct ConceptCard {
     pub title: String,
     pub card: String,
+    /// Whether the page is in the player's handbook yet (pages are found by watching experiments).
+    pub found: bool,
+    /// Where the player can find the page while it is locked.
+    pub hint: String,
+}
+
+/// The station's free experiment, and what the player made of it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ExperimentLine {
+    pub question: String,
+    pub choices: Vec<String>,
+    /// What actually happens.
+    pub answer: String,
+    pub watched: bool,
+    /// The choice made before the first run, if any.
+    pub guess: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -56,6 +72,7 @@ pub struct TutorContext {
     pub brief: String,
     pub how_to_measure: String,
     pub concepts: Vec<ConceptCard>,
+    pub experiment: Option<ExperimentLine>,
     pub asked: Vec<AskedValue>,
     pub notebook: Vec<NotebookLine>,
     pub attempts: Vec<AttemptLine>,
@@ -124,6 +141,13 @@ impl TutorContext {
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
         }
+        // The experiment's question and choices are on the player's screen (the ridge's names its
+        // two angles, which may fall inside the working window).
+        if let Some(demo) = &def.demo {
+            for text in std::iter::once(&demo.question).chain(&demo.choices) {
+                known_numbers.extend(crate::filter::number_values(text));
+            }
+        }
 
         TutorContext {
             chapter_title: chapter.title.clone(),
@@ -134,8 +158,20 @@ impl TutorContext {
                 .concepts
                 .iter()
                 .filter_map(|id| chapter.concept(id))
-                .map(|c| ConceptCard { title: c.title.clone(), card: c.card.clone() })
+                .map(|c| ConceptCard {
+                    title: c.title.clone(),
+                    card: c.card.clone(),
+                    found: save.is_found(chapter, &c.id),
+                    hint: c.hint.clone(),
+                })
                 .collect(),
+            experiment: def.demo.as_ref().map(|demo| ExperimentLine {
+                question: demo.question.clone(),
+                choices: demo.choices.clone(),
+                answer: demo.reveal.clone(),
+                watched: save.demo_watched(&def.id),
+                guess: save.first_guess(&def.id).and_then(|i| demo.choices.get(i).cloned()),
+            }),
             asked: instance
                 .inputs()
                 .iter()

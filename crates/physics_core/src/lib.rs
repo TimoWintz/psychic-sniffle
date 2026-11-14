@@ -2,6 +2,7 @@
 
 pub mod ballistics;
 pub mod content;
+pub mod demo;
 pub mod expr;
 pub mod materials;
 pub mod notebook;

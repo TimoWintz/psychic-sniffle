@@ -69,6 +69,9 @@ pub struct TutorContext {
     /// Private: true values of everything measurable, so the tutor can spot a mismeasurement.
     pub true_measurements: Vec<String>,
 
+    /// Places Lumen can turn its eye to, by name. Filled in by the game, which knows where they are.
+    pub landmarks: Vec<String>,
+
     /// Used by the leak filter, not sent to the model.
     #[serde(skip)]
     pub secrets: Vec<Secret>,
@@ -186,6 +189,7 @@ impl TutorContext {
                 .iter()
                 .map(|g| format!("{} = {}", g.label, g.quantity.display()))
                 .collect(),
+            landmarks: Vec::new(),
             secrets,
             known_numbers,
         }

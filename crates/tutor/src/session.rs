@@ -2,6 +2,7 @@
 
 use crate::context::TutorContext;
 use crate::filter::LeakFilter;
+use crate::gesture::{strip_looks, strip_looks_streaming};
 use crate::prompt::system_prompt;
 use crate::provider::{ChatRequest, Message, Provider, Role, TutorError};
 use crate::settings::TutorSettings;
@@ -68,6 +69,9 @@ struct Pending {
     events: Mutex<Receiver<Event>>,
     raw: String,
     filter: LeakFilter,
+    /// Places the reply may point at, and how many of its look tags have been passed on so far.
+    landmarks: Vec<String>,
+    looks_seen: usize,
 }
 
 /// How many past turns are sent with each request.
@@ -77,6 +81,8 @@ const HISTORY_TURNS: usize = 24;
 pub struct Conversation {
     pub turns: Vec<Turn>,
     pending: Option<Pending>,
+    /// The latest place the tutor pointed at that the game has not yet taken.
+    look: Option<String>,
 }
 
 impl Conversation {
@@ -84,9 +90,16 @@ impl Conversation {
         self.pending.is_some()
     }
 
-    /// The reply so far, filtered, while one is arriving.
+    /// The reply so far, filtered and without look tags, while one is arriving.
     pub fn arriving(&self) -> Option<String> {
-        self.pending.as_ref().map(|p| p.filter.apply_streaming(&p.raw))
+        self.pending.as_ref().map(|p| p.filter.apply_streaming(&strip_looks_streaming(&p.raw, &p.landmarks).0))
+    }
+
+    /// The place the tutor last pointed at with a `[look: NAME]` tag, once. Names are always ones
+    /// from the snapshot's landmarks. A tag counts as soon as it has arrived in full, so the eye can
+    /// turn while the reply is still being written.
+    pub fn take_look(&mut self) -> Option<String> {
+        self.look.take()
     }
 
     /// Send the player's message with a fresh snapshot. Returns `false` if nothing was sent
@@ -113,7 +126,13 @@ impl Conversation {
                 });
             })
             .expect("a thread can be started");
-        self.pending = Some(Pending { events: Mutex::new(events), raw: String::new(), filter: LeakFilter::for_context(ctx, &player_text) });
+        self.pending = Some(Pending {
+            events: Mutex::new(events),
+            raw: String::new(),
+            filter: LeakFilter::for_context(ctx, &player_text),
+            landmarks: ctx.landmarks.clone(),
+            looks_seen: 0,
+        });
         true
     }
 
@@ -134,9 +153,24 @@ impl Conversation {
                 Err(TryRecvError::Disconnected) => break Some(Err("The request ended unexpectedly.".to_string())),
             }
         };
+        let mut look = None;
+        if changed {
+            let (_, looks) = strip_looks_streaming(&pending.raw, &pending.landmarks);
+            if looks.len() > pending.looks_seen {
+                pending.looks_seen = looks.len();
+                look = looks.last().cloned();
+            }
+        }
+        if look.is_some() {
+            self.look = look;
+        }
         let Some(result) = finished else { return changed };
         let pending = self.pending.take().expect("checked above");
-        let reply = pending.filter.apply(&pending.raw);
+        let (text, looks) = strip_looks(&pending.raw, &pending.landmarks);
+        if looks.len() > pending.looks_seen {
+            self.look = looks.last().cloned();
+        }
+        let reply = pending.filter.apply(&text);
         if !reply.trim().is_empty() {
             self.turns.push(Turn::Tutor(reply.trim().to_string()));
         }

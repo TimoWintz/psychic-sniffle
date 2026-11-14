@@ -13,6 +13,13 @@ The ship's computer, **Lumen**, survived the crash with its sensors intact and i
 can see what you are doing and explain anything, but it cannot press a single button. Doing is the
 player's job.
 
+Lumen is on screen as a holographic eye in the lower left corner. It looks at what matters next and
+points at it with a beam of light: the next station while you walk, the yellow pin to click while the
+ruler is out, the target while a test runs. When the place is off screen, the beam ends in an arrow at
+the edge of the screen. It says short lines when something happens (a test lands, a station refuses an
+entry, a new station opens) and its eye shows a mood: pleased, concerned, thinking. None of this needs
+a language model; with one connected, Lumen can also turn its eye to a place it is talking about.
+
 ## Pillars
 
 1. **The world is the textbook.** One voxel is one cubic metre of a real material. Distances, masses,
@@ -94,7 +101,7 @@ Unlocked as the curriculum needs them.
 ## Avatar, camera, controls
 
 Third-person view of a blocky engineer. Walk, jump, look around; `E` uses a station; `R` toggles the
-ruler; `N` notebook and calculator; `H` handbook; `T` talks to Lumen. The avatar carries no inventory in
+ruler; `N` notebook and calculator; `H` handbook; `T` (or a click on Lumen's eye) talks to Lumen. The avatar carries no inventory in
 the slice.
 
 ## The ship and progression

@@ -8,6 +8,7 @@
 //! key state), so they exercise the real paths rather than setting results directly. A script that
 //! does not see what it expects panics, which fails the run.
 
+use crate::companion::{Companion, station_name};
 use crate::island::Sites;
 use crate::player::{OrbitCamera, Player};
 use crate::ruler::{Ruler, pick_at};
@@ -35,7 +36,10 @@ enum Step {
     RulerPin(usize),
     /// Press one of the ruler's "note as" buttons: 0 horizontal, 1 vertical.
     RulerNote(usize),
+    RulerOn,
     RulerOff,
+    /// Wait until Lumen looks at this place; fail if it has not happened in time.
+    ExpectGaze { place: String, within: f32 },
     Release,
     Draft(usize, Vec<String>),
     Commit(usize),
@@ -82,6 +86,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let closed = Windows { notebook: false, handbook: false, tutor: false };
     vec![
         Shot("01_start"),
+        // Station 0 is behind a close camera: Lumen's beam ends in an arrow at the screen's edge.
+        expect_gaze(station_name(game, 0)),
+        Look { yaw: -0.8, pitch: 0.15, distance: 3.0 },
+        Wait(1.2),
+        Shot("01b_lumen_points_off_screen"),
         Watch(Some(Vec3::new(80.0, 20.0, 66.0))),
         Look { yaw: -0.5, pitch: 0.75, distance: 80.0 },
         Wait(1.5),
@@ -91,8 +100,12 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         GoToStation(0),
         Look { yaw: 0.35, pitch: 0.5, distance: 22.0 },
         Wait(1.0),
+        expect_gaze(station_name(game, 0)),
         Station(Some(0)),
+        RulerOn,
+        expect_gaze("Rail cart: starting point"),
         RulerPin(10),
+        expect_gaze("Rail marker: centre"),
         RulerPin(11),
         Wait(0.3),
         Shot("03_ruler_along_rail"),
@@ -111,6 +124,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("06_rail_result"),
         // Puzzle 1: measure the tower, time the drop, work out g.
         GoToStation(1),
+        // Away from the solved station, Lumen points ahead to the next one.
+        expect_gaze(station_name(game, 1)),
         Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
         Wait(1.0),
         Station(Some(1)),
@@ -185,6 +200,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(3.0),
         Shot("19_ridge_result"),
         Station(None),
+        expect_gaze("The shipyard floor"),
         GoTo(sites.shipyard + Vec3::new(-11.0, 0.0, 9.0)),
         Look { yaw: -0.8, pitch: 0.3, distance: 16.0 },
         Wait(3.5),
@@ -232,6 +248,10 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
     ]
 }
 
+fn expect_gaze(place: impl Into<String>) -> Step {
+    Step::ExpectGaze { place: place.into(), within: 8.0 }
+}
+
 fn closed_step() -> Step {
     Step::Windows { notebook: false, handbook: false, tutor: false }
 }
@@ -251,6 +271,7 @@ fn run(
     mut player: Single<(&mut Player, &mut Transform), Without<Camera3d>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
+    companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if script.wait > 0.0 {
@@ -293,6 +314,18 @@ fn run(
             let m = ruler.measurement().expect("two points are picked");
             let (prefix, value) = [("d", m.horizontal), ("h", m.vertical)][which];
             game.save.notebook.add_numbered(prefix, "measured by the script", Quantity::metres(value as f64), "ruler");
+        }
+        Step::RulerOn => {
+            if !ruler.active {
+                ruler.toggle();
+            }
+        }
+        Step::ExpectGaze { place, within } => {
+            if companion.gaze.as_deref() != Some(place.as_str()) {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "Lumen did not look at '{place}': it looks at {:?}", companion.gaze);
+                script.steps.push_front(Step::ExpectGaze { place, within: left });
+            }
         }
         Step::RulerOff => {
             if ruler.active {

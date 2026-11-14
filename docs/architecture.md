@@ -52,6 +52,7 @@ it had. What the engine does afterwards cannot change the result.
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, handbook, chat |
 | `shipyard` | ship parts that appear as chapters complete |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
+| `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
 | `devscript` | scripted run for automated screenshots (development only) |
 
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in

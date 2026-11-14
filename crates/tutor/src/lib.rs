@@ -6,6 +6,7 @@
 
 pub mod context;
 pub mod filter;
+pub mod gesture;
 pub mod prompt;
 pub mod provider;
 pub mod session;

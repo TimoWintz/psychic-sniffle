@@ -12,7 +12,11 @@ The guarantee does not rest on instructions to the model.
 - The game hands the tutor a **snapshot**: a plain data value copied out of the game. The tutor returns
   text. There is no channel in the other direction other than that text being shown in the chat panel.
 - The model is given no tools.
-- The game never parses the tutor's reply for commands.
+- The game never parses the tutor's reply for commands. The one thing read from it is a gaze: a
+  `[look: NAME]` tag, where NAME must be one of the places listed in the snapshot (survey pins,
+  stations, the wreck, the shipyard). It turns Lumen's on-screen eye toward that place and does nothing
+  else. The tag is removed before the text is shown (also while it streams), and a name not on the list
+  is ignored, so the tag cannot carry text past the leak filter.
 
 ## What the tutor sees
 
@@ -23,6 +27,7 @@ One snapshot per message, built at the moment the player sends it:
 - the player's notebook (every reading taken so far);
 - the values currently typed in the blueprint, if any;
 - every attempt so far: what was committed and what happened;
+- the names of the places Lumen can point at;
 - the worked solution and the answer values — marked private.
 
 The tutor is given the solution because a tutor that does not know the answer cannot tell a sign error
@@ -42,6 +47,8 @@ from a wrong method. Keeping the answer from the player is handled below.
 7. Say plainly when the player is wrong, and why.
 8. Stay on physics and this game.
 9. You cannot act in the game. If asked to, say so and tell the player how to do it themselves.
+10. Everything marked private is for judging the player's reasoning, never for quoting.
+11. To draw the player's eye to a place, write `[look: NAME]` with a listed name; at most one per reply.
 
 ## Answer-leak filter
 

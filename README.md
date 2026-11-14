@@ -17,13 +17,18 @@ cargo run -p game
 ```
 
 WASD move · Shift run · Space jump · right-drag or arrow keys look · scroll zoom ·
-E use a station · R ruler · N notebook and calculator · H handbook · T Lumen
+E use a station · R ruler · N notebook and calculator · H handbook · T (or click the eye) Lumen
 
 Progress is saved to `saves/slot1.ron`. Delete it to start over on a new planet (new numbers).
 
-### Lumen (optional)
+### Lumen
 
-Copy `settings.example.toml` to `settings.toml`, fill in a service and model, and set the environment
+Lumen, the ship's computer, is the eye in the lower left. It points at what to do next with a beam of
+light and comments on your tests, with or without a language model.
+
+![Lumen points at the platform after a missed shot](docs/screenshots/lumen.png)
+
+To talk to it, copy `settings.example.toml` to `settings.toml`, fill in a service and model, and set the environment
 variable it names. No model vendor is built in; see [docs/tutor.md](docs/tutor.md).
 
 ## Test

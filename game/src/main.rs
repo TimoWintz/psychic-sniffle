@@ -1,5 +1,6 @@
 //! First Principles: a physics game. See `docs/` for the design.
 
+mod companion;
 mod devscript;
 mod island;
 mod player;
@@ -43,6 +44,7 @@ fn main() {
             shipyard::ShipyardPlugin,
             tutor_bridge::TutorPlugin,
             ui::UiPlugin,
+            companion::CompanionPlugin,
             devscript::DevScriptPlugin,
         ))
         .run();

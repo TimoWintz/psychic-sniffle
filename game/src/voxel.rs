@@ -56,7 +56,6 @@ impl VoxelWorld {
     }
 
     /// Height of the top surface of the highest solid block in a column (0 if the column is empty).
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by the island's consistency tests"))]
     pub fn surface(&self, x: i32, z: i32) -> i32 {
         (0..self.size.y).rev().find(|&y| self.is_solid(IVec3::new(x, y, z))).map_or(0, |y| y + 1)
     }
@@ -137,8 +136,9 @@ impl VoxelWorld {
         out
     }
 
-    /// Mesh of the visible faces of the columns `x0..x1`, `z0..z1`, coloured per block.
-    pub fn mesh(&self, x0: i32, x1: i32, z0: i32, z1: i32) -> Mesh {
+    /// Mesh of the visible faces of the columns `x0..x1`, `z0..z1`, coloured per block. `glow` picks
+    /// which blocks go in: the ones that glow (drawn unlit) or the rest.
+    pub fn mesh(&self, x0: i32, x1: i32, z0: i32, z1: i32, glow: bool) -> Mesh {
         let mut positions: Vec<[f32; 3]> = Vec::new();
         let mut normals: Vec<[f32; 3]> = Vec::new();
         let mut colours: Vec<[f32; 4]> = Vec::new();
@@ -148,26 +148,32 @@ impl VoxelWorld {
                 for x in x0..x1 {
                     let p = IVec3::new(x, y, z);
                     let material = self.get(p);
-                    if !material.is_solid() {
+                    if !material.is_solid() || glows(material) != glow {
                         continue;
                     }
-                    // Vertex colours are linear; the table holds sRGB. A little variation per block
-                    // keeps flat ground reading as blocks.
-                    let [r, g, b] = material.properties().colour;
-                    let shade = 0.88 + 0.24 * hash01(p);
-                    let base = Color::srgb(r, g, b).to_linear();
-                    let colour = [base.red * shade, base.green * shade, base.blue * shade, 1.0];
+                    // Vertex colours are linear; the tints are sRGB.
+                    let base = Color::srgb_from_array(tint(material, p)).to_linear();
                     for face in &FACES {
                         if self.is_solid(p + face.normal) {
                             continue;
                         }
+                        // Grass shows its turf on top only; its sides darken towards the soil.
+                        let side = if material == Material::Grass && face.normal.y == 0 { 0.82 } else { 1.0 };
                         let first = positions.len() as u32;
-                        for corner in face.corners {
-                            positions.push((p.as_vec3() + corner).to_array());
+                        let mut ao = [0u8; 4];
+                        for (k, corner) in face.corners.iter().enumerate() {
+                            ao[k] = self.occlusion(p, face.normal, *corner);
+                            let light = AO_LIGHT[ao[k] as usize] * side;
+                            positions.push((p.as_vec3() + *corner).to_array());
                             normals.push(face.normal.as_vec3().to_array());
-                            colours.push(colour);
+                            colours.push([base.red * light, base.green * light, base.blue * light, 1.0]);
                         }
-                        indices.extend([first, first + 1, first + 2, first, first + 2, first + 3]);
+                        // Split the quad along the diagonal that keeps the shading smooth.
+                        if ao[0] as u32 + ao[2] as u32 >= ao[1] as u32 + ao[3] as u32 {
+                            indices.extend([first, first + 1, first + 2, first, first + 2, first + 3]);
+                        } else {
+                            indices.extend([first + 1, first + 2, first + 3, first + 1, first + 3, first]);
+                        }
                     }
                 }
             }
@@ -178,6 +184,101 @@ impl VoxelWorld {
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
             .with_inserted_indices(Indices::U32(indices))
     }
+
+    /// Ambient occlusion at one corner of a face: 3 is open, 0 is a tight inner corner.
+    fn occlusion(&self, p: IVec3, normal: IVec3, corner: Vec3) -> u8 {
+        // The two axes in the face's plane, pointing from the block's centre towards the corner.
+        let mut toward = [IVec3::ZERO; 2];
+        let mut n = 0;
+        for axis in 0..3 {
+            if normal[axis] == 0 {
+                toward[n][axis] = if corner[axis] > 0.5 { 1 } else { -1 };
+                n += 1;
+            }
+        }
+        let front = p + normal;
+        let a = self.is_solid(front + toward[0]);
+        let b = self.is_solid(front + toward[1]);
+        let c = self.is_solid(front + toward[0] + toward[1]);
+        if a && b { 0 } else { 3 - a as u8 - b as u8 - c as u8 }
+    }
+}
+
+/// Brightness of a face corner by occlusion level.
+const AO_LIGHT: [f32; 4] = [0.50, 0.66, 0.82, 1.0];
+
+/// Blocks drawn unlit, so they read as glowing: survey markers and quartz.
+pub fn glows(material: Material) -> bool {
+    matches!(material, Material::Marker | Material::Quartz)
+}
+
+/// sRGB colour of a block where it stands. The table gives each material's base colour; turf drifts
+/// between teal and olive with patches of violet lichen, rock is banded in strata, foliage shifts
+/// from teal to violet from one grove to the next.
+pub fn tint(material: Material, p: IVec3) -> [f32; 3] {
+    let base = Vec3::from_array(material.properties().colour);
+    let (x, z) = (p.x as f32, p.z as f32);
+    let jitter = 0.94 + 0.12 * hash01(p);
+    let colour = match material {
+        Material::Grass => {
+            let olive = Vec3::new(0.50, 0.60, 0.30);
+            let lichen = Vec3::new(0.56, 0.44, 0.72);
+            let drift = smoothstep(0.42, 0.72, fbm(x / 34.0, z / 34.0, 11, 3));
+            let patch = smoothstep(0.68, 0.80, fbm(x / 8.0, z / 8.0, 23, 2)) * 0.7;
+            base.lerp(olive, drift * 0.8).lerp(lichen, patch)
+        }
+        Material::Foliage => {
+            let violet = Vec3::new(0.50, 0.34, 0.68);
+            let pale = Vec3::new(0.42, 0.74, 0.70);
+            let grove = fbm(x / 20.0, z / 20.0, 31, 2);
+            base.lerp(violet, smoothstep(0.45, 0.70, grove)).lerp(pale, (p.y % 3 == 0) as u8 as f32 * 0.25)
+        }
+        Material::Rock => {
+            // Layers that dip and wander a little, so cliffs read as sediment.
+            let warp = (fbm(x / 24.0, z / 24.0, 41, 2) * 5.0) as i32;
+            let band = (p.y + warp).div_euclid(2);
+            const STRATA: [[f32; 3]; 5] = [
+                [0.46, 0.43, 0.54],
+                [0.58, 0.42, 0.37],
+                [0.40, 0.38, 0.48],
+                [0.62, 0.58, 0.66],
+                [0.46, 0.43, 0.54],
+            ];
+            Vec3::from_array(STRATA[(hash01(IVec3::new(band, 7, 3)) * 5.0) as usize])
+        }
+        Material::Sand => base * (0.95 + 0.08 * fbm(x / 6.0, z / 6.0, 53, 2)),
+        _ => base,
+    };
+    (colour * jitter).min(Vec3::ONE).to_array()
+}
+
+pub fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Smooth value noise in `[0, 1)`, one lattice point per unit.
+pub fn noise2(x: f32, z: f32, seed: i32) -> f32 {
+    let (xf, zf) = (x.floor(), z.floor());
+    let (xi, zi) = (xf as i32, zf as i32);
+    let (tx, tz) = (x - xf, z - zf);
+    let (sx, sz) = (tx * tx * (3.0 - 2.0 * tx), tz * tz * (3.0 - 2.0 * tz));
+    let at = |dx: i32, dz: i32| hash01(IVec3::new(xi + dx, seed, zi + dz));
+    let top = at(0, 0) + (at(1, 0) - at(0, 0)) * sx;
+    let bottom = at(0, 1) + (at(1, 1) - at(0, 1)) * sx;
+    top + (bottom - top) * sz
+}
+
+/// Several octaves of [`noise2`], normalised to `[0, 1)`.
+pub fn fbm(x: f32, z: f32, seed: i32, octaves: u32) -> f32 {
+    let (mut sum, mut amplitude, mut frequency, mut total) = (0.0, 1.0, 1.0, 0.0);
+    for octave in 0..octaves {
+        sum += noise2(x * frequency, z * frequency, seed + octave as i32 * 101) * amplitude;
+        total += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2.0;
+    }
+    sum / total
 }
 
 struct Face {
@@ -249,9 +350,29 @@ mod tests {
     #[test]
     fn only_visible_faces_are_meshed() {
         // An 8x3x8 slab on the world floor: top, four sides, and the underside.
-        let mesh = slab().mesh(0, 8, 0, 8);
+        let mesh = slab().mesh(0, 8, 0, 8, false);
+        assert_eq!(slab().mesh(0, 8, 0, 8, true).count_vertices(), 0);
         let faces = 64 + 4 * 24 + 64;
         assert_eq!(mesh.count_vertices(), faces * 4);
         assert_eq!(slab().exposed_blocks().len(), 8 * 8 * 3 - 6 * 6);
+    }
+
+    #[test]
+    fn corners_in_a_crease_are_darker() {
+        let mut world = slab();
+        // A wall standing on the slab: the slab's top corners against it are occluded.
+        world.fill(IVec3::new(4, 3, 0), IVec3::new(4, 5, 7), Material::Rock);
+        assert_eq!(world.occlusion(IVec3::new(3, 2, 3), IVec3::Y, Vec3::new(1.0, 1.0, 1.0)), 1);
+        assert_eq!(world.occlusion(IVec3::new(3, 2, 3), IVec3::Y, Vec3::new(0.0, 1.0, 0.0)), 3);
+    }
+
+    #[test]
+    fn noise_is_smooth_and_bounded() {
+        for i in 0..400 {
+            let (x, z) = (i as f32 * 0.37 - 50.0, i as f32 * 0.91 - 80.0);
+            let n = fbm(x, z, 5, 4);
+            assert!((0.0..1.0).contains(&n));
+            assert!((noise2(x, z, 5) - noise2(x + 0.01, z, 5)).abs() < 0.05);
+        }
     }
 }

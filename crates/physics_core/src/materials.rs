@@ -22,6 +22,10 @@ pub enum Material {
     Marker,
     /// Hull plating salvaged from the wreck.
     HullAlloy,
+    /// Leaves and fronds of the island's plants.
+    Foliage,
+    /// Crystalline silica; the island's quartz glows faintly.
+    Quartz,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -41,7 +45,7 @@ pub struct Properties {
 }
 
 impl Material {
-    pub const ALL: [Material; 12] = [
+    pub const ALL: [Material; 14] = [
         Material::Air,
         Material::Rock,
         Material::Soil,
@@ -54,6 +58,8 @@ impl Material {
         Material::Concrete,
         Material::Marker,
         Material::HullAlloy,
+        Material::Foliage,
+        Material::Quartz,
     ];
 
     pub fn from_id(id: u8) -> Material {
@@ -86,17 +92,19 @@ impl Material {
         const INSULATOR: f64 = f64::INFINITY;
         match self {
             Material::Air => p("Air", 1.2, 1005.0, 0.026, INSULATOR, [0.0, 0.0, 0.0], false),
-            Material::Rock => p("Rock", 2700.0, 790.0, 2.9, INSULATOR, [0.47, 0.46, 0.48], true),
-            Material::Soil => p("Soil", 1500.0, 800.0, 0.5, INSULATOR, [0.45, 0.31, 0.20], true),
-            Material::Grass => p("Turf", 1300.0, 900.0, 0.4, INSULATOR, [0.36, 0.60, 0.24], true),
-            Material::Sand => p("Sand", 1600.0, 830.0, 0.3, INSULATOR, [0.86, 0.78, 0.55], true),
-            Material::Water => p("Water", 1000.0, 4186.0, 0.6, 2.0e5, [0.10, 0.30, 0.55], false),
+            Material::Rock => p("Rock", 2700.0, 790.0, 2.9, INSULATOR, [0.46, 0.43, 0.54], true),
+            Material::Soil => p("Soil", 1500.0, 800.0, 0.5, INSULATOR, [0.47, 0.38, 0.34], true),
+            Material::Grass => p("Turf", 1300.0, 900.0, 0.4, INSULATOR, [0.27, 0.60, 0.50], true),
+            Material::Sand => p("Sand", 1600.0, 830.0, 0.3, INSULATOR, [0.90, 0.77, 0.66], true),
+            Material::Water => p("Water", 1000.0, 4186.0, 0.6, 2.0e5, [0.10, 0.42, 0.52], false),
             Material::Steel => p("Steel", 7850.0, 490.0, 50.0, 1.4e-7, [0.42, 0.46, 0.52], true),
             Material::Copper => p("Copper", 8960.0, 385.0, 400.0, 1.7e-8, [0.72, 0.40, 0.20], true),
             Material::Timber => p("Timber", 600.0, 1700.0, 0.15, INSULATOR, [0.58, 0.40, 0.22], true),
             Material::Concrete => p("Concrete", 2400.0, 880.0, 1.4, INSULATOR, [0.70, 0.70, 0.68], true),
             Material::Marker => p("Survey marker", 7850.0, 490.0, 50.0, 1.4e-7, [0.98, 0.56, 0.08], true),
             Material::HullAlloy => p("Hull alloy", 4500.0, 520.0, 7.0, 1.7e-6, [0.62, 0.70, 0.80], true),
+            Material::Foliage => p("Foliage", 650.0, 2500.0, 0.2, INSULATOR, [0.22, 0.55, 0.60], true),
+            Material::Quartz => p("Quartz", 2650.0, 740.0, 7.7, INSULATOR, [0.62, 0.96, 0.92], true),
         }
     }
 }

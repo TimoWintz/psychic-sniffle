@@ -58,6 +58,8 @@ pub struct Sim {
     running: Option<Running>,
     /// Paths of the last test or demonstration with their colours, drawn until the next one.
     pub trails: Vec<(Vec<Vec3>, [f32; 3])>,
+    /// Where the strobe caught the test mass (its centre), drawn as ticks until the next release.
+    strobe: Vec<Vec3>,
     /// Seconds until the camera stops watching the test.
     watch_left: f32,
 }
@@ -131,9 +133,7 @@ struct PropAssets {
     alloy: Handle<StandardMaterial>,
     pair: [Handle<StandardMaterial>; 2],
     afterimage: Handle<StandardMaterial>,
-    flash: Handle<StandardMaterial>,
     mass: Handle<Mesh>,
-    tick: Handle<Mesh>,
 }
 
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
@@ -229,9 +229,8 @@ fn setup(
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), unlit: true, ..default() })
     };
     let pair = PAIR_COLOURS.map(|c| unlit(&mut materials, c));
-    let flash = unlit(&mut materials, [0.75, 1.0, 1.0]);
     let afterimage = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.7, 0.95, 1.0, 0.42),
+        base_color: Color::srgba(1.0, 0.72, 0.25, 0.5),
         alpha_mode: AlphaMode::Blend,
         unlit: true,
         ..default()
@@ -240,9 +239,7 @@ fn setup(
         alloy,
         pair,
         afterimage,
-        flash,
         mass: meshes.add(Cuboid::from_size(MASS_SIZE)),
-        tick: meshes.add(Cuboid::new(1.8, 0.13, 0.13)),
     });
 }
 
@@ -307,6 +304,7 @@ fn handle_requests(
                     for mark in &marks {
                         commands.entity(mark).despawn();
                     }
+                    sim.strobe.clear();
                     orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X);
                     Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess }
                 }
@@ -464,8 +462,9 @@ fn advance(
     let g = game.layout.g as f32;
     let ground = GROUND as f32;
 
-    // Let go of the camera a little after a test ends.
-    if sim.running.is_none() && orbit.watch.is_some() {
+    // Let go of the camera a little after a test or an experiment ends (and only then: anything else
+    // that points the camera keeps it).
+    if sim.running.is_none() && sim.watch_left > 0.0 {
         sim.watch_left -= dt;
         if sim.watch_left <= 0.0 {
             orbit.release_view();
@@ -480,13 +479,12 @@ fn advance(
             *t += dt;
             let height = game.layout.tower_h as f32;
             let fall_time = (2.0 * height / g).sqrt();
-            // Each flash leaves an afterimage of the mass and a bright tick beside its path.
+            // Each flash leaves an afterimage of the mass and a tick beside its path.
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
                 let centre = rest_pose(Prop::TowerMass, &sites) - Vec3::Y * below;
                 commands.spawn((StrobeMark, Mesh3d(assets.mass.clone()), MeshMaterial3d(assets.afterimage.clone()), Transform::from_translation(centre)));
-                let tick = sites.tower_release - Vec3::Y * below + Vec3::new(MASS_SIZE.x / 2.0 + 0.95, 0.0, 0.0);
-                commands.spawn((StrobeMark, Mesh3d(assets.tick.clone()), MeshMaterial3d(assets.flash.clone()), Transform::from_translation(tick)));
+                sim.strobe.push(centre);
                 *shown += 1;
             }
             for (prop, mut transform, mut visibility, material) in &mut props {
@@ -698,6 +696,11 @@ fn recharge(time: Res<Time>, mut game: ResMut<Game>, mut ui: ResMut<Ui>, sim: Re
 }
 
 fn draw_trail(sim: Res<Sim>, mut gizmos: Gizmos) {
+    // Lines keep their width on screen, so the strobe's ticks read from a distance.
+    for at in &sim.strobe {
+        let base = *at - Vec3::Y * MASS_SIZE.y / 2.0;
+        gizmos.line(base + Vec3::X * (MASS_SIZE.x / 2.0 + 0.2), base + Vec3::X * 3.2, Color::srgb(1.0, 0.85, 0.3));
+    }
     for (trail, c) in &sim.trails {
         if trail.len() >= 2 {
             gizmos.linestrip(trail.iter().copied(), Color::srgb(c[0], c[1], c[2]));

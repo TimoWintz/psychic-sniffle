@@ -303,7 +303,7 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
     }
     if game.def(puzzle).kind == PuzzleKind::Gravity {
-        let last = game.save.notebook.entries.iter().filter(|e| e.source == "stopwatch").next_back();
+        let last = game.save.notebook.entries.iter().rfind(|e| e.source == "stopwatch");
         match last {
             Some(entry) => ui.label(format!("Stopwatch: {} = {}", entry.name, entry.quantity.display())),
             None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),

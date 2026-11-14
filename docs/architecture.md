@@ -50,6 +50,7 @@ it had. What the engine does afterwards cannot change the result.
 | `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
 | `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
+| `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
 | `stations` | station entities, proximity and interaction, the active puzzle |
 | `sim` | experiment and test playback, hand-off to the physics engine, handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |

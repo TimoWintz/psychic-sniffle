@@ -1,5 +1,6 @@
 //! First Principles: a physics game. See `docs/` for the design.
 
+mod avatar;
 mod cinematic;
 mod companion;
 mod devscript;
@@ -40,6 +41,7 @@ fn main() {
             intro::IntroPlugin,
             scenery::SceneryPlugin,
             player::PlayerPlugin,
+            avatar::AvatarPlugin,
             stations::StationsPlugin,
             sim::SimPlugin,
             rig::RigPlugin,

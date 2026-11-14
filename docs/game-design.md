@@ -145,6 +145,11 @@ Third-person view of a blocky engineer. Walk, jump, look around; `E` uses a stat
 ruler; `N` notebook and calculator; `H` handbook; `T` (or a click on Lumen's eye) talks to Lumen. The avatar carries no inventory in
 the slice.
 
+The engineer is a jointed figure of blocks, animated in code. Its stride follows its speed, it
+tucks on a jump and gives at the knees on landing, and it works the panel of an open station. It turns
+to watch a test in flight, then cheers a pass or hangs its head at a miss. When idle, it glances where
+Lumen is pointing.
+
 ## The ship and progression
 
 The shipyard pad is visible from most of the island. Each chapter's capstone adds a part to the ship

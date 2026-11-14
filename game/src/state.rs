@@ -2,7 +2,7 @@
 //! interface is showing.
 
 use bevy::prelude::*;
-use physics_core::content::{Chapter, PuzzleDef, chapter_1_1};
+use physics_core::content::{Chapter, Found, PuzzleDef, chapter_1_1};
 use physics_core::progress::Save;
 use physics_core::puzzle::{Ch1Layout, Instance, Outcome};
 use std::path::PathBuf;
@@ -73,6 +73,32 @@ impl Game {
         (0..self.chapter.puzzles.len()).find(|&i| !self.solved(i))
     }
 
+    /// Whether a handbook page can be read.
+    pub fn page_found(&self, concept_id: &str) -> bool {
+        self.save.is_found(&self.chapter, concept_id)
+    }
+
+    /// Write the handbook pages that `event` at a puzzle's station reveals, and queue the new ones as
+    /// unread. Returns how many were new. The caller persists.
+    pub fn find_pages(&mut self, ui: &mut Ui, puzzle: usize, event: PageEvent) -> usize {
+        let id = self.def(puzzle).id.clone();
+        let pages: Vec<String> = self
+            .chapter
+            .pages_found_at(&id)
+            .into_iter()
+            .filter(|c| matches!((&c.found, event), (Found::Demo(_), PageEvent::Demo) | (Found::FirstCommit(_), PageEvent::Commit)))
+            .map(|c| c.id.clone())
+            .collect();
+        let mut new = 0;
+        for page in pages {
+            if self.save.find(&page) {
+                ui.unread_pages.push(page);
+                new += 1;
+            }
+        }
+        new
+    }
+
     /// Write the save file. A failure is kept for display rather than stopping the game.
     pub fn persist(&mut self) {
         let result = self
@@ -82,6 +108,15 @@ impl Game {
             .and_then(|()| std::fs::write(&self.save_path, self.save.to_ron()));
         self.save_problem = result.err().map(|e| format!("Could not save to {}: {e}", self.save_path.display()));
     }
+}
+
+/// What happened at a station that may write handbook pages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageEvent {
+    /// Its demonstration was watched.
+    Demo,
+    /// A value was committed there (tested or refused).
+    Commit,
 }
 
 /// Seconds a station takes to recharge once its prototype charges are used up.
@@ -107,9 +142,21 @@ pub struct Ui {
     pub show_tutor: bool,
     pub calculator: String,
     pub chat: String,
+    /// The choice picked in a station's demonstration before its first run.
+    pub guess: [Option<usize>; PUZZLES],
+    /// Handbook pages written but not read yet, by concept id, oldest first.
+    pub unread_pages: Vec<String>,
+    /// The page the handbook should open at.
+    pub handbook_focus: Option<String>,
 }
 
 impl Ui {
+    /// Open the handbook at a page.
+    pub fn open_page(&mut self, concept_id: &str) {
+        self.show_handbook = true;
+        self.handbook_focus = Some(concept_id.to_string());
+    }
+
     /// The puzzle the player is working on: the open station, else the one they stand at.
     pub fn focus(&self, game: &Game) -> usize {
         self.station

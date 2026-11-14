@@ -40,7 +40,14 @@ enum Step {
     RulerOff,
     /// Wait until Lumen looks at this place; fail if it has not happened in time.
     ExpectGaze { place: String, within: f32 },
-    Release,
+    /// Pick a choice in a station's experiment, as a click on it would.
+    Guess(usize, usize),
+    /// Press the experiment's run button.
+    RunDemo(usize),
+    /// Wait until a handbook page has been written; fail if it has not happened in time.
+    ExpectFound { page: &'static str, within: f32 },
+    /// Open the handbook at a page, as its button at the station would.
+    OpenPage(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
     Windows { notebook: bool, handbook: bool, tutor: bool },
@@ -115,6 +122,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Commit(0),
         Wait(0.3),
         Shot("04_bare_number_refused"),
+        // The first value committed at the rail writes the handbook's first page, refused or not.
+        ExpectFound { page: "units", within: 2.0 },
         Draft(0, vec!["d1".into()]),
         Commit(0),
         Wait(1.5),
@@ -122,6 +131,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         WaitIdle,
         Wait(3.0),
         Shot("06_rail_result"),
+        Windows { notebook: false, handbook: true, tutor: false },
+        Wait(0.4),
+        Shot("06b_first_page_and_a_locked_one"),
+        closed_step(),
         // Puzzle 1: measure the tower, time the drop, work out g.
         GoToStation(1),
         // Away from the solved station, Lumen points ahead to the next one.
@@ -129,16 +142,24 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
         Wait(1.0),
         Station(Some(1)),
+        // Lumen points at the experiment until it has been watched.
+        expect_gaze("Drop tower: release point"),
+        Wait(0.6),
+        Shot("07a_try_it_first"),
         RulerPin(0),
         RulerPin(1),
         Wait(0.3),
         Shot("07_ruler_on_tower"),
         RulerNote(1),
         RulerOff,
-        Release,
-        Wait(0.6),
-        Shot("08_tower_drop"),
+        Guess(1, 1),
+        RunDemo(1),
+        Wait(1.6),
+        Shot("08_strobe_drop"),
         WaitIdle,
+        ExpectFound { page: "free_fall", within: 2.0 },
+        Wait(0.6),
+        Shot("08b_strobe_seen"),
         Windows { notebook: true, handbook: false, tutor: false },
         Draft(1, vec!["2*h1/t1^2".into()]),
         Wait(0.3),
@@ -155,6 +176,16 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: -1.05, pitch: 0.45, distance: 30.0 },
         Wait(1.0),
         Station(Some(2)),
+        // A wrong guess, on purpose: the dropped crate first.
+        Guess(2, 0),
+        RunDemo(2),
+        Wait(1.5),
+        Shot("11a_drop_and_fire"),
+        WaitIdle,
+        ExpectFound { page: "independence", within: 2.0 },
+        Wait(0.5),
+        Shot("11b_drop_and_fire_landed"),
+        Wait(3.0),
         RulerPin(4),
         RulerPin(5),
         Wait(0.3),
@@ -183,6 +214,15 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: -1.15, pitch: 0.4, distance: 34.0 },
         Wait(1.0),
         Station(Some(3)),
+        Guess(3, 2),
+        RunDemo(3),
+        Wait(1.4),
+        Shot("16a_two_angles"),
+        WaitIdle,
+        ExpectFound { page: "range", within: 2.0 },
+        Wait(0.5),
+        Shot("16b_two_angles_landed"),
+        Wait(3.0),
         RulerPin(6),
         RulerPin(9),
         RulerNote(0),
@@ -193,6 +233,14 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.0),
         Shot("17_ridge_struck"),
         Draft(3, vec![format!("{angle} deg"), format!("sqrt(g*d3/sin(2*{angle} deg))")]),
+        // The launcher shows the blueprint before anything is committed: the arm tilts, the gauge fills.
+        Watch(Some(sites.ridge_launch.origin + sites.ridge_launch.direction * 1.5 + Vec3::Y * 1.2)),
+        Look { yaw: -0.75, pitch: 0.2, distance: 9.5 },
+        Wait(1.5),
+        Shot("17b_launcher_shows_the_blueprint"),
+        Watch(None),
+        Look { yaw: -1.15, pitch: 0.4, distance: 34.0 },
+        Wait(0.5),
         Commit(3),
         Wait(1.8),
         Shot("18_ridge_flight"),
@@ -206,6 +254,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(3.5),
         Shot("20_frame_installed"),
         Windows { notebook: true, handbook: true, tutor: true },
+        OpenPage("range"),
         Wait(0.5),
         Shot("21_notebook_handbook_lumen"),
         closed,
@@ -332,7 +381,19 @@ fn run(
                 ruler.toggle();
             }
         }
-        Step::Release => sim.request = Some(Request::ReleaseTowerMass),
+        Step::Guess(puzzle, choice) => ui.guess[puzzle] = Some(choice),
+        Step::RunDemo(puzzle) => {
+            assert!(game.save.demo_watched(&game.def(puzzle).id) || ui.guess[puzzle].is_some(), "the experiment wants a guess before its first run");
+            sim.request = Some(Request::Demo(puzzle));
+        }
+        Step::ExpectFound { page, within } => {
+            if !game.save.found.contains(page) {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the handbook page '{page}' was not written");
+                script.steps.push_front(Step::ExpectFound { page, within: left });
+            }
+        }
+        Step::OpenPage(page) => ui.open_page(page),
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
         Step::Windows { notebook, handbook, tutor } => {

@@ -10,10 +10,10 @@ use bevy_egui::input::EguiWantsInput;
 /// Half-width and height of the avatar's collision box. Its transform is at its feet.
 const HALF_WIDTH: f32 = 0.3;
 const HEIGHT: f32 = 1.8;
-const WALK_SPEED: f32 = 5.0;
-const RUN_SPEED: f32 = 9.0;
+pub(crate) const WALK_SPEED: f32 = 5.0;
+pub(crate) const RUN_SPEED: f32 = 9.0;
 /// Take-off speed of a jump. The height reached depends on the planet: v^2 / (2 g).
-const JUMP_SPEED: f32 = 6.0;
+pub(crate) const JUMP_SPEED: f32 = 6.0;
 
 #[derive(Component, Default)]
 pub struct Player {
@@ -82,25 +82,8 @@ impl Plugin for PlayerPlugin {
 }
 
 fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, mut camera: ResMut<OrbitCamera>) {
-    let suit = materials.add(StandardMaterial { base_color: Color::srgb(0.85, 0.45, 0.12), perceptual_roughness: 0.8, ..default() });
-    let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.16, 0.18, 0.22), perceptual_roughness: 0.8, ..default() });
-    let visor = materials.add(StandardMaterial { base_color: Color::srgb(0.55, 0.8, 0.95), perceptual_roughness: 0.2, ..default() });
-    let mut part = |size: Vec3, centre: Vec3, material: &Handle<StandardMaterial>| {
-        (Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(material.clone()), Transform::from_translation(centre))
-    };
-    commands
-        .spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default()))
-        .with_children(|body| {
-            body.spawn(part(Vec3::new(0.22, 0.8, 0.26), Vec3::new(-0.14, 0.4, 0.0), &dark));
-            body.spawn(part(Vec3::new(0.22, 0.8, 0.26), Vec3::new(0.14, 0.4, 0.0), &dark));
-            body.spawn(part(Vec3::new(0.56, 0.62, 0.32), Vec3::new(0.0, 1.11, 0.0), &suit));
-            body.spawn(part(Vec3::new(0.16, 0.6, 0.2), Vec3::new(-0.37, 1.1, 0.0), &suit));
-            body.spawn(part(Vec3::new(0.16, 0.6, 0.2), Vec3::new(0.37, 1.1, 0.0), &suit));
-            body.spawn(part(Vec3::new(0.4, 0.38, 0.4), Vec3::new(0.0, 1.61, 0.0), &suit));
-            // The visor marks the front (-Z).
-            body.spawn(part(Vec3::new(0.3, 0.16, 0.06), Vec3::new(0.0, 1.64, -0.2), &visor));
-            body.spawn(part(Vec3::new(0.34, 0.42, 0.14), Vec3::new(0.0, 1.15, 0.23), &dark));
-        });
+    let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
+    crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;
 }
 
@@ -109,7 +92,7 @@ fn collides(world: &VoxelWorld, feet: Vec3) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn move_player(
+pub(crate) fn move_player(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,

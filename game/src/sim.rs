@@ -62,6 +62,8 @@ pub struct Sim {
     strobe: Vec<Vec3>,
     /// Seconds until the camera stops watching the test.
     watch_left: f32,
+    /// Where the moving object of the running test or experiment is.
+    action: Option<Vec3>,
 }
 
 impl Sim {
@@ -75,6 +77,11 @@ impl Sim {
             Some(Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. }) => Some(*puzzle),
             Some(Running::Strobe { .. } | Running::Pair { .. }) | None => None,
         }
+    }
+
+    /// Where the object a test or an experiment moves is now, while one runs.
+    pub fn action_point(&self) -> Option<Vec3> {
+        self.running.as_ref().and(self.action)
     }
 
     /// The puzzle whose demonstration is running, if one is.
@@ -470,6 +477,7 @@ fn advance(
             orbit.release_view();
         }
     }
+    sim.action = None;
     let Some(mut running) = sim.running.take() else { return };
 
     let mut finished: Option<(usize, Verdict)> = None;
@@ -492,6 +500,7 @@ fn advance(
                     continue;
                 }
                 transform.translation = rest_pose(Prop::TowerMass, &sites) - Vec3::Y * fallen(g, *t, height);
+                sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
                     hand_over(&mut commands, &mut meshes, MASS_SIZE, transform.translation, Vec3::NEG_Y * g * fall_time, material.0.clone(), AfterSettling::Restore(Prop::TowerMass));
@@ -517,6 +526,8 @@ fn advance(
                 let (x, y) = shot.projectile.pos(at);
                 let centre = site.at(x, y, ground) + offsets[k] + Vec3::Y * *size / 2.0;
                 transform.translation = centre;
+                // Both bodies fly side by side: look between them.
+                sim.action = Some(sim.action.map_or(centre, |other| (other + centre) / 2.0));
                 if flying > 0.0
                     && let Some((trail, _)) = sim.trails.get_mut(k)
                 {
@@ -551,6 +562,7 @@ fn advance(
                 match *prop {
                     Prop::MastMass => {
                         transform.translation = rest_pose(Prop::MastMass, &sites) - Vec3::Y * fallen(g, *t, height);
+                        sim.action = Some(transform.translation);
                         if *t >= *actual && *visibility != Visibility::Hidden {
                             *visibility = Visibility::Hidden;
                             hand_over(&mut commands, &mut meshes, MASS_SIZE, transform.translation, Vec3::NEG_Y * g * *actual, material.0.clone(), AfterSettling::Restore(Prop::MastMass));
@@ -582,6 +594,7 @@ fn advance(
             } else if let Some((trail, _)) = sim.trails.first_mut() {
                 trail.push(centre - half);
             }
+            sim.action = Some(centre);
             let (vx, vy) = projectile.vel(flight_t);
             let velocity = site.direction * vx as f32 + Vec3::Y * vy as f32;
             for (candidate, mut transform, mut visibility, material) in &mut props {
@@ -613,6 +626,7 @@ fn advance(
             let eased = progress * progress * (3.0 - 2.0 * progress);
             let start = rest_pose(Prop::Cart, &sites);
             let centre = start + Vec3::X * *distance * eased;
+            sim.action = Some(centre);
             if let Some((trail, _)) = sim.trails.first_mut() {
                 trail.push(centre - Vec3::Y * (CART_SIZE.y / 2.0 - 0.05));
             }

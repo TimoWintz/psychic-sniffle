@@ -3,11 +3,14 @@
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
 //!   screenshots.
 //! - `walk` drives the avatar with key presses: up the steps, off the rim, out of the canyon, a jump.
+//! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
+//!   test, and its reactions to a miss and a pass.
 //!
 //! The scripts go through the same requests as the interface (blueprint text, commit, ruler picks,
 //! key state), so they exercise the real paths rather than setting results directly. A script that
 //! does not see what it expects panics, which fails the run.
 
+use crate::avatar::{Activity, AvatarState};
 use crate::companion::{Companion, station_name};
 use crate::island::Sites;
 use crate::player::{OrbitCamera, Player};
@@ -58,6 +61,8 @@ enum Step {
     UntilStandingAt { height: f32, within: f32, what: &'static str },
     /// Wait until the avatar is in the air above this height.
     UntilAirborneAbove { height: f32, within: f32 },
+    /// Wait until the avatar's animation shows this activity; fail if it has not happened in time.
+    ExpectActivity { activity: Activity, within: f32 },
     Quit,
 }
 
@@ -78,7 +83,8 @@ impl Plugin for DevScriptPlugin {
         let steps = match name.as_str() {
             "tour" => tour(game, sites),
             "walk" => walk(game, sites),
-            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk)"),
+            "pose" => pose(game, sites),
+            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, pose)"),
         };
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");
@@ -274,6 +280,7 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: east, pitch: 0.5, distance: 16.0 },
         Wait(0.5),
         Key(KeyCode::KeyW, true),
+        expect_activity(Activity::Walk),
         UntilStandingAt { height: ledge.y, within: 12.0, what: "climb the steps to the top of the outcrop" },
         Shot("walk_01_on_the_ledge"),
         // Keep walking: off the rim and down to the canyon floor.
@@ -290,11 +297,75 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         // A jump leaves the ground and comes back to it.
         Key(KeyCode::Space, true),
         UntilAirborneAbove { height: ground + 0.5, within: 2.0 },
+        expect_activity(Activity::Air),
         Key(KeyCode::Space, false),
         UntilStandingAt { height: ground, within: 4.0, what: "land after the jump" },
+        expect_activity(Activity::Idle),
         Shot("walk_03_out_again"),
         Quit,
     ]
+}
+
+fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
+    use Step::*;
+    let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };
+    let at_console = Look { yaw: 0.9, pitch: 0.2, distance: 4.5 };
+    vec![
+        GoTo(sites.spawn),
+        close,
+        Wait(1.5),
+        expect_activity(Activity::Idle),
+        Shot("pose_01_idle"),
+        // Sideways to the camera, so the legs are seen in profile.
+        Key(KeyCode::KeyD, true),
+        expect_activity(Activity::Walk),
+        Wait(0.45),
+        Shot("pose_02_walk"),
+        Key(KeyCode::ShiftLeft, true),
+        expect_activity(Activity::Run),
+        Wait(0.3),
+        Shot("pose_03_run"),
+        Key(KeyCode::ShiftLeft, false),
+        Key(KeyCode::KeyD, false),
+        Wait(0.6),
+        Key(KeyCode::Space, true),
+        expect_activity(Activity::Air),
+        Key(KeyCode::Space, false),
+        Wait(0.1),
+        Shot("pose_04_jump"),
+        expect_activity(Activity::Idle),
+        // At the rail's console: working the panel, watching the cart, a miss and then a pass.
+        GoToStation(0),
+        at_console,
+        Station(Some(0)),
+        expect_activity(Activity::Typing),
+        Wait(1.2),
+        Shot("pose_05_typing"),
+        Draft(0, vec!["3 m".into()]),
+        Commit(0),
+        expect_activity(Activity::Watching),
+        Watch(None),
+        at_console,
+        Wait(0.8),
+        Shot("pose_06_watching"),
+        expect_activity(Activity::Slump),
+        Wait(0.8),
+        Shot("pose_07_miss"),
+        WaitIdle,
+        expect_activity(Activity::Typing),
+        Draft(0, vec![format!("{} m", game.layout.rail_target)]),
+        Commit(0),
+        expect_activity(Activity::Cheer),
+        Watch(None),
+        at_console,
+        Wait(0.2),
+        Shot("pose_08_pass"),
+        Quit,
+    ]
+}
+
+fn expect_activity(activity: Activity) -> Step {
+    Step::ExpectActivity { activity, within: 10.0 }
 }
 
 fn expect_gaze(place: impl Into<String>) -> Step {
@@ -321,6 +392,7 @@ fn run(
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
+    avatar: Single<&AvatarState>,
     mut exit: MessageWriter<AppExit>,
 ) {
     if script.wait > 0.0 {
@@ -427,6 +499,13 @@ fn run(
                 let left = within - time.delta_secs().min(1.0 / 20.0);
                 assert!(left > 0.0, "the avatar did not leave the ground");
                 script.steps.push_front(Step::UntilAirborneAbove { height, within: left });
+            }
+        }
+        Step::ExpectActivity { activity, within } => {
+            if avatar.activity != activity {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the avatar did not show {activity:?}: it shows {:?}", avatar.activity);
+                script.steps.push_front(Step::ExpectActivity { activity, within: left });
             }
         }
         Step::Quit => {

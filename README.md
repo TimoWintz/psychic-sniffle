@@ -53,8 +53,13 @@ GAME_SCRIPT=tour GAME_SEED=7 GAME_SAVE=/tmp/fp-tour.ron cargo run -p game
 GAME_SCRIPT=walk GAME_SEED=7 GAME_SAVE=/tmp/fp-walk.ron cargo run -p game
 ```
 
+```bash
+GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
+```
+
 `tour` plays the chapter with the expressions a player would type and writes screenshots to `shots/`;
-`walk` drives the avatar by key presses over steps, a drop and a jump.
+`walk` drives the avatar by key presses over steps, a drop and a jump; `pose` films the avatar's
+animations up close (standing, walking, running, jumping, at a console, watching a test, a miss and a pass).
 
 ## Layout
 

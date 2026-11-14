@@ -31,6 +31,7 @@ enum Running {
     TowerDrop { t: f32 },
     MastDrop { puzzle: usize, t: f32, predicted: f32, actual: f32, verdict: Verdict },
     Flight { puzzle: usize, t: f32, projectile: Projectile, flight: Flight, site: LaunchSite, verdict: Verdict },
+    Slide { puzzle: usize, t: f32, distance: f32, duration: f32, verdict: Verdict },
 }
 
 /// A judged attempt, kept back until the world has shown what happened.
@@ -65,6 +66,8 @@ enum Prop {
     Ghost,
     Crate,
     Beam,
+    /// The tutorial's rail cart.
+    Cart,
 }
 
 /// A body handed to the physics engine after a test; removed when its time is up.
@@ -82,12 +85,14 @@ struct PropAssets {
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
 const CRATE_SIZE: Vec3 = Vec3::new(0.9, 0.9, 0.9);
 const BEAM_SIZE: Vec3 = Vec3::new(2.4, 0.5, 0.5);
+const CART_SIZE: Vec3 = Vec3::new(0.9, 0.7, 0.9);
 
 fn prop_size(prop: Prop) -> Vec3 {
     match prop {
         Prop::TowerMass | Prop::MastMass | Prop::Ghost => MASS_SIZE,
         Prop::Crate => CRATE_SIZE,
         Prop::Beam => BEAM_SIZE,
+        Prop::Cart => CART_SIZE,
     }
 }
 
@@ -109,6 +114,7 @@ fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
         Prop::MastMass | Prop::Ghost => sites.mast_release + half,
         Prop::Crate => sites.canyon_launch.origin - sites.canyon_launch.direction * 2.5 + half,
         Prop::Beam => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
+        Prop::Cart => sites.rail_start + half,
     }
 }
 
@@ -138,6 +144,7 @@ fn setup(
         (Prop::Ghost, ghost, false),
         (Prop::Crate, timber, true),
         (Prop::Beam, alloy.clone(), true),
+        (Prop::Cart, steel.clone(), true),
     ] {
         commands.spawn((
             prop,
@@ -258,6 +265,12 @@ fn handle_requests(
                     let end = site.at(flight.x, flight.y, ground);
                     orbit.frame_side_view(site.at(0.0, projectile.y0, ground).min(end), highest.max(end), site.direction);
                     Running::Flight { puzzle, t: 0.0, projectile, flight, site, verdict: Verdict { values, outcome } }
+                }
+                Playback::Slide { distance } => {
+                    let reach = distance.max(game.layout.rail_target as f64) as f32;
+                    orbit.frame_side_view(sites.rail_start, sites.rail_start + Vec3::new(reach, 2.0, 0.0), Vec3::X);
+                    let duration = 1.0 + distance as f32 / 6.0;
+                    Running::Slide { puzzle, t: 0.0, distance: distance as f32, duration, verdict: Verdict { values, outcome } }
                 }
             });
         }
@@ -397,6 +410,24 @@ fn advance(
                 finished = Some((*puzzle, verdict.clone()));
             }
         }
+        Running::Slide { puzzle, t, distance, duration, verdict } => {
+            // The motor eases the cart up to speed and brakes it to a stop at the set distance. The
+            // cart stays where it stopped, so a miss can be looked at, until the next run.
+            *t += dt;
+            let progress = (*t / *duration).min(1.0);
+            let eased = progress * progress * (3.0 - 2.0 * progress);
+            let start = rest_pose(Prop::Cart, &sites);
+            let centre = start + Vec3::X * *distance * eased;
+            sim.trail.push(centre - Vec3::Y * (CART_SIZE.y / 2.0 - 0.05));
+            for (prop, mut transform, _, _) in &mut props {
+                if *prop == Prop::Cart {
+                    transform.translation = centre;
+                }
+            }
+            if progress >= 1.0 {
+                finished = Some((*puzzle, verdict.clone()));
+            }
+        }
     }
 
     let Some((puzzle, Verdict { values, outcome })) = finished else {
@@ -444,7 +475,6 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
 
 /// A station with no charges left recharges after a wait.
 fn recharge(time: Res<Time>, mut game: ResMut<Game>, mut ui: ResMut<Ui>, sim: Res<Sim>) {
-    #[expect(clippy::needless_range_loop, reason = "the index names the puzzle in three places")]
     for puzzle in 0..game.chapter.puzzles.len() {
         if game.charges_left(puzzle) > 0 || sim.busy() {
             continue;

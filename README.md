@@ -4,7 +4,7 @@ A physics game. You are stranded on a block planet and build a ship, part by par
 by doing the physics it depends on. Measure the world, work out the values, commit, and see whether the
 world agrees. The ship's computer, Lumen, can explain anything and touch nothing.
 
-This repository holds the design and a playable slice: tier 1, chapter 1 (kinematics, three puzzles).
+This repository holds the design and a playable slice: tier 1, chapter 1 (kinematics: a tutorial and three puzzles).
 
 ![A test in progress](docs/screenshots/test.png)
 

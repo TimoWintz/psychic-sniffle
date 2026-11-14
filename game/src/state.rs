@@ -7,6 +7,9 @@ use physics_core::progress::Save;
 use physics_core::puzzle::{Ch1Layout, Instance, Outcome};
 use std::path::PathBuf;
 
+/// Number of puzzles (and stations) in the chapter.
+pub const PUZZLES: usize = 4;
+
 #[derive(Resource)]
 pub struct Game {
     pub chapter: Chapter,
@@ -40,7 +43,9 @@ impl Game {
             });
             Save::new(seed)
         });
-        Game { chapter: chapter_1_1(), layout: Ch1Layout::generate(save.seed), save, save_path, save_problem }
+        let chapter = chapter_1_1();
+        assert_eq!(chapter.puzzles.len(), PUZZLES, "the chapter's puzzles and the island's stations must match");
+        Game { chapter, layout: Ch1Layout::generate(save.seed), save, save_path, save_problem }
     }
 
     pub fn def(&self, puzzle: usize) -> &PuzzleDef {
@@ -90,13 +95,13 @@ pub struct Ui {
     /// Station the avatar is standing at.
     pub near_station: Option<usize>,
     /// Text typed into the blueprint, per puzzle and input.
-    pub drafts: [Vec<String>; 3],
+    pub drafts: [Vec<String>; PUZZLES],
     /// Why the last commit was refused (costs no charge).
     pub refusal: Option<String>,
     /// Result of the last finished test, per puzzle.
-    pub results: [Option<Outcome>; 3],
+    pub results: [Option<Outcome>; PUZZLES],
     /// Time left until a station has recharged.
-    pub recharging: [Option<f32>; 3],
+    pub recharging: [Option<f32>; PUZZLES],
     pub show_notebook: bool,
     pub show_handbook: bool,
     pub show_tutor: bool,

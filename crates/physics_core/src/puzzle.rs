@@ -45,6 +45,10 @@ pub struct Ch1Layout {
     /// Gravitational acceleration of the planet, m/s^2. Never close to 9.81.
     pub g: f64,
 
+    /// Puzzle 0 (the tutorial): distance along the supply rail from the cart's starting point to the
+    /// centre of the marker.
+    pub rail_target: u32,
+
     /// Puzzle 1: height of the drop tower's release point above the ground.
     pub tower_h: u32,
     /// Puzzle 1: height of the survey mast's release point, used for the test drop.
@@ -75,6 +79,10 @@ impl Ch1Layout {
     pub const G_RANGE: (f64, f64) = (6.5, 13.5);
     /// Values this close to Earth's are skipped, so the familiar number never works.
     pub const G_EXCLUDED: (f64, f64) = (9.3, 10.3);
+    /// Length of the supply rail: the furthest the cart can be sent.
+    pub const RAIL_LENGTH: u32 = 24;
+    /// Half the width of the rail marker along the rail (the marker is one block).
+    pub const RAIL_MARKER_HALF: f64 = 0.5;
 
     pub fn generate(seed: u64) -> Self {
         let mut rng = Rng::new(seed ^ 0x1_0001);
@@ -107,8 +115,12 @@ impl Ch1Layout {
         let v_max = (g * pad_centre / (2.0 * max_angle).sin()).sqrt();
         let v_max = (v_max * 10.0).round() / 10.0;
 
+        // Drawn last, so the numbers above stay what they were for saves made before the tutorial.
+        let rail_target = rng.int(9, 17);
+
         Ch1Layout {
             g,
+            rail_target,
             tower_h,
             mast_h,
             ledge_h,
@@ -143,6 +155,8 @@ impl Ch1Layout {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum PuzzleKind {
+    /// The tutorial: send a cart along a rail. Measure, enter, commit; no calculation.
+    Rail,
     Gravity,
     Canyon,
     Ridge,
@@ -193,6 +207,8 @@ pub enum Playback {
     /// A mass released from rest at `height`; a ghost follows the player's prediction.
     Drop { height: f64, g: f64, predicted_time: f64, actual_time: f64 },
     Flight { projectile: Projectile, flight: Flight },
+    /// The rail cart drives `distance` metres along its rail and stops.
+    Slide { distance: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -254,6 +270,13 @@ impl Instance {
             example: "14.2 m/s",
         };
         match self.kind {
+            PuzzleKind::Rail => vec![InputSpec {
+                key: "distance",
+                label: "Run distance",
+                dim: Dim::LENGTH,
+                unit: "m",
+                example: "d1   or   12 m",
+            }],
             PuzzleKind::Gravity => vec![InputSpec {
                 key: "g",
                 label: "Gravitational acceleration",
@@ -280,6 +303,10 @@ impl Instance {
         let l = &self.layout;
         let given = |label: &str, quantity| Given { label: label.to_string(), quantity };
         match self.kind {
+            PuzzleKind::Rail => vec![
+                given("distance from the cart to the marker centre", Quantity::metres(l.rail_target as f64)),
+                given("length of the rail", Quantity::metres(Ch1Layout::RAIL_LENGTH as f64)),
+            ],
             PuzzleKind::Gravity => vec![
                 given("height of the drop tower", Quantity::metres(l.tower_h as f64)),
                 given("fall time from the drop tower", Quantity::seconds(l.tower_fall_time())),
@@ -304,7 +331,7 @@ impl Instance {
     pub fn profile(&self) -> Option<Profile> {
         let l = &self.layout;
         match self.kind {
-            PuzzleKind::Gravity => None,
+            PuzzleKind::Rail | PuzzleKind::Gravity => None,
             PuzzleKind::Canyon => {
                 let length = (l.platform_centre + l.platform_half) as usize + 40;
                 let mut p = Profile::flat(0.0, length, 0.0);
@@ -346,6 +373,17 @@ impl Instance {
             }
             let out_of_range = |reason: String| Err(InputError::OutOfRange { label: label.clone(), reason });
             match spec.key {
+                "distance" => {
+                    if q.value <= 0.0 {
+                        return out_of_range("the cart only runs forward; enter a distance greater than zero.".into());
+                    }
+                    if q.value > Ch1Layout::RAIL_LENGTH as f64 {
+                        return out_of_range(format!(
+                            "the rail is {} m long and the cart will not run past its end.",
+                            Ch1Layout::RAIL_LENGTH
+                        ));
+                    }
+                }
                 "g" if q.value <= 0.0 => {
                     return out_of_range("gravity pulls downward; enter its size as a positive value.".into());
                 }
@@ -389,6 +427,39 @@ impl Instance {
         let l = &self.layout;
         let value = |key: &str| inputs[key].value;
         Ok(match self.kind {
+            PuzzleKind::Rail => {
+                let target = l.rail_target as f64;
+                let run = value("distance");
+                let miss = run - target;
+                let pass = miss.abs() <= Ch1Layout::RAIL_MARKER_HALF;
+                let (headline, detail) = if pass {
+                    (
+                        "On the marker".to_string(),
+                        format!("The cart ran {} m and stopped on the marker.", sig(run, 3)),
+                    )
+                } else {
+                    let (headline, side) = if miss < 0.0 { ("Stopped short", "short of") } else { ("Overshot", "beyond") };
+                    (
+                        headline.to_string(),
+                        format!(
+                            "The cart ran {} m and stopped {} m {side} the marker centre.",
+                            sig(run, 3),
+                            sig(miss.abs(), 3)
+                        ),
+                    )
+                };
+                Outcome {
+                    pass,
+                    headline,
+                    detail,
+                    comparisons: vec![Comparison {
+                        label: "Distance run".into(),
+                        expected: Quantity::metres(target),
+                        observed: Quantity::metres(run),
+                    }],
+                    playback: Playback::Slide { distance: run },
+                }
+            }
             PuzzleKind::Gravity => {
                 let g_player = value("g");
                 let height = l.mast_h as f64;
@@ -553,6 +624,24 @@ impl Instance {
             unit: unit.into(),
         };
         match self.kind {
+            PuzzleKind::Rail => {
+                let d = l.rail_target;
+                Solution {
+                    steps: vec![
+                        "Nothing to calculate: the cart's motor drives it exactly the distance entered.".into(),
+                        format!(
+                            "Measure with the ruler from the cart's starting point to the centre of the marker: {d} m \
+                             horizontally. Note it, then enter it with its unit (or by its notebook name)."
+                        ),
+                    ],
+                    answers: vec![answer("distance", "Run distance", Quantity::metres(d as f64), "m")],
+                    note: format!(
+                        "The marker is one block, so anything within {} m of {d} m passes. The point of this puzzle is \
+                         the routine: ruler, notebook, units, commit, read the result.",
+                        Ch1Layout::RAIL_MARKER_HALF
+                    ),
+                }
+            }
             PuzzleKind::Gravity => {
                 let (h, t) = (l.tower_h as f64, l.tower_fall_time());
                 Solution {
@@ -649,6 +738,7 @@ mod tests {
     use super::*;
 
     const SEEDS: u64 = 1000;
+    const ALL_KINDS: [PuzzleKind; 4] = [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge];
 
     fn inputs(pairs: &[(&str, Quantity)]) -> Inputs {
         pairs.iter().map(|(k, q)| (k.to_string(), *q)).collect()
@@ -669,6 +759,8 @@ mod tests {
             assert!(min.to_degrees() > 47.0, "seed {seed}: 45 degrees must not work ({})", min.to_degrees());
             assert!((max - min).to_degrees() >= 8.0, "seed {seed}: window {}", (max - min).to_degrees());
             assert!(l.v_max < LAUNCHER_HARD_LIMIT);
+            assert!((9..=17).contains(&l.rail_target), "rail target {}", l.rail_target);
+            assert!(l.rail_target + 4 <= Ch1Layout::RAIL_LENGTH);
         }
     }
 
@@ -676,7 +768,7 @@ mod tests {
     fn every_puzzle_is_solvable_for_every_seed() {
         for seed in 0..SEEDS {
             let layout = Ch1Layout::generate(seed);
-            for kind in [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+            for kind in ALL_KINDS {
                 let puzzle = Instance::new(kind, &layout);
                 let outcome = puzzle.evaluate(&puzzle.solution().inputs()).unwrap();
                 assert!(outcome.pass, "seed {seed} {kind:?}: {} — {}", outcome.headline, outcome.detail);
@@ -688,9 +780,9 @@ mod tests {
     fn ten_percent_errors_fail() {
         for seed in 0..SEEDS {
             let layout = Ch1Layout::generate(seed);
-            for kind in [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+            for kind in ALL_KINDS {
                 let puzzle = Instance::new(kind, &layout);
-                let key = if kind == PuzzleKind::Gravity { "g" } else { "speed" };
+                let key = puzzle.inputs().last().unwrap().key;
                 for factor in [0.9, 1.1] {
                     let mut wrong = puzzle.solution().inputs();
                     wrong.get_mut(key).unwrap().value *= factor;
@@ -781,6 +873,42 @@ mod tests {
         for outcome in [slow, fast] {
             assert!(!outcome.detail.contains(&sig(right, 3)), "{}", outcome.detail);
         }
+    }
+
+    #[test]
+    fn the_tutorial_needs_no_calculation() {
+        // The ruler's reading, entered as it is, passes: by number with its unit or by notebook name.
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let rail = Instance::new(PuzzleKind::Rail, &layout);
+            let reading = Quantity::metres(layout.rail_target as f64);
+            let outcome = rail.evaluate(&inputs(&[("distance", reading)])).unwrap();
+            assert!(outcome.pass, "seed {seed}: {}", outcome.detail);
+            assert_eq!(outcome.playback, Playback::Slide { distance: layout.rail_target as f64 });
+        }
+    }
+
+    #[test]
+    fn the_tutorial_explains_misses_and_refusals() {
+        let layout = Ch1Layout::generate(4);
+        let rail = Instance::new(PuzzleKind::Rail, &layout);
+        let d = layout.rail_target as f64;
+
+        let short = rail.evaluate(&inputs(&[("distance", Quantity::metres(d - 3.0))])).unwrap();
+        assert_eq!(short.headline, "Stopped short");
+        assert!(short.detail.ends_with("stopped 3.00 m short of the marker centre."), "{}", short.detail);
+        let long = rail.evaluate(&inputs(&[("distance", Quantity::metres(d + 2.0))])).unwrap();
+        assert_eq!(long.headline, "Overshot");
+        assert!(long.detail.contains("beyond the marker"), "{}", long.detail);
+        // At the edge of the marker block still counts.
+        assert!(rail.evaluate(&inputs(&[("distance", Quantity::metres(d + 0.5))])).unwrap().pass);
+
+        // A bare number is refused, for free, with the reason.
+        let err = rail.evaluate(&inputs(&[("distance", Quantity::number(d))])).unwrap_err();
+        assert_eq!(err.to_string(), "Run distance must be a length (m), but what you entered is a pure number.");
+        let err = rail.evaluate(&inputs(&[("distance", Quantity::metres(30.0))])).unwrap_err();
+        assert!(err.to_string().contains("the rail is 24 m long"), "{err}");
+        assert!(rail.evaluate(&inputs(&[("distance", Quantity::metres(-4.0))])).is_err());
     }
 
     #[test]

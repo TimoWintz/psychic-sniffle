@@ -20,6 +20,20 @@ the edge of the screen. It says short lines when something happens (a test lands
 entry, a new station opens) and its eye shows a mood: pleased, concerned, thinking. None of this needs
 a language model; with one connected, Lumen can also turn its eye to a place it is talking about.
 
+### The look of the world
+
+Alien, but familiar. The planet has turf, rock, sand and trees, only not quite ours: the turf is teal
+with drifts of olive and patches of violet lichen, the rock is slate-violet laid down in rust and pale
+strata, the trees are parasols and spires of teal and violet fronds, and quartz grows in clusters that
+glow. A ringed gas giant and a small moon hang in a turquoise sky; other islands sit in the haze on
+the horizon, and one rock floats.
+
+Puzzle sites are built by the castaway from the wreck, so they share one look: hull plates laid on the
+turf around each station, salvage crates, quartz lamp posts, worn paths from one to the next, and
+targets painted survey orange (they glow) with staked corners. Orange means "a number lives here".
+The landforms a puzzle needs (the outcrop, the canyon, the ridge) are geology, not boxes: exact where
+the puzzle measures them, natural everywhere else.
+
 ## Pillars
 
 1. **The world is the textbook.** One voxel is one cubic metre of a real material. Distances, masses,

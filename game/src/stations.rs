@@ -5,6 +5,7 @@ use crate::player::Player;
 use crate::state::{Game, Ui};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
+use physics_core::materials::Material;
 
 /// How close the avatar must be to use a station.
 const REACH: f32 = 4.5;
@@ -29,6 +30,28 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         commands.spawn((Beacon(i), Mesh3d(screen.clone()), MeshMaterial3d(material.clone()), Transform::from_translation(top + Vec3::Y * 0.3)));
         // A thin column of light so stations can be found from across the island.
         commands.spawn((Beacon(i), Mesh3d(beam.clone()), MeshMaterial3d(material), Transform::from_translation(top + Vec3::Y * 8.0)));
+    }
+
+    // Survey stakes at the corners of each target: a dark post with an orange pennant.
+    let post = meshes.add(Cuboid::new(0.09, 1.4, 0.09));
+    let pennant = meshes.add(Cuboid::new(0.03, 0.22, 0.34));
+    let post_material = materials.add(StandardMaterial { base_color: Color::srgb(0.20, 0.21, 0.25), perceptual_roughness: 0.6, ..default() });
+    let pennant_material = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), unlit: true, ..default() });
+    for foot in &sites.stakes {
+        commands.spawn((Mesh3d(post.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 0.7)));
+        commands.spawn((Mesh3d(pennant.clone()), MeshMaterial3d(pennant_material.clone()), Transform::from_translation(*foot + Vec3::new(0.0, 1.28, 0.2))));
+    }
+
+    // Lamp posts: a slim pole, a quartz lamp and a cap salvaged from the hull.
+    let pole = meshes.add(Cuboid::new(0.12, 2.3, 0.12));
+    let lamp = meshes.add(Cuboid::new(0.3, 0.38, 0.3));
+    let cap = meshes.add(Cuboid::new(0.46, 0.07, 0.46));
+    let quartz = Material::Quartz.properties().colour;
+    let lamp_material = materials.add(StandardMaterial { base_color: Color::srgb(quartz[0], quartz[1], quartz[2]), unlit: true, ..default() });
+    for foot in &sites.lanterns {
+        commands.spawn((Mesh3d(pole.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 1.15)));
+        commands.spawn((Mesh3d(lamp.clone()), MeshMaterial3d(lamp_material.clone()), Transform::from_translation(*foot + Vec3::Y * 2.45)));
+        commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 2.68)));
     }
 }
 

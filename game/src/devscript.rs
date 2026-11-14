@@ -91,7 +91,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: -0.8, pitch: 0.15, distance: 3.0 },
         Wait(1.2),
         Shot("01b_lumen_points_off_screen"),
-        Watch(Some(Vec3::new(80.0, 20.0, 66.0))),
+        Watch(Some(Vec3::new(80.0, 20.0, 66.0) + crate::island::LAYOUT_ORIGIN.as_vec3())),
         Look { yaw: -0.5, pitch: 0.75, distance: 80.0 },
         Wait(1.5),
         Shot("02_island"),

@@ -60,7 +60,7 @@ fn spawn(
     .into_iter()
     .enumerate()
     {
-        let distant = distant_island(i as i32, false);
+        let distant = distant_island(i as i32);
         let half = distant.size.as_vec3() * scale / 2.0;
         let mesh = meshes.add(distant.mesh(0, distant.size.x, 0, distant.size.z, false));
         commands.spawn((
@@ -71,14 +71,6 @@ fn spawn(
             NotShadowCaster,
         ));
     }
-    // One rock that floats: the familiar world, not quite.
-    let floating = distant_island(9, true);
-    commands.spawn((
-        Mesh3d(meshes.add(floating.mesh(0, floating.size.x, 0, floating.size.z, false))),
-        MeshMaterial3d(blocks.clone()),
-        Transform::from_xyz(330.0, 70.0, 220.0).with_scale(Vec3::splat(2.5)),
-        NotShadowCaster,
-    ));
 
     let size = world.size.as_vec3();
     commands.spawn((
@@ -206,12 +198,10 @@ fn banded_sphere(radius: f32) -> Mesh {
     mesh
 }
 
-/// A small island for the horizon: a peak or two of rock under turf and a few groves. Floating, it is
-/// turned into a crag with its roots hanging below.
-fn distant_island(seed: i32, floating: bool) -> VoxelWorld {
+/// A small island for the horizon: a peak or two of rock under turf and a few groves.
+fn distant_island(seed: i32) -> VoxelWorld {
     let size = IVec3::new(48, 40, 48);
     let mut world = VoxelWorld::new(size);
-    let base = if floating { 20 } else { 0 };
     for z in 0..size.z {
         for x in 0..size.x {
             let (xf, zf) = (x as f32, z as f32);
@@ -220,13 +210,12 @@ fn distant_island(seed: i32, floating: bool) -> VoxelWorld {
                 continue;
             }
             let rise = (1.0 - d).powf(1.3);
-            let top = base + 9 + (rise * (6.0 + 14.0 * fbm(xf / 7.0, zf / 7.0, 950 + seed, 2))) as i32;
-            let bottom = if floating { base - (rise * 16.0 * fbm(xf / 4.0, zf / 4.0, 970 + seed, 2)) as i32 } else { 0 };
-            for y in bottom.max(0)..top {
-                let material = if y == top - 1 { if top > base + 20 { Material::Rock } else { Material::Grass } } else { Material::Rock };
+            let top = 9 + (rise * (6.0 + 14.0 * fbm(xf / 7.0, zf / 7.0, 950 + seed, 2))) as i32;
+            for y in 0..top {
+                let material = if y == top - 1 { if top > 20 { Material::Rock } else { Material::Grass } } else { Material::Rock };
                 world.set(IVec3::new(x, y, z), material);
             }
-            if y_has_tree(x, z, seed) && top < base + 18 {
+            if y_has_tree(x, z, seed) && top < 18 {
                 world.fill(IVec3::new(x, top, z), IVec3::new(x, top + 2, z), Material::Timber);
                 world.fill(IVec3::new(x - 1, top + 3, z - 1), IVec3::new(x + 1, top + 3, z + 1), Material::Foliage);
             }

@@ -4,7 +4,7 @@
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
 use crate::sim::{Request, Sim};
-use crate::state::{Game, Ui};
+use crate::state::{Game, Mode, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -28,8 +28,8 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Ui>()
-            .add_systems(Update, hotkeys)
-            .add_systems(EguiPrimaryContextPass, draw);
+            .add_systems(Update, hotkeys.run_if(in_state(Mode::Playing)))
+            .add_systems(EguiPrimaryContextPass, (style, draw.after(style).run_if(in_state(Mode::Playing))));
     }
 }
 
@@ -51,6 +51,15 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: 
     }
 }
 
+/// The interface's scale, set once for the menu and the game alike.
+pub fn style(mut contexts: EguiContexts, mut done: Local<bool>) -> Result {
+    if !*done {
+        contexts.ctx_mut()?.set_zoom_factor(1.15);
+        *done = true;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     mut contexts: EguiContexts,
@@ -60,13 +69,8 @@ pub fn draw(
     mut ruler: ResMut<Ruler>,
     mut lumen: ResMut<Lumen>,
     landmarks: Res<Landmarks>,
-    mut styled: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
-    if !*styled {
-        *styled = true;
-        ctx.set_zoom_factor(1.15);
-    }
     // Reborrow once so the panels can borrow fields separately.
     let (game, ui_state, sim, ruler, lumen) = (&mut *game, &mut *ui_state, &mut *sim, &mut *ruler, &mut *lumen);
 

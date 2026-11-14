@@ -8,7 +8,7 @@
 use crate::island::Sites;
 use crate::ruler::Ruler;
 use crate::sim::Sim;
-use crate::state::{Game, PUZZLES, Ui};
+use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -215,8 +215,9 @@ impl Plugin for CompanionPlugin {
         let landmarks = Landmarks::new(app.world().resource::<Sites>(), app.world().resource::<Game>());
         app.insert_resource(landmarks)
             .init_resource::<Companion>()
-            .add_systems(Update, direct)
-            .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw));
+            // The greeting comes with the first frame of the game, after Start.
+            .add_systems(Update, direct.run_if(in_state(Mode::Playing)))
+            .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
     }
 }
 

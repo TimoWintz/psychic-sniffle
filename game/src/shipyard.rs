@@ -1,7 +1,7 @@
 //! The ship, which grows on the shipyard floor as chapters are completed.
 
 use crate::island::Sites;
-use crate::state::Game;
+use crate::state::{Game, Mode};
 use bevy::prelude::*;
 use physics_core::materials::Material;
 
@@ -15,7 +15,8 @@ pub struct ShipyardPlugin;
 
 impl Plugin for ShipyardPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (install_frame, assemble));
+        // A finished frame rises as the game begins, not during the crash.
+        app.add_systems(Update, (install_frame.run_if(in_state(Mode::Playing)), assemble));
     }
 }
 

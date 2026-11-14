@@ -16,6 +16,11 @@ Needs Rust 1.97.1 or newer. The first build takes a while (the engine is large).
 cargo run -p game
 ```
 
+The game opens on the title menu, with the intro playing behind it: how the castaway's ship broke up
+and came down, seen from orbit, over the mainland and on the island. Start (or Enter) begins.
+
+![The title menu, with the intro in orbit behind it](docs/screenshots/intro.png)
+
 WASD move · Shift run · Space jump · right-drag or arrow keys look · scroll zoom ·
 E use a station · R ruler · N notebook and calculator · H handbook · T (or click the eye) Lumen
 
@@ -37,7 +42,7 @@ variable it names. No model vendor is built in; see [docs/tutor.md](docs/tutor.m
 cargo test --workspace
 ```
 
-Two scripted runs drive the real game and fail loudly if something is off:
+Three scripted runs drive the real game and fail loudly if something is off:
 
 ```bash
 GAME_SCRIPT=tour GAME_SEED=7 GAME_SAVE=/tmp/fp-tour.ron cargo run -p game
@@ -47,8 +52,13 @@ GAME_SCRIPT=tour GAME_SEED=7 GAME_SAVE=/tmp/fp-tour.ron cargo run -p game
 GAME_SCRIPT=walk GAME_SEED=7 GAME_SAVE=/tmp/fp-walk.ron cargo run -p game
 ```
 
+```bash
+GAME_SCRIPT=intro GAME_SEED=7 GAME_SAVE=/tmp/fp-intro.ron cargo run -p game
+```
+
 `tour` plays the chapter with the expressions a player would type and writes screenshots to `shots/`;
-`walk` drives the avatar by key presses over steps, a drop and a jump.
+`walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,
+presses Start and checks that the game takes over. `tour` and `walk` press Start first.
 
 ## Layout
 

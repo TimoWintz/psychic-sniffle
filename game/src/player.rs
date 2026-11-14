@@ -1,7 +1,7 @@
 //! The avatar and the camera that follows it.
 
 use crate::island::Sites;
-use crate::state::Game;
+use crate::state::{Game, Mode};
 use crate::voxel::VoxelWorld;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
@@ -69,6 +69,17 @@ impl OrbitCamera {
             (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
         }
     }
+
+    /// Where the camera stands to look at `focus` with this yaw, pitch and distance, when nothing is
+    /// in the way.
+    pub fn eye(&self, focus: Vec3) -> Vec3 {
+        focus + self.back() * self.distance
+    }
+
+    /// Direction from what the camera looks at back to the camera.
+    fn back(&self) -> Vec3 {
+        Quat::from_euler(EulerRot::YXZ, self.yaw, -self.pitch, 0.0) * Vec3::Z
+    }
 }
 
 pub struct PlayerPlugin;
@@ -77,7 +88,7 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<OrbitCamera>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (move_player, orbit_camera).chain());
+            .add_systems(Update, (move_player, orbit_camera).chain().run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -223,7 +234,7 @@ fn orbit_camera(
     let blend = (dt * 6.0).min(1.0);
     orbit.focus = orbit.focus.lerp(target, blend);
 
-    let back = Quat::from_euler(EulerRot::YXZ, orbit.yaw, -orbit.pitch, 0.0) * Vec3::Z;
+    let back = orbit.back();
     // Pull the camera in if terrain is between it and what it looks at.
     // A focus that is itself inside terrain (a fixed test view can be) is left alone.
     let reach = match world.raycast(orbit.focus, back, orbit.distance) {

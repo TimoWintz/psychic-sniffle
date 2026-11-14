@@ -3,17 +3,21 @@
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
 //!   screenshots.
 //! - `walk` drives the avatar with key presses: up the steps, off the rim, out of the canyon, a jump.
+//! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
+//!   takes over: the camera ends on the player's view and the avatar walks.
 //!
+//! `tour` and `walk` press Start first, as a player would.
 //! The scripts go through the same requests as the interface (blueprint text, commit, ruler picks,
 //! key state), so they exercise the real paths rather than setting results directly. A script that
 //! does not see what it expects panics, which fails the run.
 
 use crate::companion::{Companion, station_name};
+use crate::intro::Intro;
 use crate::island::Sites;
 use crate::player::{OrbitCamera, Player};
 use crate::ruler::{Ruler, pick_at};
 use crate::sim::{Request, Sim};
-use crate::state::{Game, Ui};
+use crate::state::{Game, Mode, Ui};
 use crate::voxel::VoxelWorld;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -51,6 +55,16 @@ enum Step {
     UntilStandingAt { height: f32, within: f32, what: &'static str },
     /// Wait until the avatar is in the air above this height.
     UntilAirborneAbove { height: f32, within: f32 },
+    /// Press Start on the title menu.
+    Start,
+    /// Wait until the game has taken over from the menu.
+    UntilPlaying { within: f32 },
+    /// Wait until the intro is this many seconds into its loop.
+    UntilIntro(f32),
+    /// Check that the camera stands where the player's view puts it.
+    ExpectPlayerView,
+    /// Wait until the avatar has moved a metre from where it stood when the step began.
+    UntilMoved { from: Option<Vec3>, within: f32 },
     Quit,
 }
 
@@ -71,7 +85,8 @@ impl Plugin for DevScriptPlugin {
         let steps = match name.as_str() {
             "tour" => tour(game, sites),
             "walk" => walk(game, sites),
-            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk)"),
+            "intro" => intro(),
+            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro)"),
         };
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");
@@ -85,6 +100,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let angle = ((min + max) / 2.0).to_degrees().round();
     let closed = Windows { notebook: false, handbook: false, tutor: false };
     vec![
+        Start,
+        UntilPlaying { within: 10.0 },
         Shot("01_start"),
         // Station 0 is behind a close camera: Lumen's beam ends in an arrow at the screen's edge.
         expect_gaze(station_name(game, 0)),
@@ -220,6 +237,8 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
     let east = -std::f32::consts::FRAC_PI_2;
     let south = std::f32::consts::PI;
     vec![
+        Start,
+        UntilPlaying { within: 10.0 },
         // Start on the grass west of the steps and walk east: up the steps onto the outcrop.
         GoTo(Vec3::new(ledge.x - 20.0 - game.layout.ledge_h as f32, ground, ledge.z)),
         Look { yaw: east, pitch: 0.5, distance: 16.0 },
@@ -244,6 +263,35 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         Key(KeyCode::Space, false),
         UntilStandingAt { height: ground, within: 4.0, what: "land after the jump" },
         Shot("walk_03_out_again"),
+        Quit,
+    ]
+}
+
+fn intro() -> Vec<Step> {
+    use Step::*;
+    vec![
+        UntilIntro(3.0),
+        Shot("intro_01_orbit"),
+        UntilIntro(7.0),
+        Shot("intro_02_breakup"),
+        UntilIntro(18.6),
+        Shot("intro_03_mainland"),
+        UntilIntro(24.5),
+        Shot("intro_04_strait"),
+        UntilIntro(29.15),
+        Shot("intro_05_impact"),
+        UntilIntro(33.0),
+        Shot("intro_06_rising"),
+        UntilIntro(41.0),
+        Shot("intro_07_castaway"),
+        Start,
+        UntilPlaying { within: 8.0 },
+        Wait(0.5),
+        ExpectPlayerView,
+        Shot("intro_08_playing"),
+        Key(KeyCode::KeyW, true),
+        UntilMoved { from: None, within: 3.0 },
+        Key(KeyCode::KeyW, false),
         Quit,
     ]
 }
@@ -273,6 +321,7 @@ fn run(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
+    (mut intro, mode): (Option<ResMut<Intro>>, Res<State<Mode>>),
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -366,6 +415,34 @@ fn run(
                 let left = within - time.delta_secs().min(1.0 / 20.0);
                 assert!(left > 0.0, "the avatar did not leave the ground");
                 script.steps.push_front(Step::UntilAirborneAbove { height, within: left });
+            }
+        }
+        Step::Start => intro.as_mut().expect("the title menu is up").request_start(),
+        Step::UntilPlaying { within } => {
+            if *mode.get() != Mode::Playing {
+                let left = within - time.delta_secs().min(0.25);
+                assert!(left > 0.0, "the game did not take over from the menu");
+                script.steps.push_front(Step::UntilPlaying { within: left });
+            }
+        }
+        Step::UntilIntro(at) => {
+            let clock = intro.as_ref().and_then(|intro| intro.clock()).expect("the intro is playing");
+            if clock < at {
+                script.steps.push_front(Step::UntilIntro(at));
+            }
+        }
+        Step::ExpectPlayerView => {
+            let wanted = orbit.eye(player.1.translation + Vec3::Y * 1.5);
+            let eye = camera.1.translation();
+            assert!(eye.distance(wanted) < 0.3, "the camera is at {eye}, the player's view at {wanted}");
+        }
+        Step::UntilMoved { from, within } => {
+            let here = player.1.translation;
+            let from = from.unwrap_or(here);
+            if here.distance(from) < 1.0 {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the avatar did not move from {from}");
+                script.steps.push_front(Step::UntilMoved { from: Some(from), within: left });
             }
         }
         Step::Quit => {

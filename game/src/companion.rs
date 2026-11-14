@@ -12,6 +12,7 @@ use crate::state::{Game, PUZZLES, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
+use std::collections::BTreeSet;
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
 use physics_core::puzzle::PuzzleKind;
 
@@ -57,6 +58,10 @@ struct Guide {
     study: &'static str,
     /// Where the test is judged.
     target: &'static str,
+    /// Where the station's experiment happens, to look at before it has been watched.
+    demo: Option<&'static str>,
+    /// Where to look while the experiment runs.
+    demo_watch: Option<&'static str>,
 }
 
 fn guide(kind: PuzzleKind) -> Guide {
@@ -65,21 +70,29 @@ fn guide(kind: PuzzleKind) -> Guide {
             measure: ["Rail cart: starting point", "Rail marker: centre"],
             study: "Rail marker: centre",
             target: "Rail marker: centre",
+            demo: None,
+            demo_watch: None,
         },
         PuzzleKind::Gravity => Guide {
             measure: ["Drop tower: release point", "Drop tower: landing plate"],
             study: "Drop tower: release point",
             target: "Survey mast: landing plate",
+            demo: Some("Drop tower: release point"),
+            demo_watch: Some("Drop tower: landing plate"),
         },
         PuzzleKind::Canyon => Guide {
             measure: ["Ledge launcher: release point", "Platform: centre"],
             study: "Platform: centre",
             target: "Platform: centre",
+            demo: Some("Ledge launcher: release point"),
+            demo_watch: Some("Ledge launcher: release point"),
         },
         PuzzleKind::Ridge => Guide {
             measure: ["Tilting launcher: release point", "Shipyard pad: centre"],
             study: "Ridge: top, near edge",
             target: "Shipyard pad: centre",
+            demo: Some("Tilting launcher: release point"),
+            demo_watch: Some("Ridge: foot, near side"),
         },
     }
 }
@@ -111,6 +124,8 @@ pub struct Companion {
     mood_left: f32,
     lines: Vec<Line>,
     anim: Animation,
+    /// Stations where Lumen has already suggested trying the experiment this session.
+    nudged: [bool; PUZZLES],
 }
 
 impl Companion {
@@ -153,8 +168,10 @@ struct Facts {
     next_station: Option<String>,
     /// A test of this kind of puzzle is running.
     testing: Option<PuzzleKind>,
-    /// The free drop at the tower is running.
-    tower_drop: bool,
+    /// The experiment of this kind of puzzle is running.
+    demo_running: Option<PuzzleKind>,
+    /// The focused puzzle has an experiment that has not been watched, and is not solved.
+    demo_pending: bool,
     ruler_active: bool,
     /// Label of the ruler's first point, while it waits for the second.
     ruler_first: Option<String>,
@@ -171,8 +188,10 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     if let Some(kind) = f.testing {
         return Some(guide(kind).target.into());
     }
-    if f.tower_drop {
-        return Some("Drop tower: landing plate".into());
+    if let Some(kind) = f.demo_running
+        && let Some(place) = guide(kind).demo_watch
+    {
+        return Some(place.into());
     }
     if f.ruler_active
         && let Some(kind) = f.focus_kind
@@ -188,6 +207,11 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     if f.station_open
         && let Some(kind) = f.focus_kind
     {
+        if f.demo_pending
+            && let Some(place) = guide(kind).demo
+        {
+            return Some(place.into());
+        }
         return Some(if f.focus_solved { guide(kind).target } else { guide(kind).study }.into());
     }
     match &f.next_station {
@@ -206,6 +230,10 @@ struct Seen {
     ruler_active: bool,
     ruler_first: bool,
     asking: bool,
+    /// Experiments watched at least once, per puzzle.
+    watched: [bool; PUZZLES],
+    found: BTreeSet<String>,
+    station: Option<usize>,
 }
 
 pub struct CompanionPlugin;
@@ -255,6 +283,9 @@ fn direct(
         ruler_active: ruler.active,
         ruler_first: ruler.first.is_some(),
         asking,
+        watched: std::array::from_fn(|i| game.save.demo_watched(&game.def(i).id)),
+        found: game.save.found.clone(),
+        station: ui.station,
     };
     match last.as_ref() {
         None => {
@@ -262,9 +293,7 @@ fn direct(
             let fresh = game.save.puzzles.values().all(|p| p.attempts.is_empty());
             match next {
                 Some(n) if fresh => {
-                    let intro = &game.chapter.intro;
-                    let first_sentence = intro.split_inclusive(". ").next().unwrap_or(intro).trim();
-                    companion.say(first_sentence);
+                    companion.say(first_sentence(&game.chapter.intro));
                     companion.say(format!("{} Follow my beam to the station.", game.def(n).task));
                 }
                 Some(n) => companion.say(format!("Welcome back. Next: {}", lowercase_first(&game.def(n).task))),
@@ -280,6 +309,27 @@ fn direct(
             if now.refusal.is_some() && now.refusal != before.refusal {
                 companion.feel(Mood::Concerned, 4.0);
                 companion.say("Refused before launch, so no charge was used. The reason is under the button.");
+            }
+            for puzzle in 0..PUZZLES {
+                if now.watched[puzzle] && !before.watched[puzzle] {
+                    react_to_demo(companion, &game, puzzle);
+                }
+            }
+            for id in now.found.difference(&before.found) {
+                if let Some(page) = game.chapter.concept(id) {
+                    companion.feel(Mood::Pleased, 4.0);
+                    companion.say(format!("New handbook page: {}. H opens it.", page.title));
+                }
+            }
+            if now.station != before.station
+                && let Some(p) = now.station
+                && game.def(p).demo.is_some()
+                && !now.watched[p]
+                && !game.solved(p)
+                && !companion.nudged[p]
+            {
+                companion.nudged[p] = true;
+                companion.say("Before any numbers, try the experiment. Make your guess first.");
             }
             if now.next != before.next {
                 match now.next {
@@ -321,6 +371,7 @@ fn direct(
     }
 
     let testing = sim.testing().map(|p| game.def(p).kind);
+    let focus_def = game.def(focus);
     if testing.is_some() && !asking {
         companion.feel(Mood::Thinking, 0.3);
     }
@@ -331,7 +382,8 @@ fn direct(
         next,
         next_station: next.map(|n| station_name(&game, n)),
         testing,
-        tower_drop: sim.busy() && testing.is_none(),
+        demo_running: sim.demo().map(|p| game.def(p).kind),
+        demo_pending: focus_def.demo.is_some() && !game.save.demo_watched(&focus_def.id) && !game.solved(focus),
         ruler_active: ruler.active,
         ruler_first: ruler.first.as_ref().filter(|_| ruler.second.is_none()).map(|p| p.label.clone()),
         ruler_done: ruler.second.is_some(),
@@ -355,7 +407,40 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
             PuzzleKind::Gravity => "Not quite. Compare your prediction with the real fall.",
             _ => "Not this time. Look where it ended, compared with the target.",
         });
+        // Point back to the idea the station is about: its page, or the experiment that writes it.
+        let def = game.def(puzzle);
+        if def.demo.is_some()
+            && let Some(page) = game.chapter.pages_found_at(&def.id).last()
+        {
+            if game.page_found(&page.id) {
+                companion.say(format!("Worth rereading: {}. H opens the handbook.", page.title));
+            } else {
+                companion.say("The experiment at this station shows what is going on. Try it.");
+            }
+        }
     }
+}
+
+/// After an experiment's first run: how the guess went, then what was seen.
+fn react_to_demo(companion: &mut Companion, game: &Game, puzzle: usize) {
+    let def = game.def(puzzle);
+    let Some(demo) = &def.demo else { return };
+    match game.save.first_guess(&def.id) {
+        Some(guess) if guess == demo.answer => {
+            companion.feel(Mood::Pleased, 5.0);
+            companion.say("You called it.");
+        }
+        Some(_) => {
+            companion.feel(Mood::Concerned, 4.0);
+            companion.say("Not what you expected? That is the interesting part.");
+        }
+        None => {}
+    }
+    companion.say(first_sentence(&demo.reveal));
+}
+
+fn first_sentence(text: &str) -> &str {
+    text.split_inclusive(". ").next().unwrap_or(text).trim()
 }
 
 fn lowercase_first(text: &str) -> String {
@@ -704,13 +789,34 @@ mod tests {
     }
 
     #[test]
+    fn an_open_station_points_at_its_experiment_until_it_has_been_watched() {
+        let mut f = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, demo_pending: true, ..walking_to(2) };
+        assert_eq!(choose_gaze(&f).as_deref(), Some("Ledge launcher: release point"));
+        f.demo_pending = false;
+        assert_eq!(choose_gaze(&f).as_deref(), Some("Platform: centre"));
+        // The tutorial has no experiment: nothing pending changes where Lumen looks.
+        let rail = Facts { focus_kind: Some(PuzzleKind::Rail), station_open: true, demo_pending: true, ..walking_to(0) };
+        assert_eq!(choose_gaze(&rail).as_deref(), Some("Rail marker: centre"));
+        let running = Facts { demo_running: Some(PuzzleKind::Ridge), ..walking_to(3) };
+        assert_eq!(choose_gaze(&running).as_deref(), Some("Ridge: foot, near side"));
+        let dropping = Facts { demo_running: Some(PuzzleKind::Gravity), ruler_active: true, ..walking_to(1) };
+        assert_eq!(choose_gaze(&dropping).as_deref(), Some("Drop tower: landing plate"));
+    }
+
+    #[test]
+    fn first_sentences() {
+        assert_eq!(first_sentence("They land together. Firing it sideways adds nothing."), "They land together.");
+        assert_eq!(first_sentence("One sentence."), "One sentence.");
+    }
+
+    #[test]
     fn every_guided_pin_is_on_the_island() {
         let layout = Ch1Layout::generate(7);
         let (_, sites) = island::build(&layout);
         let labels: Vec<&str> = sites.pins.iter().map(|p| p.label).collect();
         for kind in [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
             let g = guide(kind);
-            for label in g.measure.iter().chain([&g.study, &g.target]) {
+            for label in g.measure.iter().chain([&g.study, &g.target]).chain(g.demo.iter()).chain(g.demo_watch.iter()) {
                 assert!(labels.contains(label), "{kind:?}: no pin labelled '{label}'");
             }
         }

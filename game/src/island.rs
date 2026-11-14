@@ -55,7 +55,6 @@ pub struct Sites {
     pub rail_start: Vec3,
     /// Underside of the test mass at rest, and where it lands.
     pub tower_release: Vec3,
-    #[cfg_attr(not(test), expect(dead_code, reason = "the game reads it through its pin; tests check it directly"))]
     pub tower_plate: Vec3,
     pub mast_release: Vec3,
     pub mast_plate: Vec3,

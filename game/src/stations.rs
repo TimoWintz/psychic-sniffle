@@ -2,7 +2,7 @@
 
 use crate::island::Sites;
 use crate::player::Player;
-use crate::state::{Game, Ui};
+use crate::state::{Game, Mode, Ui};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use physics_core::materials::Material;
@@ -17,7 +17,7 @@ pub struct StationsPlugin;
 
 impl Plugin for StationsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(Update, (proximity, colour_beacons));
+        app.add_systems(Startup, spawn).add_systems(Update, (proximity.run_if(in_state(Mode::Playing)), colour_beacons));
     }
 }
 

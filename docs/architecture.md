@@ -46,6 +46,8 @@ it had. What the engine does afterwards cannot change the result.
 
 | Module | Contents |
 |---|---|
+| `intro` | title menu and the intro behind it: the placeholder sets for levels III and II, the ship, smoke and dust, the hand-over to the player's view |
+| `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
 | `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `stations` | station entities, proximity and interaction, the active puzzle |
@@ -61,6 +63,11 @@ it had. What the engine does afterwards cannot change the result.
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in
 the world and the number the simulator uses are the same number.
 
+The game starts in `Mode::Menu` (title menu, intro playing). The avatar, camera, stations, panels and
+Lumen only run in `Mode::Playing`, which Start switches to once the camera has glided to the player's
+view. Everything the intro made is despawned then, except the mainland, which stays as the far shore of
+the strait.
+
 ## tutor
 
 See `tutor.md`. The network request runs on its own thread and reports through a channel that the game
@@ -75,4 +82,8 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
 - `cargo test -p physics_core` — units, calculator, simulators against closed-form results, every puzzle
   solvable across 1,000 seeds, a 10 % wrong answer fails.
 - `cargo test -p tutor` — snapshot, prompt, leak filter, adapter against a local stand-in server.
-- `GAME_SCRIPT=<name> cargo run -p game` — scripted run that plays a puzzle and writes screenshots.
+- `cargo test -p game` — the island against the simulators' assumptions, the intro's timeline (pieces
+  land at their wrecks, nothing flies through the ground, no visible jumps, the hand-over ends on the
+  player's view).
+- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`) that drives the game
+  and writes screenshots.

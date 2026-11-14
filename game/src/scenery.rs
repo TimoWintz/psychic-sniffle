@@ -22,6 +22,10 @@ const SKY: f32 = 900.0;
 #[derive(Component)]
 struct SkyAnchor;
 
+/// The sky's dome, which the intro hides while it shows space.
+#[derive(Component)]
+pub struct SkyDome;
+
 pub struct SceneryPlugin;
 
 impl Plugin for SceneryPlugin {
@@ -124,7 +128,7 @@ fn spawn(
     let giant = Vec3::new(0.55, 0.28, -0.79).normalize();
     let moon = Vec3::new(-0.62, 0.42, -0.66).normalize();
     commands.spawn((SkyAnchor, Transform::default(), Visibility::default())).with_children(|sky| {
-        sky.spawn((Mesh3d(meshes.add(dome())), MeshMaterial3d(sky_material(&mut materials, Color::WHITE, false)), NotShadowCaster));
+        sky.spawn((SkyDome, Mesh3d(meshes.add(dome())), MeshMaterial3d(sky_material(&mut materials, Color::WHITE, false)), NotShadowCaster));
         sky.spawn((
             Mesh3d(meshes.add(Sphere::new(26.0).mesh().uv(24, 12))),
             MeshMaterial3d(sky_material(&mut materials, Color::srgb(1.0, 0.97, 0.88), false)),

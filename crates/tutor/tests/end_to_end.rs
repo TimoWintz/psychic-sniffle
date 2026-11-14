@@ -215,6 +215,29 @@ fn the_ridge_guards_every_working_angle() {
 }
 
 #[test]
+fn the_experiment_is_in_the_snapshot_and_its_angles_may_be_repeated() {
+    let chapter = chapter_1_1();
+    let def = chapter.puzzle("1.1.3").unwrap();
+    for seed in 0..50 {
+        let layout = Ch1Layout::generate(seed);
+        let instance = Instance::new(PuzzleKind::Ridge, &layout);
+        let mut save = Save::new(seed);
+        save.record_demo("1.1.3", Some(1));
+        save.find("range");
+        let ctx = TutorContext::build(&chapter, def, &instance, &save, &[]);
+        // The experiment names its two angles on the player's screen, even when one is a working angle.
+        let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
+        let line = "Remember the 30 degree and the 60 degree shots.";
+        assert_eq!(filter.apply(line), line, "seed {seed}");
+
+        let prompt = tutor::prompt::system_prompt(&ctx);
+        assert!(prompt.contains("The player guessed: The 60 degree shot."), "{prompt}");
+        assert!(prompt.contains("## Range on level ground (in the player's handbook)"));
+        assert!(prompt.contains("## Splitting a launch into components (not found yet"));
+    }
+}
+
+#[test]
 fn a_look_tag_turns_the_eye_and_is_never_shown() {
     let (mut ctx, _) = canyon_context(5);
     ctx.landmarks = vec!["Platform: centre".into(), "Ledge launcher: release point".into()];

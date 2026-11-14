@@ -25,8 +25,8 @@ a language model; with one connected, Lumen can also turn its eye to a place it 
 Alien, but familiar. The planet has turf, rock, sand and trees, only not quite ours: the turf is teal
 with drifts of olive and patches of violet lichen, the rock is slate-violet laid down in rust and pale
 strata, the trees are parasols and spires of teal and violet fronds, and quartz grows in clusters that
-glow. A ringed gas giant and a small moon hang in a turquoise sky; other islands sit in the haze on
-the horizon, and one rock floats.
+glow. A ringed gas giant and a small moon hang in a turquoise sky, and other islands sit in the haze
+on the horizon.
 
 Puzzle sites are built by the castaway from the wreck, so they share one look: hull plates laid on the
 turf around each station, salvage crates, quartz lamp posts, worn paths from one to the next, and
@@ -85,9 +85,14 @@ Every puzzle runs through the same five steps at a **station** (a workbench in t
 
 1. **Brief.** What the ship part must do, as a specification with tolerances.
 2. **Investigate.** Measure the world. Readings go to the notebook under a short name (`h1`, `t1`).
-   Experiments in this step are free and repeatable.
+   Each physics station also has an experiment to **try first**. It shows the idea the puzzle rests
+   on: a strobe on the falling test mass, a crate dropped beside one fired off the ledge, two shots
+   at complementary angles. The player picks what they expect from a few choices (no numbers), then
+   watches. Experiments are free and repeatable and give no answer away. Watching one writes its
+   pages into the handbook.
 3. **Predict.** Enter values, with units, in the blueprint panel. The calculator accepts expressions
-   over notebook names (`sqrt(2*h1/g)`).
+   over notebook names (`(d1 + d2) / 2`, `sin(30 deg)`). Examples in the interface show how to write
+   an expression, never which relation to use.
 4. **Test.** Commit. The simulation runs in the world; the result panel shows what was predicted
    against what happened, with a graph.
 5. **Result.** Pass: the part is fabricated and appears on the ship. Fail: a diagnostic says what
@@ -124,8 +129,14 @@ Unlocked as the curriculum needs them.
 - **Notebook.** Every reading, named, with its unit and where it came from. Entries are variables in
   the calculator.
 - **Calculator.** Unit-aware. `12 m / 1.5 s` gives `8 m/s`; `3 m + 2 s` is an error that says why.
-- **Handbook.** Materials table and the concept cards unlocked so far (definitions and relations,
-  no worked answers).
+- **Handbook.** Materials table and the concept pages found so far (definitions and relations,
+  no worked answers). A page is written when the player sees what it describes happen: an
+  experiment, or for the first page, the tutorial's first commit. Until then it is listed as locked,
+  with where to find it. Lumen announces new pages, each station has buttons for the pages its job
+  uses, and after a miss Lumen names the page worth rereading.
+- **Launchers show the blueprint.** As a value is typed, the tilting launcher's arm swings to the
+  angle and a gauge beside each launcher fills to the speed, against the launcher's rating. The
+  player's number is visible in the world before it is committed; the path is never previewed.
 - **Grapher** (tier 2 onward). Plot a notebook series; read slopes and areas.
 
 ## Avatar, camera, controls

@@ -10,26 +10,36 @@ Chapter(
         Concept(
             id: "units",
             title: "Measurements carry units",
+            found: FirstCommit("1.1.0"),
+            hint: "Enter a value at the supply rail station and commit it.",
             card: "A measurement is a number and a unit together. 12 m is a length, 1.5 s is a time; the number 12 on its own says neither.\n\nEvery value you enter at a station must have the kind of unit it asks for. Type the unit after the number (12 m), or use a reading from the notebook by its name (d1): the notebook keeps the unit with the number. A value of the wrong kind is refused before anything runs, and a refusal costs no charge.",
         ),
         Concept(
             id: "free_fall",
             title: "Free fall",
+            found: Demo("1.1.1"),
+            hint: "Watch the test mass fall from the drop tower: try the experiment at the Local gravity station.",
             card: "An object released from rest and pulled only by gravity gains speed at a steady rate g, the gravitational acceleration. After a time t it has fallen\n\n    h = (1/2) g t^2\n\nThe mass of the object does not appear: heavy and light things fall together. g belongs to the planet, and this is not the planet you learned the number for.",
         ),
         Concept(
             id: "independence",
             title: "Horizontal and vertical motion are independent",
+            found: Demo("1.1.2"),
+            hint: "Watch the two test crates leave the ledge: try the experiment at the Across the canyon station.",
             card: "A thrown object does two things at once and neither affects the other.\n\n    sideways: nothing pushes it, so its horizontal speed stays constant     x = vx t\n    vertically: gravity acts exactly as in free fall                        y = vy t - (1/2) g t^2\n\nA crate fired horizontally off a ledge and a crate simply dropped from the same ledge reach the ground at the same moment.",
         ),
         Concept(
             id: "components",
             title: "Splitting a launch into components",
+            found: Demo("1.1.3"),
+            hint: "Watch the two test slugs: try the experiment at the Over the ridge station.",
             card: "A launch at speed v and angle theta above the horizontal has\n\n    vx = v cos(theta)        vy = v sin(theta)\n\nSteeper means more of the speed goes into height and time in the air, less into covering ground.",
         ),
         Concept(
             id: "range",
             title: "Range on level ground",
+            found: Demo("1.1.3"),
+            hint: "Watch the two test slugs: try the experiment at the Over the ridge station.",
             card: "If launch and landing are at the same height, the time in the air is t = 2 v sin(theta) / g, and in that time the object travels\n\n    R = v^2 sin(2 theta) / g\n\nTwo different angles give the same range: a flat one and a steep one, equally far either side of 45 degrees. They are not the same path.",
         ),
     ],
@@ -51,10 +61,20 @@ Chapter(
             title: "Local gravity",
             task: "Measure this planet's gravitational acceleration.",
             brief: "The launcher's computer was calibrated for another world. Before it can aim, it needs the gravitational acceleration here.\n\nThe drop tower beside this station holds a test mass. Measure how far it falls and how long that takes. When you commit a value, a second mass is released from the taller survey mast and timed against your prediction.",
-            investigate: "Ruler (R): click the release point at the top of the drop tower, then the landing plate below it. Stopwatch: release the test mass from this panel, as often as you like.",
+            investigate: "Ruler (R): click the release point at the top of the drop tower, then the landing plate below it. Stopwatch: every run of the experiment below times the fall and notes it.",
             concepts: ["free_fall"],
             requires: ["1.1.0"],
             charges: 3,
+            demo: Some(DemoDef(
+                question: "The test mass is released from the top of the drop tower. A flash marks where it is at equal moments as it falls. How will the marks be spaced?",
+                choices: [
+                    "Evenly: it falls at a steady speed.",
+                    "Further apart lower down: it keeps speeding up.",
+                    "Closer together lower down: it slows as it falls.",
+                ],
+                answer: 1,
+                reveal: "The gaps grow all the way down: in each moment the mass falls further than in the moment before. It gains speed at a steady rate, and that rate is the planet's gravitational acceleration.",
+            )),
         ),
         PuzzleDef(
             id: "1.1.2",
@@ -66,6 +86,16 @@ Chapter(
             concepts: ["free_fall", "independence"],
             requires: ["1.1.1"],
             charges: 3,
+            demo: Some(DemoDef(
+                question: "Two test crates leave the ledge at the same moment: one is simply dropped, the other is fired straight out sideways. Which reaches the canyon floor first?",
+                choices: [
+                    "The dropped crate.",
+                    "The fired crate.",
+                    "Both at the same moment.",
+                ],
+                answer: 2,
+                reveal: "They land together. Firing a crate sideways gives it no downward speed, so it falls exactly like the dropped one while it travels across.",
+            )),
         ),
         PuzzleDef(
             id: "1.1.3",
@@ -77,6 +107,16 @@ Chapter(
             concepts: ["components", "range", "independence"],
             requires: ["1.1.2"],
             charges: 3,
+            demo: Some(DemoDef(
+                question: "Two test slugs are fired from the tilting launcher at the same speed, one at 30 degrees and one at 60 degrees. Which lands further away?",
+                choices: [
+                    "The 30 degree shot.",
+                    "The 60 degree shot.",
+                    "They land in the same place.",
+                ],
+                answer: 2,
+                reveal: "They land in the same place. The steep shot climbs higher and stays up longer but covers less ground each second; the flat one is quicker but comes down sooner. A flat and a steep angle can share a range.",
+            )),
         ),
     ],
 )

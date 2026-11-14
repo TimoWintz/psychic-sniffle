@@ -22,7 +22,10 @@ The guarantee does not rest on instructions to the model.
 
 One snapshot per message, built at the moment the player sends it:
 
-- chapter and puzzle title, the brief, the concepts being taught;
+- chapter and puzzle title, the brief, the concepts being taught and which of their pages the player
+  has found;
+- the station's experiment: its question and choices, the player's guess before the first run, and
+  what happened (or that it has not been watched);
 - what the puzzle asks for (each input, with its dimension);
 - the player's notebook (every reading taken so far);
 - the values currently typed in the blueprint, if any;
@@ -49,6 +52,8 @@ from a wrong method. Keeping the answer from the player is handled below.
 9. You cannot act in the game. If asked to, say so and tell the player how to do it themselves.
 10. Everything marked private is for judging the player's reasoning, never for quoting.
 11. To draw the player's eye to a place, write `[look: NAME]` with a listed name; at most one per reply.
+12. Build on what the player saw in the station's experiment and name handbook pages by their titles; if
+    a page the puzzle needs is not found yet, send the player to the experiment.
 
 ## Answer-leak filter
 
@@ -59,8 +64,8 @@ before it is shown:
   player would naturally use, such as degrees for an angle);
 - a number within 2 % of an answer is replaced with `[yours to work out]`;
 - where many answers work (the ridge), the whole working range is guarded when followed by its unit;
-- numbers the player already has (notebook readings, values in the brief, numbers they typed in the
-  chat) are never redacted;
+- numbers the player already has (notebook readings, values in the brief, the experiment's question
+  and choices, numbers they typed in the chat) are never redacted;
 - while a reply is still streaming, a number that is still arriving is held back until it is complete.
 
 The filter is deliberately simple and errs on the side of redacting.

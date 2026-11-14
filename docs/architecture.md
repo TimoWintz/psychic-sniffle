@@ -23,6 +23,8 @@ Nothing depends on `game`.
 | `ballistics` | closed-form projectile motion: position at a time, time and place of landing, height at a distance |
 | `materials` | the materials table (density, specific heat, conductivity, resistivity, colour) |
 | `puzzle` | chapter and puzzle definitions, seeded instance generation, evaluation of committed inputs, worked solutions |
+| `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired crates, the two-angle shots |
+| `content` | chapter words as data: briefs, concept pages and where each is found, experiment questions |
 | `notebook` | named readings; the calculator's variables |
 | `save` | progress record (seed, attempts, completed puzzles, notebook) |
 
@@ -49,7 +51,8 @@ it had. What the engine does afterwards cannot change the result.
 | `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `stations` | station entities, proximity and interaction, the active puzzle |
-| `sim` | experiment and test playback, hand-off to the physics engine |
+| `sim` | experiment and test playback, hand-off to the physics engine, handbook pages written by what is seen |
+| `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, handbook, chat |
 | `shipyard` | ship parts that appear as chapters complete |

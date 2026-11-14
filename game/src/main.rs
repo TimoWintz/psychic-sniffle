@@ -6,6 +6,7 @@ mod devscript;
 mod intro;
 mod island;
 mod player;
+mod rig;
 mod ruler;
 mod scenery;
 mod shipyard;
@@ -41,6 +42,7 @@ fn main() {
             player::PlayerPlugin,
             stations::StationsPlugin,
             sim::SimPlugin,
+            rig::RigPlugin,
             ruler::RulerPlugin,
             shipyard::ShipyardPlugin,
             tutor_bridge::TutorPlugin,

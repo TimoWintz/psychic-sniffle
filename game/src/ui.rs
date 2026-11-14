@@ -12,6 +12,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Align2, Color32, RichText};
 use physics_core::ballistics::FlightEnd;
 use physics_core::expr::evaluate;
+use physics_core::content::{DemoDef, PuzzleDef};
 use physics_core::materials::Material;
 use physics_core::progress::Quality;
 use physics_core::puzzle::{Instance, Outcome, Playback, PuzzleKind};
@@ -42,6 +43,10 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: 
     }
     if keys.just_pressed(KeyCode::KeyH) {
         ui.show_handbook = !ui.show_handbook;
+        // Opening it with a new page waiting opens it at that page.
+        if ui.show_handbook {
+            ui.handbook_focus = ui.unread_pages.last().cloned();
+        }
     }
     if keys.just_pressed(KeyCode::KeyT) {
         ui.show_tutor = !ui.show_tutor;
@@ -69,6 +74,7 @@ pub fn draw(
     mut ruler: ResMut<Ruler>,
     mut lumen: ResMut<Lumen>,
     landmarks: Res<Landmarks>,
+    mut handbook_was_open: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     // Reborrow once so the panels can borrow fields separately.
@@ -86,6 +92,11 @@ pub fn draw(
     }
     if ui_state.show_handbook {
         handbook_panel(&ctx, game, ui_state);
+        *handbook_was_open = true;
+    } else if *handbook_was_open {
+        // New pages count as read once the handbook has been opened and closed again.
+        *handbook_was_open = false;
+        ui_state.unread_pages.clear();
     }
     if ui_state.show_tutor {
         tutor_panel(&ctx, game, ui_state, lumen, &landmarks);
@@ -132,6 +143,13 @@ fn hud(ctx: &egui::Context, game: &Game, ui_state: &Ui, ruler: &Ruler) {
             if let Some(prompt) = prompt {
                 ui.vertical_centered(|ui| ui.label(RichText::new(prompt).strong().color(WARN)));
             }
+            if !ui_state.unread_pages.is_empty() && !ui_state.show_handbook {
+                let line = match ui_state.unread_pages.as_slice() {
+                    [one] => format!("New handbook page: {}. Press H to read it.", game.chapter.concept(one).map_or(one.as_str(), |c| c.title.as_str())),
+                    many => format!("{} new handbook pages. Press H to read them.", many.len()),
+                };
+                ui.vertical_centered(|ui| ui.label(RichText::new(line).strong().color(GOOD)));
+            }
             ui.label(
                 RichText::new("WASD move · Shift run · Space jump · right-drag or arrows look · scroll zoom · E station · R ruler · N notebook · H handbook · T or click Lumen")
                     .small()
@@ -165,25 +183,12 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 ui.label(RichText::new("Investigate").strong());
                 ui.label(RichText::new(&def.investigate).color(DIM));
 
-                if def.kind == PuzzleKind::Gravity {
-                    ui.horizontal(|ui| {
-                        if ui.add_enabled(!sim.busy(), egui::Button::new("Release the test mass")).clicked() {
-                            sim.request = Some(Request::ReleaseTowerMass);
-                        }
-                        let readings: Vec<String> = game
-                            .save
-                            .notebook
-                            .entries
-                            .iter()
-                            .filter(|e| e.source == "stopwatch")
-                            .map(|e| format!("{} = {}", e.name, e.quantity.display()))
-                            .collect();
-                        match readings.last() {
-                            Some(last) => ui.label(format!("Stopwatch: {last}")),
-                            None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),
-                        };
-                    });
+                if let Some(demo) = &def.demo {
+                    ui.add_space(6.0);
+                    experiment_section(ui, game, ui_state, sim, puzzle, demo);
                 }
+                ui.add_space(4.0);
+                pages_row(ui, game, ui_state, &def);
 
                 ui.add_space(6.0);
                 ui.separator();
@@ -205,7 +210,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 let hint = if def.kind == PuzzleKind::Rail {
                     "Numbers need units: 12 m, not 12. Notebook names work: d1"
                 } else {
-                    "Numbers need units. Notebook names work: sqrt(2*h1/g)"
+                    "Numbers need units. Notebook names and functions work: (d1 + d2) / 2, sin(30 deg)"
                 };
                 ui.label(RichText::new(hint).small().color(DIM));
 
@@ -225,7 +230,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if let Some(refusal) = &ui_state.refusal {
                     ui.colored_label(WARN, format!("Not launched (no charge used). {refusal}"));
                 }
-                if sim.busy() {
+                if sim.testing() == Some(puzzle) {
                     ui.label(RichText::new("Test running…").italics());
                 }
 
@@ -257,6 +262,75 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 }
             });
         });
+}
+
+/// The station's free experiment: a guess first, then the world shows what happens.
+fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &mut Sim, puzzle: usize, demo: &DemoDef) {
+    let id = &game.def(puzzle).id;
+    let watched = game.save.demo_watched(id);
+    let running = sim.demo() == Some(puzzle);
+    ui.label(RichText::new("Try it first").strong());
+    ui.label(&demo.question);
+    let first_guess = game.save.first_guess(id);
+    for (i, choice) in demo.choices.iter().enumerate() {
+        if watched {
+            // The guess before the first run stays on record, beside what happened. One label per
+            // choice, so it wraps inside the panel.
+            let (mark, note, colour) = match (i == demo.answer, first_guess == Some(i)) {
+                (true, true) => ("✔", "  (your guess)", GOOD),
+                (true, false) => ("✔", "", Color32::WHITE),
+                (false, true) => ("✖", "  (your guess)", WARN),
+                (false, false) => ("·", "", DIM),
+            };
+            ui.label(RichText::new(format!("{mark}  {choice}{note}")).color(colour));
+        } else {
+            if ui.add_enabled(!running, egui::RadioButton::new(ui_state.guess[puzzle] == Some(i), choice.as_str())).clicked() {
+                ui_state.guess[puzzle] = Some(i);
+            }
+        }
+    }
+    ui.horizontal(|ui| {
+        let ready = !sim.busy() && (watched || ui_state.guess[puzzle].is_some());
+        let label = if watched { "Run it again" } else { "Run the experiment" };
+        if ui.add_enabled(ready, egui::Button::new(label)).clicked() {
+            sim.request = Some(Request::Demo(puzzle));
+        }
+        if running {
+            ui.label(RichText::new("Watch…").italics());
+        } else if !watched && ui_state.guess[puzzle].is_none() {
+            ui.label(RichText::new("Make a guess first. It costs nothing.").small().color(DIM));
+        } else {
+            ui.label(RichText::new("Free, as often as you like.").small().color(DIM));
+        }
+    });
+    if watched && !running {
+        ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
+    }
+    if game.def(puzzle).kind == PuzzleKind::Gravity {
+        let last = game.save.notebook.entries.iter().rfind(|e| e.source == "stopwatch");
+        match last {
+            Some(entry) => ui.label(format!("Stopwatch: {} = {}", entry.name, entry.quantity.display())),
+            None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),
+        };
+    }
+}
+
+/// The handbook pages a station's job uses: a button for each found page, the hint for a locked one.
+fn pages_row(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, def: &PuzzleDef) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Handbook:").color(DIM));
+        for concept in def.concepts.iter().filter_map(|id| game.chapter.concept(id)) {
+            if game.page_found(&concept.id) {
+                let new = ui_state.unread_pages.contains(&concept.id);
+                let text = if new { RichText::new(format!("{} · new", concept.title)).color(GOOD) } else { RichText::new(&concept.title) };
+                if ui.small_button(text).on_hover_text("Open this page in the handbook").clicked() {
+                    ui_state.open_page(&concept.id);
+                }
+            } else {
+                ui.label(RichText::new(format!("{} (not found yet)", concept.title)).small().italics().color(DIM)).on_hover_text(&concept.hint);
+            }
+        }
+    });
 }
 
 fn result_section(ui: &mut egui::Ui, instance: &Instance, outcome: &Outcome) {
@@ -396,7 +470,7 @@ fn notebook_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui) {
 
             ui.separator();
             ui.label(RichText::new("Calculator").strong());
-            ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("2*h1/t1^2   or   g1 = 2*h1/t1^2").desired_width(360.0));
+            ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2").desired_width(360.0));
             let text = ui_state.calculator.trim().to_string();
             // "name = expression" keeps the result in the notebook.
             let (name, expression) = match text.split_once('=') {
@@ -454,8 +528,10 @@ fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
         .show(ctx, |ui| {
             ui.set_width(480.0);
             egui::ScrollArea::vertical().max_height(430.0).show(ui, |ui| {
-                ui.label(RichText::new("Concepts").strong());
-                // A concept card appears once a puzzle that uses it is open.
+                ui.label(RichText::new("Pages").strong());
+                ui.label(RichText::new("A page is written when you see what it describes happen in the world.").small().color(DIM));
+                let focus = ui_state.handbook_focus.take();
+                // A page is listed once a puzzle that uses it is open; it can be read once found.
                 let mut shown: Vec<&str> = Vec::new();
                 for (i, puzzle) in game.chapter.puzzles.iter().enumerate() {
                     if !game.unlocked(i) {
@@ -466,8 +542,27 @@ fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
                             continue;
                         }
                         shown.push(id);
-                        if let Some(concept) = game.chapter.concept(id) {
-                            ui.collapsing(&concept.title, |ui| ui.label(RichText::new(&concept.card).monospace()));
+                        let Some(concept) = game.chapter.concept(id) else { continue };
+                        if !game.page_found(id) {
+                            ui.label(RichText::new(format!("{} — not found yet", concept.title)).color(DIM));
+                            ui.label(RichText::new(format!("    {}", concept.hint)).small().italics().color(DIM));
+                            continue;
+                        }
+                        let new = ui_state.unread_pages.contains(&concept.id);
+                        let title = if new { RichText::new(format!("{}   · new", concept.title)).color(GOOD) } else { RichText::new(&concept.title) };
+                        let focused = focus.as_deref() == Some(id.as_str());
+                        let mut header = egui::CollapsingHeader::new(title).id_salt(("page", id));
+                        if focused {
+                            header = header.open(Some(true));
+                        }
+                        let shown_page = header.show(ui, |ui| {
+                            ui.label(RichText::new(&concept.card).monospace());
+                            if let Some(at) = game.chapter.puzzle(concept.found.puzzle()) {
+                                ui.label(RichText::new(format!("Found at: {}", at.title)).small().color(DIM));
+                            }
+                        });
+                        if focused {
+                            shown_page.header_response.scroll_to_me(Some(egui::Align::TOP));
                         }
                     }
                 }

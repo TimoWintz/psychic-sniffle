@@ -85,6 +85,11 @@ struct Found {
     end: usize,
 }
 
+/// The values of every decimal number in `text`.
+pub(crate) fn number_values(text: &str) -> Vec<f64> {
+    numbers(text).into_iter().map(|n| n.value).collect()
+}
+
 /// Every decimal number in `text`, with its byte range. Signs are ignored.
 fn numbers(text: &str) -> Vec<Found> {
     let bytes = text.as_bytes();

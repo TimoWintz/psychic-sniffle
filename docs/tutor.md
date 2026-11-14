@@ -63,9 +63,8 @@ Lumen teaches by asking. The policy (`tutor::prompt::POLICY`):
 ### Help levels
 
 Each request carries a help level (`tutor::prompt::HelpLevel`) that says how far Lumen may go. Its
-score
-rises by one per failed test on the puzzle, and by one more for every 4 messages the player sends
-without running a test (at most two steps that way, so the top level needs at least one failed test).
+score rises by one per failed test on the puzzle, and by one more for every 4 messages the player
+sends without running a test (at most two steps that way, so the top level needs at least one failed test).
 A new test resets the message count.
 
 | Level   | Score             | Lumen may…                                                                                |

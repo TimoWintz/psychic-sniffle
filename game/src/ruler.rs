@@ -1,5 +1,8 @@
 //! The ruler: click two points, read their horizontal and vertical separation.
 //!
+//! It measures once: after the second point it stops taking clicks, and the reading stays on screen
+//! until it is put away or a new measurement starts.
+//!
 //! It snaps to survey pins (the points puzzles are built around) when the cursor is near one, and
 //! otherwise to the centre of the block face under the cursor.
 
@@ -24,6 +27,7 @@ pub struct Measurement {
 
 #[derive(Resource, Default)]
 pub struct Ruler {
+    /// Taking points: clicks in the world go to the ruler.
     pub active: bool,
     pub first: Option<Picked>,
     pub second: Option<Picked>,
@@ -37,20 +41,30 @@ impl Ruler {
         Some(Measurement { horizontal: d.with_y(0.0).length(), vertical: d.y.abs(), direct: d.length() })
     }
 
-    pub fn toggle(&mut self) {
-        self.active = !self.active;
-        self.first = None;
-        self.second = None;
-        self.hover = None;
+    /// Start a new measurement, replacing any reading on screen.
+    pub fn start(&mut self) {
+        *self = Ruler { active: true, ..Ruler::default() };
     }
 
-    /// Take a point: the first, then the second, then start over.
+    /// Stop measuring and clear the reading.
+    pub fn put_away(&mut self) {
+        *self = Ruler::default();
+    }
+
+    /// Whether the ruler is on screen: taking points, or showing a reading.
+    pub fn in_use(&self) -> bool {
+        self.active || self.first.is_some()
+    }
+
+    /// Take a point: the first, then the second, which ends the measurement. The reading stays.
     pub fn pick(&mut self, picked: Picked) {
         if self.first.is_none() || self.second.is_some() {
             self.first = Some(picked);
             self.second = None;
         } else {
             self.second = Some(picked);
+            self.active = false;
+            self.hover = None;
         }
     }
 }
@@ -127,7 +141,7 @@ fn aim(
 }
 
 fn draw(ruler: Res<Ruler>, mut gizmos: Gizmos) {
-    if !ruler.active {
+    if !ruler.in_use() {
         return;
     }
     let cyan = Color::srgb(0.2, 0.95, 1.0);
@@ -160,14 +174,19 @@ mod tests {
     #[test]
     fn separation_is_split_into_horizontal_and_vertical() {
         let mut ruler = Ruler::default();
+        ruler.start();
         ruler.pick(picked(70.0, 28.0, 56.5));
         assert_eq!(ruler.measurement(), None);
+        assert!(ruler.active);
         ruler.pick(picked(91.5, 20.0, 56.5));
         let m = ruler.measurement().unwrap();
         assert_eq!((m.horizontal, m.vertical), (21.5, 8.0));
         assert!((m.direct - (21.5f32 * 21.5 + 64.0).sqrt()).abs() < 1e-5);
-        // A third click starts a new measurement.
-        ruler.pick(picked(0.0, 0.0, 0.0));
+        // The second point ends the measurement; the reading stays until put away.
+        assert!(!ruler.active && ruler.in_use());
+        ruler.start();
         assert_eq!(ruler.measurement(), None);
+        ruler.put_away();
+        assert!(!ruler.in_use());
     }
 }

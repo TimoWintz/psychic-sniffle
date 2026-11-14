@@ -486,11 +486,7 @@ fn run(
             let (prefix, value) = [("d", m.horizontal), ("h", m.vertical)][which];
             game.save.notebook.add_numbered(prefix, "measured by the script", Quantity::metres(value as f64), "ruler");
         }
-        Step::RulerOn => {
-            if !ruler.active {
-                ruler.toggle();
-            }
-        }
+        Step::RulerOn => ruler.start(),
         Step::ExpectGaze { place, within } => {
             if companion.gaze.as_deref() != Some(place.as_str()) {
                 let left = within - time.delta_secs().min(1.0 / 20.0);
@@ -498,11 +494,7 @@ fn run(
                 script.steps.push_front(Step::ExpectGaze { place, within: left });
             }
         }
-        Step::RulerOff => {
-            if ruler.active {
-                ruler.toggle();
-            }
-        }
+        Step::RulerOff => ruler.put_away(),
         Step::Guess(puzzle, choice) => ui.guess[puzzle] = Some(choice),
         Step::RunDemo(puzzle) => {
             assert!(game.save.demo_watched(&game.def(puzzle).id) || ui.guess[puzzle].is_some(), "the experiment wants a guess before its first run");
@@ -519,9 +511,9 @@ fn run(
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
         Step::Windows { notebook, handbook, tutor } => {
-            ui.show_notebook = notebook;
-            ui.show_handbook = handbook;
-            ui.show_tutor = tutor;
+            ui.notebook_open = notebook;
+            ui.handbook_open = handbook;
+            ui.tutor_open = tutor;
         }
         Step::Shot(name) => {
             let path = script.shots.join(format!("{name}.png"));

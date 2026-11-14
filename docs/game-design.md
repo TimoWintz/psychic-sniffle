@@ -13,12 +13,16 @@ The ship's computer, **Lumen**, survived the crash with its sensors intact and i
 can see what you are doing and explain anything, but it cannot press a single button. Doing is the
 player's job.
 
-Lumen is on screen as a holographic eye in the lower left corner. It looks at what matters next and
-points at it with a beam of light: the next station while you walk, the yellow pin to click while the
-ruler is out, the target while a test runs. When the place is off screen, the beam ends in an arrow at
-the edge of the screen. It says short lines when something happens (a test lands, a station refuses an
-entry, a new station opens) and its eye shows a mood: pleased, concerned, thinking. None of this needs
-a language model; with one connected, Lumen can also turn its eye to a place it is talking about.
+Lumen is on screen as a holographic eye in the lower left corner. It points with a beam of light only
+where that helps: the way to the next station for a while after it opens (and again when you stand at
+a station that is done or locked), the experiment and the job of an unsolved station, the yellow pin to
+click while measuring, the target while a test runs. Nothing about a solved puzzle draws the beam;
+otherwise the eye just looks about. When the place is off screen, the beam ends in an arrow at the
+edge of the screen. It says short lines in a bubble above the eye when something happens (a test lands,
+a station refuses an entry, a new station opens) and its eye shows a mood: pleased, concerned,
+thinking. Talking to it (`T` or a click on the eye) opens the conversation where the bubble appears,
+attached to the eye. None of this needs a language model; with one connected, Lumen can also turn its
+eye to a place it is talking about.
 
 ### The look of the world
 
@@ -141,9 +145,18 @@ Unlocked as the curriculum needs them.
 
 ## Avatar, camera, controls
 
-Third-person view of a blocky engineer. Walk, jump, look around; `E` uses a station; `R` toggles the
-ruler; `N` notebook and calculator; `H` handbook; `T` (or a click on Lumen's eye) talks to Lumen. The avatar carries no inventory in
-the slice.
+Third-person view of a blocky engineer. Walk, jump, look around; `E` uses a station; `R` measures
+with the ruler; `N` notebook and calculator; `H` handbook; `T` (or a click on Lumen's eye) talks to
+Lumen. The avatar carries no inventory in the slice.
+
+- **Stations.** While a station is open the engineer stays at its console: the movement keys do
+  nothing, the camera still turns and zooms. `E`, `Esc` or the panel's Leave button steps away.
+- **Ruler.** `R` takes one measurement: two clicks, then the ruler stops taking clicks and its reading
+  stays on screen to be noted. `R` again measures anew; `Esc` or the card's close button puts it
+  away; `R` or `Esc` before the second click cancels.
+- **Notebook, handbook, Lumen.** Always on screen. The notebook and the handbook sit in a fixed column
+  at the top left under the chapter's progress, reduced to a header; `N` and `H` (or a click on the
+  header) expand and reduce them. Lumen reduced is its eye; `T` expands its conversation.
 
 The engineer is a jointed figure of blocks, animated in code. Its stride follows its speed, it
 tucks on a jump and gives at the knees on landing, and it works the panel of an open station. It turns

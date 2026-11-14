@@ -55,6 +55,14 @@ impl Sim {
     pub fn busy(&self) -> bool {
         self.running.is_some()
     }
+
+    /// The puzzle whose test is running, if one is (the free drop at the tower is not a test).
+    pub fn testing(&self) -> Option<usize> {
+        match &self.running {
+            Some(Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. }) => Some(*puzzle),
+            Some(Running::TowerDrop { .. }) | None => None,
+        }
+    }
 }
 
 /// The objects that tests move.

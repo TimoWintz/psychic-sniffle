@@ -213,3 +213,33 @@ fn the_ridge_guards_every_working_angle() {
     // 45 degrees is not a working angle and is worth discussing.
     assert_eq!(filter.apply("why not 45 degrees?"), "why not 45 degrees?");
 }
+
+#[test]
+fn a_look_tag_turns_the_eye_and_is_never_shown() {
+    let (mut ctx, _) = canyon_context(5);
+    ctx.landmarks = vec!["Platform: centre".into(), "Ledge launcher: release point".into()];
+    // The tag arrives split across chunks, and a second tag names a place that is not on the list.
+    let reply = ["Measure to the target first ", "[lo", "ok: platform: cen", "tre]. Then [look: the answer]time the drop."];
+    let (base_url, seen) = serve_once("200 OK", "text/event-stream", event_stream(&reply));
+
+    let mut conversation = Conversation::default();
+    assert!(conversation.ask(&tutor_at(base_url), &ctx, "where should I start?"));
+    let start = Instant::now();
+    while conversation.is_waiting() {
+        conversation.poll();
+        if let Some(arriving) = conversation.arriving() {
+            assert!(!arriving.contains('['), "a tag showed while arriving: {arriving}");
+        }
+        assert!(start.elapsed() < Duration::from_secs(20), "no reply from the stand-in server");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    let Turn::Tutor(text) = &conversation.turns[1] else { panic!("{:?}", conversation.turns) };
+    assert_eq!(text, "Measure to the target first. Then time the drop.");
+    assert_eq!(conversation.take_look().as_deref(), Some("Platform: centre"), "the list's spelling comes back");
+    assert_eq!(conversation.take_look(), None, "a look is taken once");
+
+    let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+    let system = seen.body["messages"][0]["content"].as_str().unwrap();
+    assert!(system.contains("Places you can point at with [look: NAME]:\n- Platform: centre\n"));
+}

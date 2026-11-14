@@ -3,6 +3,7 @@
 //! The game copies a snapshot of the current puzzle into the tutor crate and shows the text that
 //! comes back. Nothing the tutor returns is interpreted: it cannot change the game.
 
+use crate::companion::Landmarks;
 use crate::state::{Game, PUZZLES, Ui};
 use bevy::prelude::*;
 use std::path::PathBuf;
@@ -16,9 +17,11 @@ pub struct Lumen {
 }
 
 impl Lumen {
-    /// Send the player's message about `puzzle`, with a fresh snapshot of its state.
-    pub fn ask(&mut self, game: &Game, ui: &Ui, puzzle: usize, text: &str) -> bool {
-        let context = TutorContext::build(&game.chapter, game.def(puzzle), &game.instance(puzzle), &game.save, &ui.drafts[puzzle]);
+    /// Send the player's message about `puzzle`, with a fresh snapshot of its state and the names of
+    /// the places Lumen can point at.
+    pub fn ask(&mut self, game: &Game, ui: &Ui, landmarks: &Landmarks, puzzle: usize, text: &str) -> bool {
+        let mut context = TutorContext::build(&game.chapter, game.def(puzzle), &game.instance(puzzle), &game.save, &ui.drafts[puzzle]);
+        context.landmarks = landmarks.names();
         self.conversations[puzzle].ask(&self.tutor, &context, text)
     }
 }

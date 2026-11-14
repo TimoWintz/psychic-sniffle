@@ -1,6 +1,7 @@
 //! Interface panels: heads-up display, station, ruler readout, notebook and calculator, handbook,
 //! and the conversation with Lumen.
 
+use crate::companion::Landmarks;
 use crate::ruler::Ruler;
 use crate::sim::{Request, Sim};
 use crate::state::{Game, Ui};
@@ -50,13 +51,15 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: 
     }
 }
 
-fn draw(
+#[allow(clippy::too_many_arguments)]
+pub fn draw(
     mut contexts: EguiContexts,
     mut game: ResMut<Game>,
     mut ui_state: ResMut<Ui>,
     mut sim: ResMut<Sim>,
     mut ruler: ResMut<Ruler>,
     mut lumen: ResMut<Lumen>,
+    landmarks: Res<Landmarks>,
     mut styled: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
@@ -81,7 +84,7 @@ fn draw(
         handbook_panel(&ctx, game, ui_state);
     }
     if ui_state.show_tutor {
-        tutor_panel(&ctx, game, ui_state, lumen);
+        tutor_panel(&ctx, game, ui_state, lumen, &landmarks);
     }
     Ok(())
 }
@@ -126,7 +129,7 @@ fn hud(ctx: &egui::Context, game: &Game, ui_state: &Ui, ruler: &Ruler) {
                 ui.vertical_centered(|ui| ui.label(RichText::new(prompt).strong().color(WARN)));
             }
             ui.label(
-                RichText::new("WASD move · Shift run · Space jump · right-drag or arrows look · scroll zoom · E station · R ruler · N notebook · H handbook · T Lumen")
+                RichText::new("WASD move · Shift run · Space jump · right-drag or arrows look · scroll zoom · E station · R ruler · N notebook · H handbook · T or click Lumen")
                     .small()
                     .color(DIM),
             );
@@ -486,13 +489,14 @@ fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
     ui_state.show_handbook = open;
 }
 
-fn tutor_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui, lumen: &mut Lumen) {
+fn tutor_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui, lumen: &mut Lumen, landmarks: &Landmarks) {
     let puzzle = ui_state.focus(game);
     let mut open = true;
     let mut send = false;
     egui::Window::new("Lumen")
         .open(&mut open)
-        .default_pos([12.0, 330.0])
+        .pivot(Align2::LEFT_BOTTOM)
+        .default_pos([12.0, ctx.content_rect().bottom() - 160.0])
         .resizable(false)
         .show(ctx, |ui| {
             ui.set_width(430.0);
@@ -529,7 +533,7 @@ fn tutor_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui, lumen: &mut 
         });
     if send && !ui_state.chat.trim().is_empty() {
         let text = std::mem::take(&mut ui_state.chat);
-        lumen.ask(game, ui_state, puzzle, &text);
+        lumen.ask(game, ui_state, landmarks, puzzle, &text);
     }
     ui_state.show_tutor = open;
 }

@@ -357,7 +357,7 @@ fn intro() -> Vec<Step> {
 fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };
-    let at_console = Look { yaw: 0.9, pitch: 0.2, distance: 4.5 };
+    let at_console = || Look { yaw: 0.9, pitch: 0.2, distance: 4.5 };
     vec![
         Start,
         UntilPlaying { within: 10.0 },
@@ -386,7 +386,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         expect_activity(Activity::Idle),
         // At the rail's console: working the panel, watching the cart, a miss and then a pass.
         GoToStation(0),
-        at_console,
+        at_console(),
         Station(Some(0)),
         expect_activity(Activity::Typing),
         Wait(1.2),
@@ -395,7 +395,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Commit(0),
         expect_activity(Activity::Watching),
         Watch(None),
-        at_console,
+        at_console(),
         Wait(0.8),
         Shot("pose_06_watching"),
         expect_activity(Activity::Slump),
@@ -407,7 +407,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Commit(0),
         expect_activity(Activity::Cheer),
         Watch(None),
-        at_console,
+        at_console(),
         Wait(0.2),
         Shot("pose_08_pass"),
         Quit,

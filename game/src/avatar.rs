@@ -430,6 +430,8 @@ fn animate(
     mut parts: Query<&mut Transform, Without<Player>>,
 ) {
     let (player, transform, rig, state) = &mut *avatar;
+    // A plain reference, so separate fields can be borrowed at once.
+    let state: &mut AvatarState = state;
     let dt = time.delta_secs().min(1.0 / 20.0);
     state.clock += dt;
     let feet = transform.translation;
@@ -440,7 +442,7 @@ fn animate(
     if moved.length() > 3.0 {
         // Put somewhere else (a respawn or a script): start over standing.
         let results_seen = std::mem::take(&mut state.results_seen);
-        **state = AvatarState { last_feet: Some(feet), results_seen, ..default() };
+        *state = AvatarState { last_feet: Some(feet), results_seen, ..default() };
         return;
     }
     let ground_speed = if dt > 0.0 { moved.with_y(0.0).length() / dt } else { 0.0 };

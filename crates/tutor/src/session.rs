@@ -3,7 +3,7 @@
 use crate::context::TutorContext;
 use crate::filter::LeakFilter;
 use crate::gesture::{strip_looks, strip_looks_streaming};
-use crate::prompt::system_prompt;
+use crate::prompt::{HelpLevel, system_prompt};
 use crate::provider::{ChatRequest, Message, Provider, Role, TutorError};
 use crate::settings::TutorSettings;
 use std::path::Path;
@@ -83,6 +83,10 @@ pub struct Conversation {
     pending: Option<Pending>,
     /// The latest place the tutor pointed at that the game has not yet taken.
     look: Option<String>,
+    /// How many tests the puzzle had at the last message, and how many messages the player has sent
+    /// since that number last changed. Together they tell whether the player is stuck in the chat.
+    attempts_seen: usize,
+    asks_since_test: usize,
 }
 
 impl Conversation {
@@ -102,6 +106,13 @@ impl Conversation {
         self.look.take()
     }
 
+    /// The help level the next message about this snapshot would be answered at.
+    pub fn help_level(&self, ctx: &TutorContext) -> HelpLevel {
+        let stalled = if ctx.attempts.len() == self.attempts_seen { self.asks_since_test } else { 0 };
+        let failures = ctx.attempts.iter().filter(|a| !a.pass).count();
+        HelpLevel::for_progress(ctx.solved, failures, stalled)
+    }
+
     /// Send the player's message with a fresh snapshot. Returns `false` if nothing was sent
     /// (offline, already waiting, or an empty message).
     pub fn ask(&mut self, tutor: &Tutor, ctx: &TutorContext, text: &str) -> bool {
@@ -110,11 +121,17 @@ impl Conversation {
         if text.is_empty() || self.pending.is_some() {
             return false;
         }
+        let help = self.help_level(ctx);
+        if ctx.attempts.len() != self.attempts_seen {
+            self.attempts_seen = ctx.attempts.len();
+            self.asks_since_test = 0;
+        }
+        self.asks_since_test += 1;
         self.turns.push(Turn::Player(text.to_string()));
 
         let player_text: String =
             self.turns.iter().filter_map(|t| if let Turn::Player(s) = t { Some(s.as_str()) } else { None }).collect::<Vec<_>>().join("\n");
-        let request = ChatRequest { system: system_prompt(ctx), messages: self.history() };
+        let request = ChatRequest { system: system_prompt(ctx, help), messages: self.history() };
         let (sender, events) = channel();
         std::thread::Builder::new()
             .name("tutor-request".into())

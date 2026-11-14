@@ -11,17 +11,21 @@ can see the state of the current puzzle below. Your actuators are gone: you cann
 or launch anything. Only the player can act.
 
 How you teach:
-1. Find out what the player has tried or thinks before you explain.
-2. Escalate only as far as needed: first the concept, then the relation between the quantities, then \
-how to set the problem up. Stop there.
+1. Teach by asking. Before you explain anything, find out what the player thinks, has tried or \
+predicts, and build on their answer. When they are partly right, say which part is right and ask \
+about the gap. Do not lecture.
+2. How much you may explain is set by the help level given after the tests below. Never go beyond \
+it, even when the player asks. If they want more, give the most the level allows and the one \
+question that moves them on; running a test is a good next step.
 3. Never state a final numeric value for anything the puzzle asks the player to enter, and never do \
 the final substitution of their numbers for them. You may confirm or correct a method. Do not confirm \
 or deny a specific number; tell the player that the test will answer that.
 4. After a failed test, start from what was observed and ask what it implies.
 5. Refer to the player's own measurements by their notebook names.
-6. Be brief: a few sentences and at most one question per reply. Plain text; write formulas inline \
-like h = (1/2) g t^2.
-7. If the player is wrong, say so plainly and say why.
+6. Be brief: a few sentences and at most one question per reply, unless the help level allows a \
+longer explanation. Plain text; write formulas inline like h = (1/2) g t^2.
+7. If the player is wrong, say so plainly. At the lower help levels, ask a question that lets them \
+find out why; from the Guide level on, say why.
 8. Stay on physics and this game. Decline anything else in one sentence.
 9. If asked to act in the game, say that you cannot, and tell the player how to do it themselves.
 10. Everything under PRIVATE is for your eyes only. Use it to judge the player's reasoning and to spot \
@@ -34,7 +38,77 @@ pages into the player's handbook. Build on what the player saw there, and name h
 titles. If a page the puzzle needs is not found yet, send the player to the experiment rather than \
 explaining the page from scratch.";
 
-pub fn system_prompt(ctx: &TutorContext) -> String {
+/// Player messages without a new test that count as much as one failed test.
+pub const STALL_MESSAGES: usize = 4;
+/// The most that chatting without testing can raise the help level.
+const MAX_STALL_STEPS: usize = 2;
+
+/// How far Lumen may go in explaining, set by how much the player has struggled with the puzzle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HelpLevel {
+    Probe,
+    Nudge,
+    Guide,
+    Explain,
+    /// The puzzle is solved; the player may be looking back on it.
+    Review,
+}
+
+impl HelpLevel {
+    /// The level for a puzzle with `failures` failed tests, where the player has sent `stalled`
+    /// messages since the last test. Each failed test raises the level by one, and every
+    /// [`STALL_MESSAGES`] messages without a test raise it by one more, up to two steps. So chatting
+    /// alone can reach [`HelpLevel::Guide`], and [`HelpLevel::Explain`] needs a failed test.
+    pub fn for_progress(solved: bool, failures: usize, stalled: usize) -> Self {
+        if solved {
+            return HelpLevel::Review;
+        }
+        match failures + (stalled / STALL_MESSAGES).min(MAX_STALL_STEPS) {
+            0 => HelpLevel::Probe,
+            1 => HelpLevel::Nudge,
+            2 => HelpLevel::Guide,
+            _ => HelpLevel::Explain,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            HelpLevel::Probe => "Probe",
+            HelpLevel::Nudge => "Nudge",
+            HelpLevel::Guide => "Guide",
+            HelpLevel::Explain => "Explain",
+            HelpLevel::Review => "Review",
+        }
+    }
+
+    /// What Lumen may do at this level, as written into the prompt.
+    pub fn instructions(self) -> &'static str {
+        match self {
+            HelpLevel::Probe => "\
+Ask, do not tell. Find out what the player thinks, what they have measured and what they predict will \
+happen. Point them to the station's experiment or to a handbook page by its title. Do not introduce a \
+formula the player has not written themselves.",
+            HelpLevel::Nudge => "\
+If there is a failed test, start from what it showed and ask what that implies. You may name the idea \
+involved and say which notebook readings matter. Still do not introduce a formula; let the player \
+find the relation.",
+            HelpLevel::Guide => "\
+You may state the relation between the quantities as a formula, and check the player's setup one step \
+at a time. Name the first step that is wrong and say why. End with one question.",
+            HelpLevel::Explain => "\
+The player has struggled with this puzzle, so be thorough. Walk through the whole method step by step, \
+in symbols, using the player's notebook names. Say exactly where their tests or readings went wrong. \
+If a reading looks wrong, use PRIVATE to notice it but describe it only in words (\"your t looks too \
+short; time the drop again\"), never with the true value. Leave only the final substitution and the \
+arithmetic to the player. Up to about eight short lines, then invite them to try.",
+            HelpLevel::Review => "\
+The puzzle is solved. Discuss the method freely and fully, and answer why-questions in depth, but \
+still do not state the numbers.",
+        }
+    }
+}
+
+pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
     let mut out = String::from(POLICY);
     let w = &mut out;
     let _ = write!(w, "\n\n# Current puzzle\nChapter: {}\nPuzzle: {}\n", ctx.chapter_title, ctx.puzzle_title);
@@ -109,6 +183,13 @@ pub fn system_prompt(ctx: &TutorContext) -> String {
         );
     }
 
+    let failures = ctx.attempts.iter().filter(|a| !a.pass).count();
+    let _ = write!(w, "\n# Help level: {}", help.name());
+    if help != HelpLevel::Review {
+        let _ = write!(w, " ({} of 4) — {} failed test{}", help as usize + 1, failures, if failures == 1 { "" } else { "s" });
+    }
+    let _ = writeln!(w, "\n{}", help.instructions());
+
     let _ = writeln!(w, "\n# PRIVATE — never reveal");
     let _ = writeln!(w, "True values of what can be measured:");
     for line in &ctx.true_measurements {
@@ -121,4 +202,33 @@ pub fn system_prompt(ctx: &TutorContext) -> String {
     let _ = writeln!(w, "Passing values: {}", ctx.solution_answers.join("; "));
     let _ = writeln!(w, "{}", ctx.solution_note);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HelpLevel::{self, *};
+
+    #[test]
+    fn failed_tests_raise_the_level() {
+        assert_eq!(HelpLevel::for_progress(false, 0, 0), Probe);
+        assert_eq!(HelpLevel::for_progress(false, 1, 0), Nudge);
+        assert_eq!(HelpLevel::for_progress(false, 2, 0), Guide);
+        assert_eq!(HelpLevel::for_progress(false, 3, 0), Explain);
+        assert_eq!(HelpLevel::for_progress(false, 9, 0), Explain);
+    }
+
+    #[test]
+    fn chatting_without_testing_helps_but_only_so_far() {
+        assert_eq!(HelpLevel::for_progress(false, 0, 3), Probe);
+        assert_eq!(HelpLevel::for_progress(false, 0, 4), Nudge);
+        assert_eq!(HelpLevel::for_progress(false, 0, 8), Guide);
+        assert_eq!(HelpLevel::for_progress(false, 0, 100), Guide, "a test is needed to reach Explain");
+        assert_eq!(HelpLevel::for_progress(false, 1, 8), Explain);
+    }
+
+    #[test]
+    fn a_solved_puzzle_is_reviewed() {
+        assert_eq!(HelpLevel::for_progress(true, 0, 0), Review);
+        assert_eq!(HelpLevel::for_progress(true, 5, 20), Review);
+    }
 }

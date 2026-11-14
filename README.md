@@ -8,6 +8,12 @@ This repository holds the design and a playable slice: tier 1, chapter 1 (kinema
 
 ![A test in progress](docs/screenshots/test.png)
 
+Each station starts with an experiment to try before any calculation. You guess what will happen,
+then watch: a crate dropped and a crate fired sideways reach the canyon floor together. What you see
+writes the matching page of your handbook (H), and the stations point you to the pages they need.
+
+![The canyon's experiment: guess, then watch](docs/screenshots/experiment.png)
+
 ## Run
 
 Needs Rust 1.97.1 or newer. The first build takes a while (the engine is large).

@@ -84,12 +84,17 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Pass.** The cart stops on the marker (one block, so centre ± 0.5 m). Too short or too far is
   reported in metres. The rail is 24 m long; longer runs are refused.
 - **Gates.** Puzzle 1 requires it.
+- **First page.** The first value committed here, tested or refused, writes *Measurements carry
+  units*: the handbook is met in the tutorial.
 
 ### Puzzle 1 — Local gravity
 
 - **Brief.** The launcher needs this planet's gravitational acceleration.
 - **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
   fall with the stopwatch (free, repeatable).
+- **Try it first.** "How will flashes at equal moments be spaced?" Evenly / further apart lower down /
+  closer together. The release is the experiment: the flashes leave afterimages and ticks whose
+  gaps grow. Writes the page *Free fall*.
 - **Predict.** Enter `g`.
 - **Test.** A second mass is released from the taller survey mast. The station shows the fall time
   predicted from the player's `g` beside the measured one.
@@ -102,6 +107,10 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Brief.** Launch a salvage crate horizontally from the ledge so it lands on the platform on the far
   side.
 - **Investigate.** Ruler: horizontal distance to the platform centre, and the drop from the ledge.
+- **Try it first.** "One crate dropped, one fired sideways, at the same moment: which reaches the
+  canyon floor first?" Both at once. The fired crate is slow enough to land mid-canyon; both fall the
+  ledge plus the canyon's depth, not the drop to the platform, so the time is not the puzzle's.
+  Writes *Horizontal and vertical motion are independent*.
 - **Predict.** Enter the launch speed.
 - **Pass.** The crate lands on the platform (centre ± 1.5 m).
 - **Relations.** `t = sqrt(2h/g)`, `d = v t`.
@@ -111,6 +120,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Brief.** Launch the frame beam over the ridge onto the shipyard pad. The launcher has a maximum
   speed.
 - **Investigate.** Ruler: distance to the pad, distance to the ridge, height of the ridge.
+- **Try it first.** "Two slugs at the same speed, 30 and 60 degrees: which lands further away?" The
+  same place, at 0.6 of the distance to the ridge, well short of it. Writes *Splitting a launch into
+  components* and *Range on level ground*.
 - **Predict.** Enter the launch angle and the launch speed.
 - **Pass.** The beam passes over the ridge without touching it and lands on the pad (5 m long, so
   centre ± 2.5 m). The tracked point is the beam's underside; the brief tells the player to leave margin.

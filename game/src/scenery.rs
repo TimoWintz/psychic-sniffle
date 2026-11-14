@@ -52,10 +52,10 @@ fn spawn(
 
     // Islands on the horizon, larger than life so the haze softens them.
     for (i, (centre, scale)) in [
-        (Vec3::new(-190.0, 0.0, 10.0), 3.0),
-        (Vec3::new(330.0, 0.0, -150.0), 4.0),
-        (Vec3::new(120.0, 0.0, -300.0), 3.5),
-        (Vec3::new(-120.0, 0.0, 330.0), 4.5),
+        (Vec3::new(-180.0, 0.0, 40.0), 3.0),
+        (Vec3::new(380.0, 0.0, -140.0), 4.0),
+        (Vec3::new(150.0, 0.0, -280.0), 3.5),
+        (Vec3::new(-110.0, 0.0, 380.0), 4.5),
     ]
     .into_iter()
     .enumerate()
@@ -76,7 +76,7 @@ fn spawn(
     commands.spawn((
         Mesh3d(meshes.add(floating.mesh(0, floating.size.x, 0, floating.size.z, false))),
         MeshMaterial3d(blocks.clone()),
-        Transform::from_xyz(260.0, 70.0, 150.0).with_scale(Vec3::splat(2.5)),
+        Transform::from_xyz(330.0, 70.0, 220.0).with_scale(Vec3::splat(2.5)),
         NotShadowCaster,
     ));
 
@@ -90,6 +90,14 @@ fn spawn(
             ..default()
         })),
         Transform::from_xyz(size.x / 2.0, SEA_LEVEL, size.z / 2.0),
+        NotShadowCaster,
+    ));
+
+    // The sea bed out past the island, level with the deepest floor the world holds.
+    commands.spawn((
+        Mesh3d(meshes.add(Plane3d::default().mesh().size(1800.0, 1800.0))),
+        MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::srgb(0.40, 0.38, 0.48), perceptual_roughness: 1.0, ..default() })),
+        Transform::from_xyz(size.x / 2.0, 0.98, size.z / 2.0),
         NotShadowCaster,
     ));
 

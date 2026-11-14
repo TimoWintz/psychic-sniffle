@@ -12,7 +12,12 @@ use bevy::prelude::*;
 use physics_core::materials::Material;
 use physics_core::puzzle::Ch1Layout;
 
-pub const WORLD_SIZE: IVec3 = IVec3::new(176, 72, 128);
+/// Where the layout's own coordinates start in the world. The margin around them leaves room for the
+/// coast to find its own shape, and for beaches wide enough to slope gently down to the water.
+pub const LAYOUT_ORIGIN: IVec3 = IVec3::new(OX, 0, OZ);
+const OX: i32 = 40;
+const OZ: i32 = 34;
+pub const WORLD_SIZE: IVec3 = IVec3::new(232, 72, 196);
 /// Height of the ground surface over most of the island.
 pub const GROUND: i32 = 20;
 pub const SEA_LEVEL: f32 = 8.6;
@@ -71,17 +76,19 @@ pub struct Sites {
 }
 
 /// Block the rail cart starts on, and the row the supply rail runs along (eastward).
-const RAIL_X: i32 = 28;
-const RAIL_ROW: i32 = 47;
-const TOWER: IVec3 = IVec3::new(36, GROUND, 30);
-const MAST: IVec3 = IVec3::new(28, GROUND, 22);
+const RAIL_X: i32 = OX + 28;
+const RAIL_ROW: i32 = OZ + 47;
+const TOWER: IVec3 = IVec3::new(OX + 36, GROUND, OZ + 30);
+const MAST: IVec3 = IVec3::new(OX + 28, GROUND, OZ + 22);
 /// Near (west) rim of the canyon, where the ledge launcher releases.
-const CANYON_X: i32 = 70;
-const CANYON_ROW: i32 = 56;
-const CANYON_Z: (i32, i32) = (28, 84);
+const CANYON_X: i32 = OX + 70;
+const CANYON_ROW: i32 = OZ + 56;
+const CANYON_Z: (i32, i32) = (OZ + 28, OZ + 84);
 /// Release point of the tilting launcher.
-const RIDGE_LAUNCH_X: i32 = 40;
-const RIDGE_ROW: i32 = 100;
+const RIDGE_LAUNCH_X: i32 = OX + 40;
+const RIDGE_ROW: i32 = OZ + 100;
+/// West edge of the outcrop's flat top; the ramp climbs to it.
+const LEDGE_X: i32 = CANYON_X - 14;
 
 /// An axis-aligned rectangle of columns, both corners inclusive.
 #[derive(Clone, Copy, Debug)]
@@ -93,6 +100,11 @@ struct Rect {
 impl Rect {
     const fn new(x0: i32, z0: i32, x1: i32, z1: i32) -> Self {
         Rect { min: IVec2::new(x0, z0), max: IVec2::new(x1, z1) }
+    }
+
+    /// A rectangle given in the layout's own coordinates.
+    const fn local(x0: i32, z0: i32, x1: i32, z1: i32) -> Self {
+        Rect::new(OX + x0, OZ + z0, OX + x1, OZ + z1)
     }
 
     /// Distance in blocks from a column to the rectangle (0 inside).
@@ -120,26 +132,26 @@ impl Plan {
         let yard_x = RIDGE_LAUNCH_X + layout.pad_centre.floor() as i32 + 7;
         let zones = vec![
             // Landing site: wreck, spawn, drop tower, survey mast.
-            Rect::new(10, 16, 46, 50),
+            Rect::local(10, 16, 46, 50),
             // Supply rail.
-            Rect::new(22, 40, 58, 52),
+            Rect::local(22, 40, 58, 52),
             // Ramp foot, outcrop and the launch line out past the canyon.
-            Rect::new(34, 50, 142, 62),
+            Rect::local(34, 50, 142, 62),
             // The canyon, rim to rim.
             Rect::new(CANYON_X - 6, CANYON_Z.0 - 4, far_rim + 4, CANYON_Z.1 + 4),
             // Tilting launcher, ridge, pad and the line beyond.
-            Rect::new(32, RIDGE_ROW - 6, 140, RIDGE_ROW + 6),
+            Rect::new(OX + 32, RIDGE_ROW - 6, OX + 140, RIDGE_ROW + 6),
             Rect::new(ridge_x - 4, RIDGE_ROW - 12, ridge_x + 5, RIDGE_ROW + 12),
             // Shipyard.
             Rect::new(yard_x - 3, RIDGE_ROW - 10, yard_x + 23, RIDGE_ROW + 10),
         ];
         let corridors = vec![
-            Rect::new(18, RAIL_ROW + 1, 62, 100),
-            Rect::new(20, MAST.z + 1, 46, 60),
-            Rect::new(60, CANYON_ROW + 3, 148, 120),
-            Rect::new(30, RIDGE_ROW + 3, 142, 127),
+            Rect::local(18, 48, 62, 100),
+            Rect::local(20, 23, 46, 60),
+            Rect::local(60, 59, 148, 140),
+            Rect::new(OX + 30, RIDGE_ROW + 3, OX + 142, WORLD_SIZE.z),
         ];
-        Plan { zones, corridors, rail_view: Rect::new(18, RAIL_ROW + 1, 62, 100) }
+        Plan { zones, corridors, rail_view: Rect::local(18, 48, 62, 100) }
     }
 
     fn zone_distance(&self, x: i32, z: i32) -> f32 {
@@ -159,14 +171,16 @@ impl Plan {
 
     /// Roughly how many blocks inland a column is; negative out at sea.
     fn inland(&self, x: i32, z: i32) -> f32 {
-        let (xf, zf) = (x as f32, z as f32);
-        let ellipse = (((xf - 88.0) / 84.0).powi(2) + ((zf - 64.0) / 60.0).powi(2)).sqrt();
+        let (xf, zf) = ((x - OX) as f32, (z - OZ) as f32);
+        let ellipse = (((xf - 88.0) / 112.0).powi(2) + ((zf - 64.0) / 88.0).powi(2)).sqrt();
         let wobble = (fbm(xf / 30.0, zf / 30.0, 1, 3) - 0.5) * 0.6;
-        let coast = (1.0 - ellipse - wobble) * 50.0;
-        // Puzzle sites always have land around them, and the sea always reaches the world's edge.
+        let coast = (1.0 - ellipse - wobble) * 60.0;
+        // Puzzle sites always have a beach's width of land around them, more in places, so the coast
+        // never simply traces their outline. The sea always reaches the world's edge.
+        let margin = BEACH + 2.0 + 12.0 * fbm(xf / 16.0, zf / 16.0, 7, 2);
         let edge = x.min(WORLD_SIZE.x - 1 - x).min(z).min(WORLD_SIZE.z - 1 - z) as f32;
         let fray = 6.0 * fbm(xf / 11.0, zf / 11.0, 6, 2);
-        coast.max(16.0 - self.zone_distance(x, z)).min(edge - 3.0 - fray)
+        coast.max(margin - self.zone_distance(x, z)).min(edge - 3.0 - fray)
     }
 }
 
@@ -283,7 +297,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let shipyard = Vec3::new(yard_x as f32 + 10.0, ground, RIDGE_ROW as f32 + 0.5);
 
     // --- The wreck: a broken hull section near the start, in a scorched patch -----------------
-    let wreck = IVec3::new(16, GROUND, 40);
+    let wreck = IVec3::new(OX + 16, GROUND, OZ + 40);
     for dz in -5..=10 {
         for dx in -6..=14 {
             let p = wreck + IVec3::new(dx, -1, dz);
@@ -311,10 +325,10 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     pins.push(rail_marker_pin);
 
     // Worn paths from the wreck past each station in turn, then on to the shipyard.
-    let ramp_foot = 56 - layout.ledge_h as i32 - 2;
-    path(&mut world, &[(24, 46), (30, 42), (34, 38), (station1.x, station1.z + 1)]);
-    path(&mut world, &[(station1.x + 1, station1.z + 1), (42, 43), (46, 50), (ramp_foot, CANYON_ROW)]);
-    path(&mut world, &[(ramp_foot, CANYON_ROW + 1), (ramp_foot - 2, 66), (42, 82), (38, 94), (station3.x + 1, station3.z - 1)]);
+    let ramp_foot = LEDGE_X - layout.ledge_h as i32 - 2;
+    path(&mut world, &[(OX + 24, OZ + 46), (OX + 30, OZ + 42), (OX + 34, OZ + 38), (station1.x, station1.z + 1)]);
+    path(&mut world, &[(station1.x + 1, station1.z + 1), (OX + 42, OZ + 43), (OX + 46, OZ + 50), (ramp_foot, CANYON_ROW)]);
+    path(&mut world, &[(ramp_foot, CANYON_ROW + 1), (ramp_foot - 2, OZ + 66), (OX + 42, OZ + 82), (OX + 38, OZ + 94), (station3.x + 1, station3.z - 1)]);
     path(&mut world, &[(station3.x + 2, RIDGE_ROW - 3), (ridge_x - 3, RIDGE_ROW - 14), (ridge_x + 6, RIDGE_ROW - 14), (pad_mid - 3, RIDGE_ROW - 4), (yard_x, RIDGE_ROW)]);
 
     // Station consoles, each in a small camp of salvage: a plated apron, a quartz lantern and crates.
@@ -329,7 +343,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     flora(&mut world, &plan);
 
     let sites = Sites {
-        spawn: Vec3::new(30.5, ground, 40.5),
+        spawn: Vec3::new(OX as f32 + 30.5, ground, OZ as f32 + 40.5),
         rail_start,
         tower_release,
         tower_plate,
@@ -363,13 +377,16 @@ fn put(world: &mut VoxelWorld, p: IVec3, material: Material) {
 }
 
 /// Coast, beaches, cliffs, hills and the north-eastern range, in layers of turf, soil and rock.
+/// Width of a beach, from the turf down to the water.
+const BEACH: f32 = 24.0;
+
 fn terrain(world: &mut VoxelWorld, plan: &Plan) {
     let (sx, sz) = (WORLD_SIZE.x, WORLD_SIZE.z);
     let mut heights = vec![0; (sx * sz) as usize];
     let mut beachy = vec![false; (sx * sz) as usize];
     for z in 0..sz {
         for x in 0..sx {
-            let (xf, zf) = (x as f32, z as f32);
+            let (xf, zf) = ((x - OX) as f32, (z - OZ) as f32);
             let flat = plan.flatness(x, z);
             let low = plan.lowland(x, z);
             let rolling = (fbm(xf / 26.0, zf / 26.0, 2, 3) - 0.5) * 7.0 * (1.0 - 0.55 * low);
@@ -382,14 +399,17 @@ fn terrain(world: &mut VoxelWorld, plan: &Plan) {
             let mountain = massif * (8.0 + 18.0 * crest) * (1.0 - low);
             let land = GROUND as f32 + flat * (rolling + mountain);
 
-            // Where the coast is cliff the land runs to the water's edge; elsewhere it slopes to a beach.
+            // Where the coast is cliff the land runs to the water's edge; elsewhere it slopes to a beach,
+            // wide enough that it comes down in broad, low terraces rather than a staircase.
             let inland = plan.inland(x, z);
             let cliff = smoothstep(0.42, 0.62, fbm(xf / 40.0, zf / 40.0, 5, 2));
-            let slope = 12.0 - 10.5 * cliff;
+            let slope = BEACH - (BEACH - 1.5) * cliff;
             let top = if inland >= slope {
                 land
             } else if inland > 0.0 {
-                9.0 + (land - 9.0) * (inland / slope).powf(1.4)
+                // A little noise, so the terraces' edges wander instead of running in parallel lines.
+                let ripple = (fbm(xf / 7.0, zf / 7.0, 8, 2) - 0.5) * 2.8;
+                (9.0 + (land - 9.0) * (inland / slope).powf(1.2) + ripple).clamp(8.6, land)
             } else {
                 (8.0 + inland * 0.7).max(0.0)
             };
@@ -408,7 +428,10 @@ fn terrain(world: &mut VoxelWorld, plan: &Plan) {
             let top = height(x, z);
             let steep = [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().map(|(dx, dz)| (top - height(x + dx, z + dz)).abs()).max().unwrap_or(0);
             let high = top > GROUND + 14 && hash01(IVec3::new(x, 1, z)) < 0.6;
-            let surface = if beachy[(z * sx + x) as usize] {
+            // Deep water has a floor of bare rock; the sea bed beyond the world's edge matches it.
+            let surface = if top <= 4 {
+                Material::Rock
+            } else if beachy[(z * sx + x) as usize] {
                 Material::Sand
             } else if steep >= 3 || high {
                 Material::Rock
@@ -439,7 +462,7 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
             let inland = plan.inland(x, z);
             // Not off the south coast: that is where the test cameras stand.
             let edge = x.min(WORLD_SIZE.x - 1 - x).min(z).min(WORLD_SIZE.z - 1 - z);
-            if !(-13.0..-5.0).contains(&inland) || z > 90 || edge < 6 || hash01(IVec3::new(gx, 203, gz)) < 0.35 {
+            if !(-13.0..-5.0).contains(&inland) || z - OZ > 90 || edge < 6 || hash01(IVec3::new(gx, 203, gz)) < 0.35 {
                 continue;
             }
             let radius = 1.3 + 1.4 * hash01(IVec3::new(x, 204, z));
@@ -468,23 +491,23 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
 
 /// The outcrop that carries the ledge launcher: a steep-sided mesa with a gully ramp up its west side.
 fn outcrop(world: &mut VoxelWorld, ledge_h: i32) {
-    let (cx, cz) = (64.0, CANYON_ROW as f32);
+    let (cx, cz) = ((CANYON_X - 6) as f32, CANYON_ROW as f32);
     // The supply rail runs just north of it, so the mesa is shallower on that side.
-    for z in RAIL_ROW + 2..=74 {
-        for x in 42..CANYON_X {
+    for z in RAIL_ROW + 2..=OZ + 74 {
+        for x in OX + 42..CANYON_X {
             let (xf, zf) = (x as f32, z as f32);
             let reach = if zf < cz { 8.5 } else { 15.0 };
             let ellipse = (((xf - cx) / 19.0).powi(2) + ((zf - cz) / reach).powi(2)).sqrt();
             let rim = ellipse + (fbm(xf / 7.0, zf / 7.0, 61, 2) - 0.5) * 0.35;
             let mut height = (((1.0 - rim) * 13.0 * 3.0).floor() as i32).clamp(0, ledge_h);
             // The flat top that holds the launcher and the station.
-            if (56..CANYON_X).contains(&x) && (CANYON_ROW - 4..=CANYON_ROW + 6).contains(&z) {
+            if (LEDGE_X..CANYON_X).contains(&x) && (CANYON_ROW - 4..=CANYON_ROW + 6).contains(&z) {
                 height = ledge_h;
             }
             // The ramp: one block up per block east, five wide, cut into the mesa's west side.
-            let ramp = (CANYON_ROW - 2..=CANYON_ROW + 2).contains(&z) && x < 56;
+            let ramp = (CANYON_ROW - 2..=CANYON_ROW + 2).contains(&z) && x < LEDGE_X;
             if ramp {
-                height = (ledge_h - (56 - x)).max(0);
+                height = (ledge_h - (LEDGE_X - x)).max(0);
             }
             if height == 0 {
                 continue;

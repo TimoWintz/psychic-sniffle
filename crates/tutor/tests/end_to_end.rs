@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 use tutor::filter::REDACTION;
+use tutor::prompt::{HelpLevel, STALL_MESSAGES};
 use tutor::provider::ChatCompletions;
 use tutor::{Conversation, Turn, Tutor, TutorContext};
 
@@ -151,6 +152,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(system.contains("currently typed: d1/t"), "blueprint draft is included");
     assert!(system.contains("FAIL"), "the failed test is included");
     assert!(system.contains("# PRIVATE — never reveal"));
+    assert!(system.contains("# Help level: Nudge (2 of 4) — 1 failed test\n"), "one failed test is a nudge");
 }
 
 #[test]
@@ -230,7 +232,7 @@ fn the_experiment_is_in_the_snapshot_and_its_angles_may_be_repeated() {
         let line = "Remember the 30 degree and the 60 degree shots.";
         assert_eq!(filter.apply(line), line, "seed {seed}");
 
-        let prompt = tutor::prompt::system_prompt(&ctx);
+        let prompt = tutor::prompt::system_prompt(&ctx, HelpLevel::Probe);
         assert!(prompt.contains("The player guessed: The 60 degree shot."), "{prompt}");
         assert!(prompt.contains("## Range on level ground (in the player's handbook)"));
         assert!(prompt.contains("## Splitting a launch into components (not found yet"));
@@ -265,4 +267,36 @@ fn a_look_tag_turns_the_eye_and_is_never_shown() {
     let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
     let system = seen.body["messages"][0]["content"].as_str().unwrap();
     assert!(system.contains("Places you can point at with [look: NAME]:\n- Platform: centre\n"));
+}
+
+#[test]
+fn help_deepens_while_the_player_is_stuck_and_resets_after_a_test() {
+    let (mut ctx, _) = canyon_context(11);
+    let mut conversation = Conversation::default();
+    assert_eq!(conversation.help_level(&ctx), HelpLevel::Nudge, "one failed test");
+
+    // The player keeps asking without running another test.
+    for n in 0..=STALL_MESSAGES {
+        let (base_url, seen) = serve_once("200 OK", "text/event-stream", event_stream(&["What did you see?"]));
+        assert!(conversation.ask(&tutor_at(base_url), &ctx, &format!("still stuck ({n})")));
+        wait(&mut conversation);
+        let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
+        let system = seen.body["messages"][0]["content"].as_str().unwrap().to_string();
+        let expected = if n < STALL_MESSAGES { "# Help level: Nudge" } else { "# Help level: Guide" };
+        assert!(system.contains(expected), "message {n}: {system}");
+    }
+    assert_eq!(conversation.help_level(&ctx), HelpLevel::Guide);
+
+    // A second failed test: the stall count starts again, and the failure counts instead.
+    let mut second = ctx.attempts[0].clone();
+    second.headline = "Short again".into();
+    ctx.attempts.push(second);
+    assert_eq!(conversation.help_level(&ctx), HelpLevel::Guide, "two failed tests, no stall");
+    ctx.attempts.push(ctx.attempts[0].clone());
+    assert_eq!(conversation.help_level(&ctx), HelpLevel::Explain, "three failed tests");
+
+    ctx.solved = true;
+    assert_eq!(conversation.help_level(&ctx), HelpLevel::Review);
+    let prompt = tutor::prompt::system_prompt(&ctx, HelpLevel::Review);
+    assert!(prompt.contains("# Help level: Review\nThe puzzle is solved."), "{prompt}");
 }

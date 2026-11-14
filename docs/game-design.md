@@ -71,7 +71,8 @@ Every puzzle runs through the same five steps at a **station** (a workbench in t
 2. **Investigate.** Measure the world. Readings go to the notebook under a short name (`h1`, `t1`).
    Experiments in this step are free and repeatable.
 3. **Predict.** Enter values, with units, in the blueprint panel. The calculator accepts expressions
-   over notebook names (`sqrt(2*h1/g)`).
+   over notebook names (`(d1 + d2) / 2`, `sin(30 deg)`). Examples in the interface show how to write
+   an expression, never which relation to use.
 4. **Test.** Commit. The simulation runs in the world; the result panel shows what was predicted
    against what happened, with a graph.
 5. **Result.** Pass: the part is fabricated and appears on the ship. Fail: a diagnostic says what

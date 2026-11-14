@@ -282,7 +282,7 @@ impl Instance {
                 label: "Gravitational acceleration",
                 dim: Dim::ACCELERATION,
                 unit: "m/s^2",
-                example: "2*h1/t1^2",
+                example: "3.7 m/s^2",
             }],
             PuzzleKind::Canyon => vec![speed],
             PuzzleKind::Ridge => vec![
@@ -291,7 +291,7 @@ impl Instance {
                     label: "Launch angle",
                     dim: Dim::NONE,
                     unit: "deg",
-                    example: "58 deg",
+                    example: "30 deg",
                 },
                 speed,
             ],

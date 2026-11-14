@@ -201,7 +201,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 let hint = if def.kind == PuzzleKind::Rail {
                     "Numbers need units: 12 m, not 12. Notebook names work: d1"
                 } else {
-                    "Numbers need units. Notebook names work: sqrt(2*h1/g)"
+                    "Numbers need units. Notebook names and functions work: (d1 + d2) / 2, sin(30 deg)"
                 };
                 ui.label(RichText::new(hint).small().color(DIM));
 
@@ -392,7 +392,7 @@ fn notebook_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui) {
 
             ui.separator();
             ui.label(RichText::new("Calculator").strong());
-            ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("2*h1/t1^2   or   g1 = 2*h1/t1^2").desired_width(360.0));
+            ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2").desired_width(360.0));
             let text = ui_state.calculator.trim().to_string();
             // "name = expression" keeps the result in the notebook.
             let (name, expression) = match text.split_once('=') {

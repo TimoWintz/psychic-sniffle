@@ -34,6 +34,22 @@ targets painted survey orange (they glow) with staked corners. Orange means "a n
 The landforms a puzzle needs (the outcrop, the canyon, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
 
+## Title and intro
+
+The game opens on a title menu (for now only Start). Behind it the intro plays on a loop, in attract
+mode: how the castaway came to be here, going back through the levels from the last to the first,
+seen from above.
+
+| | Level | What happens | Set |
+|---|---|---|---|
+| III | Orbit | The ship comes in too fast and breaks up. Its drive section tears loose and is left drifting. | placeholder: a planet from orbit |
+| II | The mainland | The main hull comes down on the far side of the strait. | placeholder: a landmass with the main wreck |
+| I | The island | The forward section crosses the strait and dives into the wreck site; the castaway climbs out. | the island of chapter 1.1 |
+
+Played backwards, the levels are the way the castaway arrived: out of orbit, over the mainland,
+onto the island. The game then plays them forwards, island first. Start hands over at once: the
+camera glides down to the player's view and Lumen says its first line. The placeholder sets are swapped for the real levels as they are built.
+
 ## Pillars
 
 1. **The world is the textbook.** One voxel is one cubic metre of a real material. Distances, masses,

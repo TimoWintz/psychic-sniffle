@@ -7,6 +7,14 @@ use physics_core::progress::Save;
 use physics_core::puzzle::{Ch1Layout, Instance, Outcome};
 use std::path::PathBuf;
 
+/// Whether the title menu, with the intro playing behind it, or the game is running.
+#[derive(States, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Mode {
+    #[default]
+    Menu,
+    Playing,
+}
+
 /// Number of puzzles (and stations) in the chapter.
 pub const PUZZLES: usize = 4;
 

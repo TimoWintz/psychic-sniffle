@@ -12,7 +12,7 @@ use crate::companion::{Companion, Landmarks};
 use crate::island::Sites;
 use crate::player::{Player, RUN_SPEED, WALK_SPEED};
 use crate::sim::Sim;
-use crate::state::Ui;
+use crate::state::{Mode, Ui};
 use bevy::prelude::*;
 use std::f32::consts::{PI, TAU};
 
@@ -150,7 +150,7 @@ pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, animate.after(crate::player::move_player));
+        app.add_systems(Update, animate.after(crate::player::move_player).run_if(in_state(Mode::Playing)));
     }
 }
 

@@ -316,7 +316,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         let crates = game.placed(puzzle);
                         ui.horizontal(|ui| {
                             ui.label(format!("{}:", spec.label));
-                            ui.label(RichText::new(Quantity::metres(crates as f64).display_in(spec.unit)).strong().color(GOOD));
+                            ui.label(RichText::new(format!("{crates} {}", spec.unit)).strong().color(GOOD));
                         });
                         let plural = if crates == 1 { "" } else { "s" };
                         ui.label(
@@ -403,14 +403,20 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
 /// The ledge launcher's rating plate: its one speed, which can be noted like a ruler reading.
 fn rating_plate(ui: &mut egui::Ui, game: &mut Game) {
     let speed = Quantity::speed(game.layout.canyon_speed);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(format!("Rating plate: fires at {} only (governor jammed).", speed.display())).strong());
         let noted = game.save.notebook.entries.iter().any(|e| e.source == "plate");
         if ui.add_enabled(!noted, egui::Button::new("Note")).on_hover_text("Write it in the notebook").clicked() {
-            game.save.notebook.add_numbered("v", "rated speed of the ledge launcher", speed, "plate");
-            game.persist();
+            note_plate(game);
         }
     });
+}
+
+/// Write the ledge launcher's rated speed into the notebook, as the plate's Note button does.
+pub fn note_plate(game: &mut Game) -> String {
+    let name = game.save.notebook.add_numbered("v", "rated speed of the ledge launcher", Quantity::speed(game.layout.canyon_speed), "plate");
+    game.persist();
+    name
 }
 
 /// The station's free experiment: a guess first, then the world shows what happens.

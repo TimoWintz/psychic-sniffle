@@ -14,6 +14,7 @@
 //! does not see what it expects panics, which fails the run.
 
 use crate::avatar::{Activity, AvatarState};
+use crate::carry::{self, Carry, DirtyCells, Target};
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
@@ -57,6 +58,12 @@ enum Step {
     OpenPage(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
+    /// Stand at `feet` facing along `facing` and press F; fail unless F would do what is expected.
+    CarryAt { feet: Vec3, facing: Vec3, expect: Expect },
+    /// Press the ledge launcher's rating plate's Note button.
+    NotePlate,
+    /// Type into the calculator.
+    Calculate(String),
     Windows { notebook: bool, handbook: bool, tutor: bool },
     Shot(&'static str),
     /// Press or release a key, as the keyboard would.
@@ -78,6 +85,13 @@ enum Step {
     /// Wait until the avatar has moved a metre from where it stood when the step began.
     UntilMoved { from: Option<Vec3>, within: f32 },
     Quit,
+}
+
+/// What a press of F should do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Expect {
+    Take,
+    PutInFrame,
 }
 
 #[derive(Resource)]
@@ -112,7 +126,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let (min, max) = game.layout.ridge_angle_window();
     let angle = ((min + max) / 2.0).to_degrees().round();
     let closed = Windows { notebook: false, handbook: false, tutor: false };
-    vec![
+    let mut steps = vec![
         Start,
         UntilPlaying { within: 10.0 },
         Shot("01_start"),
@@ -216,16 +230,49 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         RulerNote(0),
         RulerNote(1),
         RulerOff,
-        Draft(2, vec!["sqrt(2*h2/g)".into()]),
-        Commit(2),
-        Wait(0.3),
-        Shot("13_wrong_dimension_refused"),
-        Draft(2, vec!["9 m/s".into()]),
+        // The rating plate, then the height the launcher needs above the ledge, in the calculator.
+        NotePlate,
+        Windows { notebook: true, handbook: false, tutor: false },
+        Calculate("rise = 0.5*g*(d2/v1)^2 - h2".into()),
+        Wait(0.5),
+        Shot("13_calculator_rise"),
+        closed_step(),
+        Station(None),
+    ];
+    // One crate first, on purpose: it falls short. Then the rest of the worked-out stack.
+    let stack = game.layout.canyon_answer().expect("the canyon has one answer");
+    let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
+    let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
+    let ledge = sites.canyon_well.y as f32;
+    let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
+    let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
+    let fetch = |steps: &mut Vec<Step>, shots: bool| {
+        steps.push(CarryAt { feet: at_pile, facing: Vec3::X, expect: Expect::Take });
+        if shots {
+            steps.extend([Look { yaw: 2.3, pitch: 0.35, distance: 7.0 }, Wait(0.8), Shot("14a_carrying")]);
+        }
+        steps.push(CarryAt { feet: at_frame, facing: Vec3::X, expect: Expect::PutInFrame });
+    };
+    fetch(&mut steps, true);
+    steps.extend([
+        GoToStation(2),
+        Station(Some(2)),
         Commit(2),
         WaitIdle,
         Wait(2.0),
         Shot("14_canyon_miss"),
-        Draft(2, vec!["d2/sqrt(2*h2/g)".into()]),
+        Station(None),
+    ]);
+    for _ in 1..stack {
+        fetch(&mut steps, false);
+    }
+    steps.extend([
+        Look { yaw: 2.5, pitch: 0.12, distance: 17.0 },
+        Wait(1.0),
+        Shot("14b_launcher_raised"),
+        GoToStation(2),
+        Look { yaw: -1.4, pitch: 0.45, distance: 30.0 },
+        Station(Some(2)),
         Commit(2),
         Wait(1.2),
         Shot("15_canyon_flight"),
@@ -282,7 +329,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("21_notebook_handbook_lumen"),
         closed,
         Quit,
-    ]
+    ]);
+    steps
 }
 
 fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
@@ -356,6 +404,10 @@ fn intro() -> Vec<Step> {
 
 fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
+    let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
+    let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
+    let at_pile = Vec3::new(pile_west - 0.6, sites.canyon_well.y as f32, pile_row + 0.5);
+    let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
     let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };
     let at_console = || Look { yaw: 0.9, pitch: 0.2, distance: 4.5 };
     vec![
@@ -384,6 +436,18 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.1),
         Shot("pose_04_jump"),
         expect_activity(Activity::Idle),
+        // A crate from the ledge's pile, carried.
+        CarryAt { feet: at_pile, facing: Vec3::X, expect: Expect::Take },
+        Look { yaw: 2.3, pitch: 0.25, distance: 4.5 },
+        Wait(0.8),
+        Shot("pose_09_carrying"),
+        Key(KeyCode::KeyS, true),
+        Wait(0.45),
+        Shot("pose_10_carrying_walk"),
+        Key(KeyCode::KeyS, false),
+        // Hands free again before the console: the crate goes into the jack frame.
+        CarryAt { feet: at_frame, facing: Vec3::X, expect: Expect::PutInFrame },
+        Wait(0.5),
         // At the rail's console: working the panel, watching the cart, a miss and then a pass.
         GoToStation(0),
         at_console(),
@@ -436,14 +500,14 @@ fn run(
     mut sim: ResMut<Sim>,
     mut ruler: ResMut<Ruler>,
     mut orbit: ResMut<OrbitCamera>,
-    world: Res<VoxelWorld>,
-    sites: Res<Sites>,
+    mut world: ResMut<VoxelWorld>,
+    mut sites: ResMut<Sites>,
     mut player: Single<(&mut Player, &mut Transform), Without<Camera3d>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>),
+    (mut intro, mode, avatar, mut carry, mut dirty): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>, ResMut<Carry>, ResMut<DirtyCells>),
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -510,6 +574,20 @@ fn run(
         Step::OpenPage(page) => ui.open_page(page),
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
+        Step::CarryAt { feet, facing, expect } => {
+            player.1.translation = feet;
+            player.1.rotation = Quat::from_rotation_y(f32::atan2(-facing.x, -facing.z));
+            player.0.velocity = Vec3::ZERO;
+            let target = carry::target_for(&world, &sites, &carry, feet, facing);
+            let ok = matches!((expect, target), (Expect::Take, Some(Target::Take(_))) | (Expect::PutInFrame, Some(Target::PutInFrame)));
+            assert!(ok, "at {feet} facing {facing}, F would do {target:?}, not {expect:?}");
+            carry::apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target.expect("checked above"));
+            script.wait = 0.3;
+        }
+        Step::NotePlate => {
+            crate::ui::note_plate(&mut game);
+        }
+        Step::Calculate(text) => ui.calculator = text,
         Step::Windows { notebook, handbook, tutor } => {
             ui.notebook_open = notebook;
             ui.handbook_open = handbook;

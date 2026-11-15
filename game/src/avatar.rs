@@ -599,6 +599,21 @@ mod tests {
     }
 
     #[test]
+    fn carrying_holds_the_hands_forward_either_side_of_the_crate() {
+        for under in [idle(0.0), gait(0.3, 0.0)] {
+            let pose = planted(carrying(&under));
+            let (left, right) = (pose.point(ELBOW_L, HAND), pose.point(ELBOW_R, HAND));
+            for hand in [left, right] {
+                assert!(hand.z < -0.25, "hands in front of the body: {hand}");
+                assert!((0.75..1.35).contains(&hand.y), "hands at chest height: {hand}");
+            }
+            assert!((left.x - right.x).abs() > 0.4, "hands apart, either side of the crate: {left} {right}");
+            // The legs keep walking.
+            assert_eq!(pose.rot[HIP_L], planted(under).rot[HIP_L]);
+        }
+    }
+
+    #[test]
     fn at_rest_the_boots_stand_on_the_ground_and_the_head_is_on_top() {
         let rest = Pose::default();
         assert!(rest.lowest_sole().abs() < 1e-5);

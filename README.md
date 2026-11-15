@@ -28,8 +28,14 @@ and came down, seen from orbit, over the mainland and on the island. Start (or E
 ![The title menu, with the intro in orbit behind it](docs/screenshots/intro.png)
 
 WASD move · Shift run · Space jump · right-drag or arrow keys look · scroll zoom ·
-E use a station (E or Esc leaves) · R measure once with the ruler · N notebook and calculator · H handbook ·
-T (or click the eye) Lumen. N, H and T expand and reduce panels that stay on screen.
+E use a station (E or Esc leaves) · F pick up and put down · R measure once with the ruler ·
+N notebook and calculator · H handbook · T (or click the eye) Lumen. N, H and T expand and reduce panels
+that stay on screen.
+
+At the canyon the launcher's speed is fixed; you set its height by carrying salvage crates into the
+jack frame under it, one metre each.
+
+![Five crates in the jack frame raise the ledge launcher five metres](docs/screenshots/crates.png)
 
 Progress is saved to `saves/slot1.ron`. Delete it to start over on a new planet (new numbers).
 
@@ -67,10 +73,12 @@ GAME_SCRIPT=intro GAME_SEED=7 GAME_SAVE=/tmp/fp-intro.ron cargo run -p game
 GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 ```
 
-`tour` plays the chapter with the expressions a player would type and writes screenshots to `shots/`;
+`tour` plays the chapter with the expressions a player would type, carries the canyon's crates into the
+jack frame, and writes screenshots to `shots/`;
 `walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,
 presses Start and checks that the game takes over; `pose` films the avatar's animations up close
-(standing, walking, running, jumping, at a console, watching a test, a miss and a pass). `tour`, `walk`
+(standing, walking, running, jumping, carrying a crate, at a console, watching a test, a miss and a
+pass). `tour`, `walk`
 and `pose` press Start first.
 
 ## Layout

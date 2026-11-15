@@ -86,6 +86,8 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Gates.** Puzzle 1 requires it.
 - **First page.** The first value committed here, tested or refused, writes *Measurements carry
   units*: the handbook is met in the tutorial.
+- **Planned: carrying.** The cart starts empty. Before sending it, the player carries the cargo crate
+  beside the rail onto the cart (`F`), which teaches the verb the canyon needs, with nothing at stake.
 
 ### Puzzle 1 — Local gravity
 
@@ -101,19 +103,35 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Pass.** Within 2 % of the true value. The player's `g` is then written to the notebook and used by
   the later puzzles — their own measurement, not the game's number.
 - **Relation.** `h = ½ g t²`.
+- **Planned: a light gate.** A gate on a clamp that the player carries and fixes at any metre notch
+  of the drop tower. Each release times the fall from the release point to the gate and notes the
+  pair (`h1`, `t1`, `h2`, `t2`, ...), so the player designs their own measurement and can see that
+  doubling the drop does not double the time. The answer stays the typed `g`.
 
 ### Puzzle 2 — Across the canyon
 
-- **Brief.** Launch a salvage crate horizontally from the ledge so it lands on the platform on the far
-  side.
-- **Investigate.** Ruler: horizontal distance to the platform centre, and the drop from the ledge.
+- **Brief.** Land a salvage crate on the platform across the canyon. The ledge launcher's governor is
+  jammed: it fires horizontally at its rated speed and nothing else. It rides in a jack frame at the
+  rim; every crate slid into the frame raises it one metre.
+- **Investigate.** Ruler: horizontal distance from the release point to the platform centre, and the
+  drop to it (the release point's pin rises with the launcher). The rating plate on the station gives
+  the speed, with a button to note it (`v1`).
 - **Try it first.** "One crate dropped, one fired sideways, at the same moment: which reaches the
-  canyon floor first?" Both at once. The fired crate is slow enough to land mid-canyon; both fall the
-  ledge plus the canyon's depth, not the drop to the platform, so the time is not the puzzle's.
-  Writes *Horizontal and vertical motion are independent*.
-- **Predict.** Enter the launch speed.
+  canyon floor first?" Both at once. The test crates leave from wherever the launcher stands. The fired
+  crate is slow enough to land mid-canyon; both fall the launcher's height plus the canyon's depth, not
+  the drop to the platform, so the time is not the puzzle's. Writes *Horizontal and vertical motion are
+  independent*.
+- **Build.** Eight salvage crates lie on the ledge. The player carries them (`F`) into the jack frame,
+  or takes them out again. The blueprint shows the frame's crates instead of a typed value, and the
+  save keeps them.
 - **Pass.** The crate lands on the platform (centre ± 1.5 m).
-- **Relations.** `t = sqrt(2h/g)`, `d = v t`.
+- **Relations.** `t = d / v`, `h = ½ g t²`; crates = `h −` the ledge's height.
+- **Design of the numbers.** One crate moves the landing by about `d / (2H)` for a release height `H`,
+  so the ledge is low (3 to 5 m above the platform), the right stack is 2 to 5 crates, and the platform
+  far (`d ≥ 4.2 H`). Exactly one stack from 0 to 8 lands on the platform, within 0.5 m of its centre,
+  and a crate more or fewer misses it by at least 0.5 m past its edge. The speed is rounded to 0.1 m/s
+  on the plate. These numbers are drawn after all the others, so the rest of an older save's island
+  stays as it was.
 
 ### Puzzle 3 — Over the ridge (capstone)
 

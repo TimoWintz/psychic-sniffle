@@ -55,6 +55,7 @@ it had. What the engine does afterwards cannot change the result.
 | `sim` | experiment and test playback, hand-off to the physics engine, handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
+| `carry` | carrying salvage: pick up, the ghost of where it goes, put down; the canyon's jack frame, which raises the launcher and is what the station commits |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, handbook, chat |
 | `shipyard` | ship parts that appear as chapters complete |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
@@ -63,6 +64,11 @@ it had. What the engine does afterwards cannot change the result.
 
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in
 the world and the number the simulator uses are the same number.
+
+The block grid is not quite fixed: movable crates are blocks too, so they can be stood on and
+measured. When one is picked up or put down, `carry` lists the changed cells and `scenery` meshes
+those chunks again. A puzzle input can be **placed** rather than typed (`InputSource::Placed`): the
+blueprint then reads it from the world (the crates in the jack frame), and the save keeps it.
 
 The game starts in `Mode::Menu` (title menu, intro playing). The avatar, camera, stations, panels and
 Lumen only run in `Mode::Playing`, which Start switches to once the camera has glided to the player's
@@ -86,5 +92,5 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
 - `cargo test -p game` — the island against the simulators' assumptions, the intro's timeline (pieces
   land at their wrecks, nothing flies through the ground, no visible jumps, the hand-over ends on the
   player's view).
-- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`) that drives the game
-  and writes screenshots.
+- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`) that drives
+  the game and writes screenshots. The tour carries the canyon's crates into the jack frame.

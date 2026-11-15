@@ -108,16 +108,25 @@ fn lay_out(
     carry.stack = stack;
 
     let handle = meshes.add(Cuboid::new(0.62, 0.07, 0.14));
+    let grip = meshes.add(Cuboid::new(0.5, 0.1, 0.05));
     let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
     for i in 0..Ch1Layout::MAX_STACK as usize {
-        commands.spawn((
-            CrateMark(i),
-            RigidBody::Static,
-            Collider::cuboid(1.0, 1.0, 1.0),
-            Transform::from_translation(Vec3::NEG_Y * 100.0),
-            Visibility::default(),
-            children![(Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.53, 0.0))],
-        ));
+        // A handle on top and a grip on each side, so crates stacked in the frame read one by one.
+        commands
+            .spawn((
+                CrateMark(i),
+                RigidBody::Static,
+                Collider::cuboid(1.0, 1.0, 1.0),
+                Transform::from_translation(Vec3::NEG_Y * 100.0),
+                Visibility::default(),
+            ))
+            .with_children(|c| {
+                c.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.53, 0.0)));
+                for turn in 0..4 {
+                    let rotation = Quat::from_rotation_y(turn as f32 * std::f32::consts::FRAC_PI_2);
+                    c.spawn((Mesh3d(grip.clone()), MeshMaterial3d(glow.clone()), Transform::from_translation(rotation * Vec3::new(0.0, 0.18, 0.515)).with_rotation(rotation)));
+                }
+            });
     }
     let body = meshes.add(Cuboid::from_length(HELD_SIZE));
     let timber = materials.add(StandardMaterial { base_color: colour(Material::Timber), perceptual_roughness: 0.9, ..default() });

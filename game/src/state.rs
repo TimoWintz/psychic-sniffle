@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use physics_core::content::{Chapter, Found, PuzzleDef, chapter_1_1};
 use physics_core::progress::Save;
 use physics_core::puzzle::{Ch1Layout, Instance, Outcome};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Whether the title menu, with the intro playing behind it, or the game is running.
@@ -174,6 +175,21 @@ pub struct Ui {
     pub unread_pages: Vec<String>,
     /// The page the handbook should open at.
     pub handbook_focus: Option<String>,
+    /// Each handbook page's picture: when it started playing, and whether it is paused.
+    pub anims: BTreeMap<String, Anim>,
+    /// The choice picked for each handbook quiz question, by page id and question. Not saved: the
+    /// save keeps only which questions have been answered right.
+    pub quiz_picks: BTreeMap<(String, usize), usize>,
+    /// The page whose quiz should open and come into view.
+    pub quiz_focus: Option<String>,
+}
+
+/// A handbook picture's clock, in seconds of the interface's time.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Anim {
+    pub start: f64,
+    /// When it was paused, if it is.
+    pub paused_at: Option<f64>,
 }
 
 impl Ui {

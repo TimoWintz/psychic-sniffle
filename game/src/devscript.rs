@@ -57,6 +57,10 @@ enum Step {
     ExpectFound { page: &'static str, within: f32 },
     /// Open the handbook at a page, as its button at the station would.
     OpenPage(&'static str),
+    /// Answer a question of a handbook page's quiz, rightly or not, as a click on a choice would.
+    Quiz { page: &'static str, question: usize, right: bool },
+    /// Fail unless every question of the page's quiz has been answered right.
+    ExpectQuizDone(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
     /// Stand at `feet` facing along `facing`, with the pointer marking `aim` on the drop tower, and
@@ -238,6 +242,9 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Windows { notebook: false, handbook: true, tutor: false },
         Wait(0.4),
         Shot("06b_first_page_and_a_locked_one"),
+        OpenPage("units"),
+        Wait(2.9),
+        Shot("06b2_page_units"),
         closed_step(),
         // Puzzle 1: time the crawler, measure the track, catch it too soon, then on the marker.
         GoToStation(1),
@@ -256,6 +263,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         ExpectFound { page: "relative_velocity", within: 2.0 },
         Wait(0.5),
         Shot("06e_pace_seen"),
+        OpenPage("velocity"),
+        Wait(3.2),
+        Shot("06e2_page_velocity"),
+        OpenPage("relative_velocity"),
+        Wait(3.2),
+        Shot("06e3_page_relative_velocity"),
+        closed_step(),
         Look { yaw: HAUL_YAW, pitch: 0.5, distance: 34.0 },
         Wait(3.0),
         // Head start, the marker, and the posts: d2, d3, d4. The stopwatch noted t1.
@@ -314,9 +328,28 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(1.6),
         Shot("08_strobe_drop"),
         WaitIdle,
+        ExpectFound { page: "acceleration", within: 2.0 },
         ExpectFound { page: "free_fall", within: 2.0 },
         Wait(0.6),
         Shot("08b_strobe_seen"),
+        // The pages the experiment wrote: a car pulling away from traffic lights, then an apple falling
+        // on Earth and its quiz.
+        OpenPage("acceleration"),
+        Wait(5.5),
+        Shot("08b2_page_acceleration"),
+        OpenPage("free_fall"),
+        Wait(1.1),
+        Shot("08f_handbook_free_fall"),
+        Step::Quiz { page: "free_fall", question: 0, right: false },
+        Wait(0.4),
+        Shot("08g_quiz_wrong"),
+        Step::Quiz { page: "free_fall", question: 0, right: true },
+        Step::Quiz { page: "free_fall", question: 1, right: true },
+        Step::Quiz { page: "free_fall", question: 2, right: true },
+        ExpectQuizDone("free_fall"),
+        Wait(0.6),
+        Shot("08h_quiz_done"),
+        closed_step(),
         // Then the light gate: a short drop, then a long one, each timed by a run of the experiment.
         expect_gaze("Light gate on its stand"),
         Station(None),
@@ -367,6 +400,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         ExpectFound { page: "independence", within: 2.0 },
         Wait(0.5),
         Shot("11b_drop_and_fire_landed"),
+        OpenPage("independence"),
+        Wait(1.0),
+        Shot("11b2_page_independence"),
+        closed_step(),
         Wait(3.0),
         RulerPin(4),
         RulerPin(5),
@@ -433,6 +470,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         ExpectFound { page: "range", within: 2.0 },
         Wait(0.5),
         Shot("16b_two_angles_landed"),
+        OpenPage("components"),
+        Wait(1.2),
+        Shot("16b2_page_components"),
+        OpenPage("range"),
+        Wait(1.6),
+        Shot("16b3_page_range"),
+        closed_step(),
         Wait(3.0),
         RulerPin(6),
         RulerPin(9),
@@ -718,6 +762,15 @@ fn run(
             }
         }
         Step::OpenPage(page) => ui.open_page(page),
+        Step::Quiz { page, question, right } => {
+            let concept = game.chapter.concept(page).unwrap_or_else(|| panic!("no page '{page}'"));
+            let asked = &concept.quiz[question];
+            let choice = if right { asked.answer } else { (asked.answer + 1) % asked.choices.len() };
+            ui.open_page(page);
+            ui.quiz_focus = Some(page.to_string());
+            crate::handbook::pick(&mut game, &mut ui, page, question, choice);
+        }
+        Step::ExpectQuizDone(page) => assert!(game.save.quiz_done(&game.chapter, page), "the quiz on '{page}' is not done: {:?}", game.save.quizzes.get(page)),
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
         Step::CarryAt { feet, facing, expect, aim } => {

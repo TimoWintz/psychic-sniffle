@@ -51,6 +51,9 @@ const DOCK_RULER_RESERVE: f32 = 140.0;
 const DOCK_LUMEN_RESERVE: f32 = 190.0;
 /// The handbook's reading window: its width, and the height kept free under it for the hints.
 const HANDBOOK_WIDTH: f32 = 540.0;
+/// Where the handbook starts: clear of the column's widest panel, whose frame adds its margins and
+/// border to the dock's width, with a gap like the one between the column's panels.
+const HANDBOOK_LEFT: f32 = 10.0 + DOCK_WIDTH + 2.0 * (6.0 + 1.0) + 10.0;
 const HANDBOOK_BOTTOM_RESERVE: f32 = 80.0;
 
 fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: ResMut<Ui>, mut ruler: ResMut<Ruler>) {
@@ -169,7 +172,7 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
 /// runs down from there to the hints.
 fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
     let screen = ctx.content_rect();
-    let left = 10.0 + DOCK_WIDTH + 10.0;
+    let left = HANDBOOK_LEFT;
     egui::Area::new(egui::Id::new("handbook")).anchor(Align2::LEFT_TOP, [left, 10.0]).movable(false).show(ctx, |ui| {
         egui::Frame::window(ui.style()).show(ui, |ui| {
             ui.set_width(if ui_state.handbook_open { HANDBOOK_WIDTH } else { DOCK_HEADER_WIDTH });

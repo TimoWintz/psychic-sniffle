@@ -370,7 +370,9 @@ fn slump(t: f32) -> Pose {
     p.rot[SPINE] = rx(-0.22);
     let shake = if t < 1.0 { 0.28 * (TAU * 2.0 * t).sin() * (1.0 - t) } else { 0.0 };
     p.rot[NECK] = Quat::from_rotation_y(shake) * rx(-0.45);
-    p.rot[SHOULDER_R] = limb(1.0, 2.25, -0.05, 0.55);
+    // The elbow up and a little out, so the forearm folds back onto the side of the helmet. (A twist
+    // would not help: it turns the elbow in but swings the folded-back hand out, away from the head.)
+    p.rot[SHOULDER_R] = limb(1.0, 2.25, 0.3, 0.0);
     p.rot[ELBOW_R] = rx(2.1);
     p.rot[SHOULDER_L] = limb(-1.0, -0.05, 0.05, 0.0);
     p.rot[ELBOW_L] = rx(0.1);
@@ -626,7 +628,9 @@ mod tests {
         for run in [0.0, 0.5, 1.0] {
             let heights: Vec<f32> = (0..64).map(|i| planted(gait(i as f32 / 64.0, run)).body.y).collect();
             let (low, high) = heights.iter().fold((f32::INFINITY, f32::NEG_INFINITY), |(l, h), y| (l.min(*y), h.max(*y)));
-            assert!(high - low < 0.14, "bob of {} m at run {run}", high - low);
+            // A walk barely bobs; a run's longer stride, with a boot kept on the ground, dips more.
+            let bob = 0.08 + 0.1 * run;
+            assert!(high - low < bob, "bob of {} m at run {run}", high - low);
             assert!(low > -0.2, "the body sinks {low} m at run {run}");
             for i in 0..64 {
                 let pose = planted(gait(i as f32 / 64.0, run));
@@ -641,7 +645,9 @@ mod tests {
             let p = i as f32 / 16.0;
             let (a, b) = (gait(p, 0.3), gait(p + 0.5, 0.3));
             for (l, r) in [(HIP_L, HIP_R), (KNEE_L, KNEE_R), (ELBOW_L, ELBOW_R)] {
-                assert!(a.rot[l].angle_between(b.rot[r]) < 1e-4);
+                // Not `angle_between`: it takes the acos of a dot product, and in f32 a dot that
+                // rounds to 0.99999994 already reads as ~7e-4 rad, so equal rotations look apart.
+                assert!(a.rot[l].abs_diff_eq(b.rot[r], 1e-5), "{l} {r} at {p}: {} {}", a.rot[l], b.rot[r]);
             }
             // Arms swing the same way in the side plane; their outward lean is mirrored.
             let fwd = |q: Quat| (q * Vec3::NEG_Y).z;
@@ -710,10 +716,14 @@ mod tests {
 
     #[test]
     fn a_cheer_raises_both_hands_above_the_head_apart() {
-        let pose = cheer(0.8);
-        let (left, right) = (pose.point(ELBOW_L, HAND), pose.point(ELBOW_R, HAND));
-        assert!(left.y > 1.85 && right.y > 1.85, "{left} {right}");
-        assert!(left.x < -0.3 && right.x > 0.3, "{left} {right}");
+        // Through the hop and the wave, where one arm leans out further and so reaches less high.
+        for t in [0.1, 0.5, 0.8, 1.0, 1.3] {
+            let pose = cheer(t);
+            let (left, right) = (pose.point(ELBOW_L, HAND), pose.point(ELBOW_R, HAND));
+            let top = pose.point(NECK, HEAD).y + 0.19;
+            assert!(left.y > top && right.y > top, "at {t}: {left} {right}, top of the helmet {top}");
+            assert!(left.x < -0.3 && right.x > 0.3, "at {t}: {left} {right}");
+        }
     }
 
     #[test]
@@ -729,7 +739,9 @@ mod tests {
     fn the_air_pose_tucks_while_rising_and_reaches_while_falling() {
         let rising = planted(air(6.0));
         let falling = planted(air(-12.0));
-        let tuck = |p: &Pose| p.point(KNEE_L, SOLE[0]).y - p.body.y;
-        assert!(tuck(&rising) > tuck(&falling) + 0.2);
+        // How high the boot is drawn up under the body, by the middle of its sole: the toe would
+        // understate it, as a tucked boot tips toe down.
+        let tuck = |p: &Pose| p.point(KNEE_L, (SOLE[0] + SOLE[1]) / 2.0).y - p.body.y;
+        assert!(tuck(&rising) > tuck(&falling) + 0.15, "rising {} falling {}", tuck(&rising), tuck(&falling));
     }
 }

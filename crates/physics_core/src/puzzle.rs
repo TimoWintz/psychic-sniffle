@@ -245,7 +245,19 @@ impl Ch1Layout {
 
     /// Fall time from the drop tower as the stopwatch shows it (hundredths of a second).
     pub fn tower_fall_time(&self) -> f64 {
-        (fall_time(self.tower_h as f64, self.g) * 100.0).round() / 100.0
+        self.gate_time(self.tower_h)
+    }
+
+    /// Puzzle 1: the light gate's reading with the gate clamped `drop` metres below the release point
+    /// (one of the notches `1..=tower_h`; the last is at the landing plate): the time from the release
+    /// until the mass reaches the gate, as the stopwatch shows it (hundredths of a second).
+    pub fn gate_time(&self, drop: u32) -> f64 {
+        (fall_time(drop as f64, self.g) * 100.0).round() / 100.0
+    }
+
+    /// Puzzle 1: the notches the light gate can be clamped at, as drops below the release point.
+    pub fn gate_notches(&self) -> std::ops::RangeInclusive<u32> {
+        1..=self.tower_h
     }
 
     /// Launch angles (radians) between which a shot aimed at the pad centre clears the ridge and
@@ -480,6 +492,35 @@ impl Instance {
     /// The tilting launcher's projectile for a speed and an angle.
     fn projectile(&self, speed: f64, angle: f64) -> Projectile {
         Projectile::from_angle(0.0, 0.0, speed, angle, self.layout.g)
+    }
+
+    /// What stands at this puzzle's station in the world, given what the save says is placed there
+    /// (`placed`: crates in the jack frame, the cargo crate on the cart, the light gate's notch), in
+    /// words for the station panel and the tutor. `None` where nothing is placed (the ridge).
+    pub fn built(&self, placed: u32) -> Option<String> {
+        let plural = |n: u32| if n == 1 { "" } else { "s" };
+        Some(match self.kind {
+            PuzzleKind::Rail if placed == 0 => "the cart is empty; the cargo crate stands beside the rail".into(),
+            PuzzleKind::Rail => "the cargo crate is on the cart".into(),
+            PuzzleKind::Gravity if placed == 0 => {
+                "no light gate on the drop tower: the stopwatch times the whole drop to the plate".into()
+            }
+            PuzzleKind::Gravity => format!("the light gate is clamped {placed} m below the release point"),
+            PuzzleKind::Canyon => format!("{placed} crate{} in the jack frame", plural(placed)),
+            PuzzleKind::Ridge => return None,
+        })
+    }
+
+    /// Why the station will not run a test with what is placed in the world, before anything typed
+    /// is read: the supply rail's cart must carry its cargo. Refused for free, like a value of the
+    /// wrong kind, but it is not a value committed, so it writes no handbook page.
+    pub fn unready(&self, placed: u32) -> Option<String> {
+        match self.kind {
+            PuzzleKind::Rail if placed == 0 => {
+                Some("Load the cart first: pick up the cargo crate beside the rail (F) and put it on the cart (F).".into())
+            }
+            _ => None,
+        }
     }
 
     /// Check that every input is present, has the right dimension and is physically usable. Passing
@@ -803,7 +844,11 @@ impl Instance {
                     answers: vec![answer("g", "Gravitational acceleration", Quantity::acceleration(l.g), "m/s^2")],
                     note: format!(
                         "The true value is {} m/s^2. The stopwatch reads to 0.01 s, so the player's result differs \
-                         slightly; anything within {}% passes.",
+                         slightly; anything within {}% passes. With the light gate clamped at a notch, the same \
+                         relation holds for the drop h to the gate and the time t to it. Short drops are worth \
+                         less: the rounding is a bigger share of a short time, so a reading of a second or more \
+                         gives g to 1%, and fitting several notches shows that doubling the drop does not double \
+                         the time.",
                         l.g,
                         GRAVITY_TOLERANCE * 100.0
                     ),
@@ -1083,6 +1128,74 @@ mod tests {
             let attempt = inputs(&[("angle", Quantity::number(angle)), ("speed", Quantity::speed(v))]);
             assert!(ridge.evaluate(&attempt).unwrap().pass, "seed {seed}");
         }
+    }
+
+    #[test]
+    fn the_light_gate_reads_the_fall_to_every_notch() {
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let notches = layout.gate_notches();
+            assert_eq!((*notches.start(), *notches.end()), (1, layout.tower_h), "from a metre below the release down to the plate");
+            for drop in notches {
+                let t = layout.gate_time(drop);
+                assert!((t - fall_time(drop as f64, layout.g)).abs() <= 0.005 + 1e-12, "seed {seed}: {drop} m reads {t} s");
+                assert_eq!(t, (t * 100.0).round() / 100.0, "the stopwatch reads to 0.01 s");
+            }
+            // At the plate the gate reads what the stopwatch read for the whole drop.
+            assert_eq!(layout.gate_time(layout.tower_h), layout.tower_fall_time());
+            // Doubling the drop does not double the time.
+            let half = layout.tower_h / 2;
+            assert!(layout.gate_time(2 * half) < 1.5 * layout.gate_time(half), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn g_from_a_good_enough_notch_passes() {
+        // The rule the brief gives: a reading of a second or more gives g to 1%. Shorter drops are worth
+        // less, and at the shortest the rounding alone can push g past the 2% a pass allows.
+        let mut a_short_drop_failed = false;
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let gravity = Instance::new(PuzzleKind::Gravity, &layout);
+            let g_at = |drop: u32| 2.0 * drop as f64 / layout.gate_time(drop).powi(2);
+            let mut good = 0;
+            for drop in layout.gate_notches() {
+                let g = g_at(drop);
+                let passes = gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g))])).unwrap().pass;
+                if layout.gate_time(drop) >= 1.0 {
+                    good += 1;
+                    assert!(((g - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: {drop} m gives g = {g}, true {}", layout.g);
+                    assert!(passes, "seed {seed}: {drop} m");
+                } else {
+                    a_short_drop_failed |= !passes;
+                }
+            }
+            assert!(good >= 5, "seed {seed}: only {good} notches time a second or more");
+            // A straight line through the origin fitted to every pair (h against t^2) passes too.
+            let (num, den) = layout.gate_notches().fold((0.0, 0.0), |(n, d), drop| {
+                let t2 = layout.gate_time(drop).powi(2);
+                (n + drop as f64 * t2, d + t2 * t2)
+            });
+            let g_fit = 2.0 * num / den;
+            assert!(((g_fit - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: the fit gives {g_fit}");
+        }
+        assert!(a_short_drop_failed, "a one-metre drop should sometimes be too short to pass");
+    }
+
+    #[test]
+    fn the_cart_must_be_loaded_before_a_test() {
+        let layout = Ch1Layout::generate(6);
+        let rail = Instance::new(PuzzleKind::Rail, &layout);
+        let reason = rail.unready(0).expect("an empty cart is refused");
+        assert!(reason.starts_with("Load the cart first"), "{reason}");
+        assert_eq!(rail.unready(1), None);
+        for kind in [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+            assert_eq!(Instance::new(kind, &layout).unready(0), None, "{kind:?}");
+        }
+        assert_eq!(rail.built(1).as_deref(), Some("the cargo crate is on the cart"));
+        assert_eq!(Instance::new(PuzzleKind::Gravity, &layout).built(7).as_deref(), Some("the light gate is clamped 7 m below the release point"));
+        assert_eq!(Instance::new(PuzzleKind::Canyon, &layout).built(1).as_deref(), Some("1 crate in the jack frame"));
+        assert_eq!(Instance::new(PuzzleKind::Ridge, &layout).built(0), None);
     }
 
     #[test]

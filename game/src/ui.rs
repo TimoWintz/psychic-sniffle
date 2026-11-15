@@ -310,6 +310,17 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 ui.add_space(6.0);
                 ui.separator();
                 ui.label(RichText::new("Blueprint").strong());
+                if def.kind == PuzzleKind::Rail {
+                    // The cart's cargo is not a value, but the cart will not run without it.
+                    let loaded = game.placed(puzzle) > 0;
+                    let built = instance.built(game.placed(puzzle)).unwrap_or_default();
+                    ui.horizontal(|ui| {
+                        ui.label("Cargo:");
+                        ui.label(RichText::new(if loaded { "loaded" } else { "not loaded" }).strong().color(if loaded { GOOD } else { WARN }));
+                    });
+                    let todo = if loaded { "" } else { " Leave the console and carry it on (F)." };
+                    ui.label(RichText::new(format!("    {}.{todo}", capitalise(&built))).small().color(DIM));
+                }
                 for (i, spec) in specs.iter().enumerate() {
                     if spec.source == InputSource::Placed {
                         // Built in the world, not typed: the blueprint reads it off the jack frame.
@@ -463,12 +474,30 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
     }
     if game.def(puzzle).kind == PuzzleKind::Gravity {
-        let last = game.save.notebook.entries.iter().rfind(|e| e.source == "stopwatch");
-        match last {
-            Some(entry) => ui.label(format!("Stopwatch: {} = {}", entry.name, entry.quantity.display())),
+        // Where the light gate is, and the last reading: a pair from the gate, or the whole drop.
+        let gate = game.placed(puzzle);
+        let built = game.instance(puzzle).built(gate).unwrap_or_default();
+        let line = if gate > 0 { format!("{}.", capitalise(&built)) } else { format!("Light gate: none fitted, so {}.", built.trim_start_matches("no light gate on the drop tower: ")) };
+        ui.label(RichText::new(line).color(if gate > 0 { Color32::WHITE } else { DIM }));
+        let entries = &game.save.notebook.entries;
+        let last = entries.iter().rposition(|e| e.source == "stopwatch" || (e.source == "light gate" && e.quantity.dim == physics_core::units::Dim::TIME));
+        match last.map(|i| &entries[i]) {
+            Some(time) if time.source == "light gate" => {
+                let number = time.name.trim_start_matches('t');
+                let drop = game.save.notebook.get(&format!("h{number}"));
+                let drop = drop.map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
+                ui.label(format!("Light gate: {drop}{} = {}", time.name, time.quantity.display()))
+            }
+            Some(time) => ui.label(format!("Stopwatch: {} = {}", time.name, time.quantity.display())),
             None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),
         };
     }
+}
+
+/// A sentence's first letter in capitals.
+fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
 }
 
 /// The handbook pages a station's job uses: a button for each found page, the hint for a locked one.

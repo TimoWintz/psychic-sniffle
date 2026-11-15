@@ -75,7 +75,13 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Purpose.** Teach the station loop before any physics: brief, ruler, notebook, blueprint, units,
   commit, result, charges. It needs no mathematics; the answer is the measurement itself.
 - **Brief.** A powered cart on a straight, level rail beside the wreck drives exactly as far as it is
-  told and stops. Send it to the orange marker.
+  told and stops. Load it, then send it to the orange marker.
+- **Carrying.** The cart starts empty and will not run so. Its cargo crate stands beside the rail
+  start; the player picks it up (`F`) and puts it on the cart (`F`), which teaches the verb the
+  canyon needs, with nothing at stake. Committing with an empty cart is refused for free ("load the
+  cart first"), before anything typed is read, so it is not the first commit that writes the page.
+  The crate rides with the cart on every run and stays on it; it can be taken off again and put
+  back down beside the rail, and the save keeps whether it is loaded.
 - **Investigate.** Ruler: the cart's starting point to the marker centre (both pinned, on the near
   side of the rail so the cart does not hide them). The distance is a whole number of metres, 9 to 17,
   drawn after every other number so existing saves keep their layout.
@@ -84,16 +90,27 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Pass.** The cart stops on the marker (one block, so centre ± 0.5 m). Too short or too far is
   reported in metres. The rail is 24 m long; longer runs are refused.
 - **Gates.** Puzzle 1 requires it.
-- **First page.** The first value committed here, tested or refused, writes *Measurements carry
-  units*: the handbook is met in the tutorial.
-- **Planned: carrying.** The cart starts empty. Before sending it, the player carries the cargo crate
-  beside the rail onto the cart (`F`), which teaches the verb the canyon needs, with nothing at stake.
+- **First page.** The first value committed here with the cart loaded, tested or refused, writes
+  *Measurements carry units*: the handbook is met in the tutorial.
 
 ### Puzzle 1 — Local gravity
 
 - **Brief.** The launcher needs this planet's gravitational acceleration.
 - **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
   fall with the stopwatch (free, repeatable).
+- **Place to measure: the light gate.** A gate on a stand by the station, carried (`F`) and clamped on
+  the drop tower at any whole-metre notch, from 1 m below the release down to the plate: the notch
+  the pointer marks on the tower, or the one at hand height. With a gate fitted, each release times
+  the fall from the release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`,
+  `t3`, ...), so the player designs their own measurement and can see that doubling the drop does not
+  double the time. Without one, the stopwatch times the whole drop. The gate's notch is kept in the
+  save; a ruler pin rides on it. The answer stays the typed `g`.
+- **Short drops are worth less.** Readings are rounded to 0.01 s, so at 1 m (about 0.4 to 0.55 s)
+  the rounding alone is up to about 2.6 % of `g`, beyond the 2 % pass. A reading of a second or more
+  (`h ≥ g/2`, 3.3 to 6.8 m) gives `g` to 1 %. The station's text says only that the longer the drop,
+  the better the reading; players find the rest by fitting several notches. Tests hold every notch
+  that times a second or more to 1 %, and a straight line through all the pairs (`h` against `t²`) as
+  well. A plot of `h` against `t²` belongs to the grapher (tier 2), not here.
 - **Try it first.** "How will flashes at equal moments be spaced?" Evenly / further apart lower down /
   closer together. The release is the experiment: the flashes leave afterimages and ticks whose
   gaps grow. Writes the page *Free fall*.
@@ -103,10 +120,6 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Pass.** Within 2 % of the true value. The player's `g` is then written to the notebook and used by
   the later puzzles — their own measurement, not the game's number.
 - **Relation.** `h = ½ g t²`.
-- **Planned: a light gate.** A gate on a clamp that the player carries and fixes at any metre notch
-  of the drop tower. Each release times the fall from the release point to the gate and notes the
-  pair (`h1`, `t1`, `h2`, `t2`, ...), so the player designs their own measurement and can see that
-  doubling the drop does not double the time. The answer stays the typed `g`.
 
 ### Puzzle 2 — Across the canyon
 
@@ -158,3 +171,19 @@ value never works. All lengths are whole metres so they can be checked by counti
   both constraints before computing the speed.
 - **Relations.** `x = v cosθ · t`, `y = v sinθ · t − ½ g t²`; on level ground `R = v² sin 2θ / g`.
 - **Reward.** The skiff's frame appears on the shipyard pad.
+
+## Planned: 1.3 The Haul, place the catcher
+
+Direction only; chapter 1.3 has no puzzles in code yet. It is the third "doing it with your hands"
+pattern (see the game design): the setting is fixed, and the answer is where the player carries the
+target.
+
+- A sled is pushed onto a level run (or a ramp) by a fixed launcher, and friction brings it to rest.
+  The push is read off a plate. The player places the stop block where the sled will stop, in a row
+  of slots along the run.
+- It needs a friction simulator in `physics_core`, tested against closed form; the row of slots, as
+  another `carry::Slot` (the cart, the tower's notches and the jack frame are the ones built); and a
+  guesser test (see "What makes guessing a bad strategy").
+- A row of slots alone is a handful of options, the trap the first crate canyon fell into: a guesser
+  found it in 2.8 tests. So make the slots fine and the target tight, or combine the placement with a
+  calculated value: the friction coefficient, measured first from the tilt at which the sled slips.

@@ -44,6 +44,18 @@ impl Notebook {
         name
     }
 
+    /// Record two readings that belong together under the first number free for both prefixes
+    /// (`h2` and `t2`), so a pair keeps one number. Returns the two names.
+    pub fn add_pair(&mut self, first: (&str, &str, Quantity), second: (&str, &str, Quantity), source: &str) -> (String, String) {
+        let n = (1..)
+            .find(|n| self.get(&format!("{}{n}", first.0)).is_none() && self.get(&format!("{}{n}", second.0)).is_none())
+            .expect("an unused number exists");
+        let names = (format!("{}{n}", first.0), format!("{}{n}", second.0));
+        self.set(&names.0, first.1, first.2, source);
+        self.set(&names.1, second.1, second.2, source);
+        names
+    }
+
     pub fn remove(&mut self, name: &str) {
         self.entries.retain(|e| e.name != name);
     }
@@ -69,6 +81,18 @@ mod tests {
         let g = evaluate("2*h1/t1^2", &nb).unwrap();
         assert_eq!(g, Quantity::acceleration(10.0));
         assert_eq!(nb.add_numbered("h", "ledge", Quantity::metres(8.0), "ruler"), "h2");
+    }
+
+    #[test]
+    fn pairs_share_a_number() {
+        let mut nb = Notebook::default();
+        nb.add_numbered("h", "tower height", Quantity::metres(20.0), "ruler");
+        nb.add_numbered("t", "fall time", Quantity::seconds(2.0), "stopwatch");
+        let pair = nb.add_pair(("h", "drop to the gate", Quantity::metres(5.0)), ("t", "time to the gate", Quantity::seconds(1.0)), "light gate");
+        assert_eq!(pair, ("h2".to_string(), "t2".to_string()));
+        nb.add_numbered("t", "fall time", Quantity::seconds(2.0), "stopwatch");
+        let pair = nb.add_pair(("h", "drop to the gate", Quantity::metres(9.0)), ("t", "time to the gate", Quantity::seconds(1.4)), "light gate");
+        assert_eq!(pair, ("h4".to_string(), "t4".to_string()), "t3 is taken, so the pair skips to 4");
     }
 
     #[test]

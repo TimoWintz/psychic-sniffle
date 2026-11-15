@@ -510,7 +510,7 @@ fn animate(
     let target = action.or(console).or(if run < 0.5 { gaze } else { None });
     let typing_now = console.is_some() && action.is_none() && still && state.reaction.is_none();
     // Hands full: no cheering or slumping, the crate stays held.
-    if carry.holding {
+    if carry.holding.is_some() {
         state.reaction = None;
     }
 
@@ -548,7 +548,7 @@ fn animate(
     ease(&mut state.w_move, move_target, 10.0, dt);
     ease(&mut state.w_air, air_now as u8 as f32, 12.0, dt);
     ease(&mut state.w_typing, typing_now as u8 as f32, 6.0, dt);
-    ease(&mut state.w_carry, carry.holding as u8 as f32, 10.0, dt);
+    ease(&mut state.w_carry, carry.holding.is_some() as u8 as f32, 10.0, dt);
     ease(&mut state.w_reaction, state.reaction.is_some_and(|(_, t)| t < REACTION_SECONDS - 0.3) as u8 as f32, 9.0, dt);
     ease(&mut state.w_look, target.is_some() as u8 as f32, 4.0, dt);
     if let Some(target) = target {

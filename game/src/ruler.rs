@@ -96,7 +96,7 @@ fn spawn_pins(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mate
 #[derive(Component)]
 struct PinMark(usize);
 
-/// Pins on things that move (the ledge launcher's release point) move with them.
+/// Pins on things that move (the ledge launcher's release point, the light gate) move with them.
 fn follow_pins(sites: Res<Sites>, mut marks: Query<(&PinMark, &mut Transform)>) {
     if !sites.is_changed() {
         return;
@@ -113,6 +113,7 @@ pub fn pick_at(world: &VoxelWorld, sites: &Sites, camera: &Camera, camera_transf
     let nearest_pin = sites
         .pins
         .iter()
+        .filter(|pin| pin.present())
         .filter_map(|pin| {
             let on_screen = camera.world_to_viewport(camera_transform, pin.position).ok()?;
             let distance = on_screen.distance(cursor);

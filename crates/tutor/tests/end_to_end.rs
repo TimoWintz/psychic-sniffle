@@ -315,3 +315,40 @@ fn help_deepens_while_the_player_is_stuck_and_resets_after_a_test() {
     let prompt = tutor::prompt::system_prompt(&ctx, HelpLevel::Review);
     assert!(prompt.contains("# Help level: Review\nThe puzzle is solved."), "{prompt}");
 }
+
+#[test]
+fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
+    let chapter = chapter_1_1();
+    // A planet whose g is within the secret's margin of a whole number of metres, so a notch could be
+    // mistaken for the answer.
+    let seed = (0..).find(|s| {
+        let g = Ch1Layout::generate(*s).g;
+        (g.round() - g).abs() / g < tutor::context::SECRET_MARGIN / 2.0
+    });
+    let seed = seed.unwrap();
+    let layout = Ch1Layout::generate(seed);
+    let mut save = Save::new(seed);
+    let at = |kind: PuzzleKind, id: &str, save: &Save| {
+        let instance = Instance::new(kind, &layout);
+        TutorContext::build(&chapter, chapter.puzzle(id).unwrap(), &instance, save, &[])
+    };
+    let rail = at(PuzzleKind::Rail, "1.1.0", &save);
+    assert_eq!(rail.placed.as_deref(), Some("the cart is empty; the cargo crate stands beside the rail"));
+    let system = tutor::prompt::system_prompt(&rail, tutor::prompt::HelpLevel::Probe);
+    assert!(system.contains("In the world at this station now: the cart is empty"), "the empty cart is in the prompt");
+    save.placed.insert("1.1.0".into(), 1);
+    assert_eq!(at(PuzzleKind::Rail, "1.1.0", &save).placed.as_deref(), Some("the cargo crate is on the cart"));
+
+    // The light gate's notch is the player's own choice, in plain view: never redacted, even where
+    // it is close to g.
+    let notch = layout.g.round() as u32;
+    let line = format!("Your gate is {notch} m below the release.");
+    let unplaced = tutor::filter::LeakFilter::for_context(&at(PuzzleKind::Gravity, "1.1.1", &save), "");
+    assert_ne!(unplaced.apply(&line), line, "seed {seed}: without the gate, {notch} reads as g");
+    save.placed.insert("1.1.1".into(), notch);
+    let gravity = at(PuzzleKind::Gravity, "1.1.1", &save);
+    assert_eq!(gravity.placed, Some(format!("the light gate is clamped {notch} m below the release point")));
+    let filter = tutor::filter::LeakFilter::for_context(&gravity, "");
+    assert_eq!(filter.apply(&line), line);
+    assert_eq!(at(PuzzleKind::Ridge, "1.1.3", &save).placed, None);
+}

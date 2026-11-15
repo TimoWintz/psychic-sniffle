@@ -62,8 +62,10 @@ pub struct Save {
     /// Demonstrations watched, by puzzle id, with the choice made before the first run (if any).
     #[serde(default)]
     pub demos: BTreeMap<String, Option<usize>>,
-    /// What the player has built at each station, by puzzle id: the number of crates under the ledge
-    /// launcher. Kept between sessions so the world looks as it was left.
+    /// What the player has placed at each station, by puzzle id: the cargo crate on the rail cart
+    /// (0 or 1), the light gate's notch on the drop tower (its drop below the release point in metres,
+    /// 0 for none), the number of crates under the ledge launcher. Kept between sessions so the world
+    /// looks as it was left.
     #[serde(default)]
     pub placed: BTreeMap<String, u32>,
 }
@@ -227,6 +229,8 @@ mod tests {
         let mut save = Save::new(9);
         save.notebook.set("g", "gravity", Quantity::acceleration(8.25), "calculated");
         save.placed.insert("1.1.2".into(), 4);
+        save.placed.insert("1.1.1".into(), 9);
+        save.placed.insert("1.1.0".into(), 1);
         attempt(&mut save, "1.1.1", PuzzleKind::Gravity, 1.0);
         let text = save.to_ron();
         assert_eq!(Save::from_ron(&text).unwrap(), save);

@@ -32,9 +32,11 @@ E use a station (E or Esc leaves) · F pick up and put down · R measure once wi
 N notebook and calculator · H handbook · T (or click the eye) Lumen. N, H and T expand and reduce panels
 that stay on screen.
 
-At the canyon the launcher's dial only turns within a band, too slow for the bare ledge: work out how
-high it must stand, carry salvage crates into the jack frame under it (one metre each), then set the
-speed for the height you built.
+Some things are done with your hands. The supply rail's cart will not run until you have carried its
+cargo crate onto it. At the drop tower you can clamp a light gate at any metre of the tower and time
+the fall to it, short drops and long. At the canyon the launcher's dial only turns within a band, too
+slow for the bare ledge: work out how high it must stand, carry salvage crates into the jack frame
+under it (one metre each), then set the speed for the height you built.
 
 ![Five crates in the jack frame raise the ledge launcher five metres](docs/screenshots/crates.png)
 
@@ -74,8 +76,9 @@ GAME_SCRIPT=intro GAME_SEED=7 GAME_SAVE=/tmp/fp-intro.ron cargo run -p game
 GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 ```
 
-`tour` plays the chapter with the expressions a player would type, carries the canyon's crates into the
-jack frame, and writes screenshots to `shots/`;
+`tour` plays the chapter with the expressions a player would type, loads the rail cart, times drops
+with the light gate at two notches, carries the canyon's crates into the jack frame, and writes
+screenshots to `shots/`;
 `walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,
 presses Start and checks that the game takes over; `pose` films the avatar's animations up close
 (standing, walking, running, jumping, carrying a crate, at a console, watching a test, a miss and a

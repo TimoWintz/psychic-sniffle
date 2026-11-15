@@ -8,7 +8,7 @@
 //! unsolved puzzle, at a running test. Nothing about a solved puzzle draws the beam.
 //! The scripted lines never contain a number, so they cannot give an answer away.
 
-use crate::carry::Carry;
+use crate::carry::{Carry, Item, Slot, Yard};
 use crate::island::Sites;
 use crate::ruler::Ruler;
 use crate::sim::Sim;
@@ -33,7 +33,8 @@ pub struct Landmarks(Vec<(String, Vec3)>);
 
 impl Landmarks {
     pub fn new(sites: &Sites, game: &Game) -> Self {
-        let mut places: Vec<(String, Vec3)> = sites.pins.iter().map(|pin| (pin.label.to_string(), pin.position)).collect();
+        // Pins on things that come and go (the light gate) are not places to look at.
+        let mut places: Vec<(String, Vec3)> = sites.pins.iter().filter(|pin| pin.present()).map(|pin| (pin.label.to_string(), pin.position)).collect();
         for (i, console) in sites.stations.iter().enumerate() {
             // The station's screen, under its column of light.
             places.push((station_name(game, i), console.as_vec3() + Vec3::new(0.5, 1.3, 0.5)));
@@ -41,6 +42,10 @@ impl Landmarks {
         let pile = sites.crate_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.crate_pile.len().max(1) as f32;
         places.push((SALVAGE_CRATES.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
         places.push((JACK_FRAME.into(), sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
+        places.push((CARGO_CRATE.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
+        places.push((RAIL_CART.into(), sites.rail_start + Vec3::Y * 0.8));
+        places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
+        places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
         places.push(("The shipyard floor".into(), sites.shipyard + Vec3::Y * 1.0));
         Landmarks(places)
@@ -58,6 +63,12 @@ impl Landmarks {
 /// The crates on the canyon ledge, and the frame at the rim they go into.
 const SALVAGE_CRATES: &str = "Salvage crates on the ledge";
 const JACK_FRAME: &str = "Jack frame under the ledge launcher";
+/// The supply rail's cargo crate where it stands at the start, and the cart it goes on.
+const CARGO_CRATE: &str = "Cargo crate beside the rail";
+const RAIL_CART: &str = "Rail cart";
+/// The light gate on its stand, and the drop tower it clamps on.
+const LIGHT_GATE: &str = "Light gate on its stand";
+const TOWER_NOTCHES: &str = "Notches on the drop tower";
 
 pub fn station_name(game: &Game, puzzle: usize) -> String {
     format!("Station: {}", game.def(puzzle).title)
@@ -137,8 +148,9 @@ pub struct Companion {
     mood_left: f32,
     lines: Vec<Line>,
     anim: Animation,
-    /// Stations where Lumen has already suggested trying the experiment this session.
-    nudged: [bool; PUZZLES],
+    /// Stations where Lumen has already suggested trying the experiment, and what to build, this
+    /// session.
+    nudged: BTreeSet<(usize, Nudge)>,
     /// Seconds left of pointing the way to the next station.
     beckon_left: f32,
 }
@@ -170,6 +182,13 @@ impl Companion {
     }
 }
 
+/// What Lumen suggests when a station opens, once per session each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Nudge {
+    Experiment,
+    Build,
+}
+
 /// What the director looks at to decide where Lumen's eye goes. A plain copy, so the decision can
 /// be tested without the engine.
 #[derive(Clone, Debug, Default)]
@@ -197,10 +216,13 @@ struct Facts {
     at_finished_station: bool,
     /// A place that outranks the rest for now.
     held: Option<String>,
-    /// The avatar is carrying a crate.
-    carrying: bool,
-    /// No crates are in the ledge launcher's jack frame.
-    frame_empty: bool,
+    /// What the avatar is carrying.
+    carrying: Option<Item>,
+    /// Nothing is placed at the focused puzzle's station: no crate in the jack frame, no cargo on
+    /// the cart, no gate on the tower.
+    slot_empty: bool,
+    /// The drop tower's experiment has been watched but nothing has been timed with the light gate.
+    gate_pending: bool,
 }
 
 /// Where Lumen should look, in priority order.
@@ -228,9 +250,12 @@ fn choose_gaze(f: &Facts) -> Option<String> {
             Some(first) => if first == b { a } else { b }.into(),
         });
     }
-    // A crate in hand at the canyon goes into the jack frame.
-    if f.carrying && unsolved == Some(PuzzleKind::Canyon) {
-        return Some(JACK_FRAME.into());
+    // Something in hand goes where the puzzle at hand reads it.
+    match (f.carrying, unsolved) {
+        (Some(Item::Crate(Yard::Ledge)), Some(PuzzleKind::Canyon)) => return Some(JACK_FRAME.into()),
+        (Some(Item::Crate(Yard::Rail)), Some(PuzzleKind::Rail)) => return Some(RAIL_CART.into()),
+        (Some(Item::Gate), Some(PuzzleKind::Gravity)) => return Some(TOWER_NOTCHES.into()),
+        _ => {}
     }
     if f.station_open
         && let Some(kind) = unsolved
@@ -240,8 +265,13 @@ fn choose_gaze(f: &Facts) -> Option<String> {
         {
             return Some(place.into());
         }
-        if kind == PuzzleKind::Canyon && f.frame_empty {
-            return Some(SALVAGE_CRATES.into());
+        match kind {
+            PuzzleKind::Canyon if f.slot_empty => return Some(SALVAGE_CRATES.into()),
+            PuzzleKind::Rail if f.slot_empty => return Some(CARGO_CRATE.into()),
+            PuzzleKind::Gravity if f.gate_pending && f.slot_empty => return Some(LIGHT_GATE.into()),
+            // A gate on the tower and nothing timed with it yet: run the experiment.
+            PuzzleKind::Gravity if f.gate_pending => return guide(kind).demo.map(Into::into),
+            _ => {}
         }
         return Some(guide(kind).study.into());
     }
@@ -360,22 +390,30 @@ fn direct(
             }
             if now.station != before.station
                 && let Some(p) = now.station
-                && game.def(p).demo.is_some()
-                && !now.watched[p]
                 && !game.solved(p)
-                && !companion.nudged[p]
             {
-                companion.nudged[p] = true;
-                companion.say("Before any numbers, try the experiment. Make your guess first.");
-            } else if now.station != before.station
-                && let Some(p) = now.station
-                && game.def(p).kind == PuzzleKind::Canyon
-                && !game.solved(p)
-                && carry.stack == 0
-                && !companion.nudged[p]
-            {
-                companion.nudged[p] = true;
-                companion.say("Its dial only turns so far. The crates on the ledge fit the frame at the rim and raise the launcher.");
+                let kind = game.def(p).kind;
+                let nudge = if game.def(p).demo.is_some() && !now.watched[p] {
+                    Some((Nudge::Experiment, "Before any numbers, try the experiment. Make your guess first."))
+                } else {
+                    match kind {
+                        PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => {
+                            Some((Nudge::Build, "The cart will not run empty. Its cargo crate stands beside the rail: F picks it up, F again puts it on the cart."))
+                        }
+                        PuzzleKind::Gravity if gate_pending(&game, p) && carry.gate_on_stand() => {
+                            Some((Nudge::Build, "The light gate on the stand times the fall to any notch of the tower you clamp it at. Try a short drop and a long one."))
+                        }
+                        PuzzleKind::Canyon if carry.holds(Slot::Frame) == 0 => {
+                            Some((Nudge::Build, "Its dial only turns so far. The crates on the ledge fit the frame at the rim and raise the launcher."))
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some((nudge, line)) = nudge
+                    && companion.nudged.insert((p, nudge))
+                {
+                    companion.say(line);
+                }
             }
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;
@@ -438,9 +476,15 @@ fn direct(
         at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
         held: companion.held.as_ref().map(|(place, _, _)| place.clone()),
         carrying: carry.holding,
-        frame_empty: carry.stack == 0,
+        slot_empty: crate::carry::SLOTS.iter().find(|s| s.puzzle() == focus_kind).is_some_and(|s| carry.holds(*s) == 0),
+        gate_pending: focus_kind == PuzzleKind::Gravity && gate_pending(&game, focus),
     };
     companion.gaze = choose_gaze(&facts).filter(|place| landmarks.position(place).is_some());
+}
+
+/// The drop tower's experiment has been watched, but nothing has been timed with the light gate.
+fn gate_pending(game: &Game, puzzle: usize) -> bool {
+    game.save.demo_watched(&game.def(puzzle).id) && !game.save.notebook.entries.iter().any(|e| e.source == "light gate")
 }
 
 fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usize) {
@@ -854,15 +898,54 @@ mod tests {
 
     #[test]
     fn at_the_canyon_the_beam_shows_the_crates_and_then_the_frame() {
-        let open = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, frame_empty: true, beckon: false, ..walking_to(2) };
+        let open = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
         assert_eq!(choose_gaze(&open).as_deref(), Some(SALVAGE_CRATES));
-        let built = Facts { frame_empty: false, ..open.clone() };
+        let built = Facts { slot_empty: false, ..open.clone() };
         assert_eq!(choose_gaze(&built).as_deref(), Some("Platform: centre"));
-        let carrying = Facts { station_open: false, carrying: true, ..open.clone() };
+        let carrying = Facts { station_open: false, carrying: Some(Item::Crate(Yard::Ledge)), ..open.clone() };
         assert_eq!(choose_gaze(&carrying).as_deref(), Some(JACK_FRAME));
         // The experiment comes first, before any crates.
         let fresh = Facts { demo_pending: true, ..open };
         assert_eq!(choose_gaze(&fresh).as_deref(), Some("Ledge launcher: release point"));
+    }
+
+    #[test]
+    fn at_the_rail_the_beam_shows_the_cargo_and_then_the_cart() {
+        let open = Facts { focus_kind: Some(PuzzleKind::Rail), station_open: true, slot_empty: true, beckon: false, ..walking_to(0) };
+        assert_eq!(choose_gaze(&open).as_deref(), Some(CARGO_CRATE));
+        let carrying = Facts { station_open: false, carrying: Some(Item::Crate(Yard::Rail)), ..open.clone() };
+        assert_eq!(choose_gaze(&carrying).as_deref(), Some(RAIL_CART));
+        let loaded = Facts { slot_empty: false, ..open };
+        assert_eq!(choose_gaze(&loaded).as_deref(), Some("Rail marker: centre"));
+    }
+
+    #[test]
+    fn after_the_strobe_the_beam_shows_the_light_gate() {
+        let open = Facts { focus_kind: Some(PuzzleKind::Gravity), station_open: true, slot_empty: true, beckon: false, ..walking_to(1) };
+        // Before the experiment, the experiment; after it, the gate on its stand until it has timed a drop.
+        assert_eq!(choose_gaze(&Facts { demo_pending: true, ..open.clone() }).as_deref(), Some("Drop tower: release point"));
+        let pending = Facts { gate_pending: true, ..open.clone() };
+        assert_eq!(choose_gaze(&pending).as_deref(), Some(LIGHT_GATE));
+        let carrying = Facts { station_open: false, carrying: Some(Item::Gate), ..pending.clone() };
+        assert_eq!(choose_gaze(&carrying).as_deref(), Some(TOWER_NOTCHES));
+        let fitted = Facts { slot_empty: false, ..pending };
+        assert_eq!(choose_gaze(&fitted).as_deref(), Some("Drop tower: release point"));
+        assert_eq!(choose_gaze(&open).as_deref(), Some("Drop tower: release point"), "with a gate reading, the job");
+        // A crate in hand at the drop tower is not the gate.
+        let wrong = Facts { station_open: false, carrying: Some(Item::Crate(Yard::Rail)), ..open };
+        assert_ne!(choose_gaze(&wrong).as_deref(), Some(TOWER_NOTCHES));
+    }
+
+    #[test]
+    fn every_place_to_carry_to_is_a_landmark() {
+        let layout = Ch1Layout::generate(7);
+        let (_, sites) = island::build(&layout);
+        let game = Game::for_test(7);
+        let landmarks = Landmarks::new(&sites, &game);
+        for place in [SALVAGE_CRATES, JACK_FRAME, CARGO_CRATE, RAIL_CART, LIGHT_GATE, TOWER_NOTCHES] {
+            assert!(landmarks.position(place).is_some(), "{place}");
+        }
+        assert!(landmarks.position("Light gate").is_none(), "the gate's pin is away until it is clamped");
     }
 
     #[test]

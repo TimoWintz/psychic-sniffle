@@ -5,6 +5,7 @@
 //! exact path until the judged event (the landing or the strike), and is then handed to the physics
 //! engine, which bounces and settles it. Nothing the engine does can change the result.
 
+use crate::carry::{Carry, Slot};
 use crate::island::{GROUND, LaunchSite, Sites};
 use crate::player::OrbitCamera;
 use crate::state::{Game, PageEvent, RECHARGE_SECONDS, Ui};
@@ -36,8 +37,9 @@ const PAIR_COLOURS: [[f32; 3]; 2] = [[0.35, 0.85, 1.0], [1.0, 0.4, 0.75]];
 const TRAIL: [f32; 3] = [1.0, 0.85, 0.2];
 
 enum Running {
-    /// The test mass falls from the drop tower; a flash marks it at each of `flashes`.
-    Strobe { puzzle: usize, t: f32, flashes: Vec<f64>, shown: usize, guess: Option<usize> },
+    /// The test mass falls from the drop tower; a flash marks it at each of `flashes`. With the
+    /// light gate clamped `gate` metres below the release (0 for none), the stopwatch stops there.
+    Strobe { puzzle: usize, t: f32, flashes: Vec<f64>, shown: usize, guess: Option<usize>, gate: u32 },
     /// Two demonstration bodies fly their exact paths from a launch site.
     Pair { puzzle: usize, t: f32, shots: [Shot; 2], site: LaunchSite, offsets: [Vec3; 2], size: f32, landed: [bool; 2], guess: Option<usize> },
     MastDrop { puzzle: usize, t: f32, predicted: f32, actual: f32, verdict: Verdict },
@@ -64,6 +66,8 @@ pub struct Sim {
     watch_left: f32,
     /// Where the moving object of the running test or experiment is.
     action: Option<Vec3>,
+    /// The test mass has passed the light gate since it was last released: its beam shows it.
+    pub gate_tripped: bool,
 }
 
 impl Sim {
@@ -108,6 +112,8 @@ enum Prop {
     Beam,
     /// The tutorial's rail cart.
     Cart,
+    /// The cart's cargo crate, while it is loaded: it rides on the cart.
+    Cargo,
 }
 
 /// A body handed to the physics engine after a test; removed when its time is up.
@@ -147,6 +153,7 @@ const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
 const CRATE_SIZE: Vec3 = Vec3::new(0.9, 0.9, 0.9);
 const BEAM_SIZE: Vec3 = Vec3::new(2.4, 0.5, 0.5);
 const CART_SIZE: Vec3 = Vec3::new(0.9, 0.7, 0.9);
+const CARGO_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
 
 fn prop_size(prop: Prop) -> Vec3 {
     match prop {
@@ -154,6 +161,7 @@ fn prop_size(prop: Prop) -> Vec3 {
         Prop::Crate => CRATE_SIZE,
         Prop::Beam => BEAM_SIZE,
         Prop::Cart => CART_SIZE,
+        Prop::Cargo => CARGO_SIZE,
     }
 }
 
@@ -163,7 +171,7 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sim>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, ride_the_cart).chain());
     }
 }
 
@@ -177,6 +185,7 @@ fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
         Prop::Crate => sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + half,
         Prop::Beam => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
         Prop::Cart => sites.rail_start + half,
+        Prop::Cargo => sites.rail_start + Vec3::Y * CART_SIZE.y + half,
     }
 }
 
@@ -193,6 +202,7 @@ pub(crate) fn setup(
     };
     let steel = solid(&mut materials, [0.75, 0.16, 0.12]);
     let timber = solid(&mut materials, Material::Timber.properties().colour);
+    let timber_cargo = timber.clone();
     let alloy = solid(&mut materials, Material::HullAlloy.properties().colour);
     let ghost = materials.add(StandardMaterial {
         base_color: Color::srgba(0.4, 0.8, 1.0, 0.35),
@@ -207,14 +217,21 @@ pub(crate) fn setup(
         (Prop::Crate, timber, true),
         (Prop::Beam, alloy.clone(), true),
         (Prop::Cart, steel.clone(), true),
+        (Prop::Cargo, timber_cargo, false),
     ] {
-        commands.spawn((
+        let mut body = commands.spawn((
             prop,
             Mesh3d(meshes.add(Cuboid::from_size(prop_size(prop)))),
             MeshMaterial3d(material),
             Transform::from_translation(rest_pose(prop, &sites)),
             if visible { Visibility::Visible } else { Visibility::Hidden },
         ));
+        if prop == Prop::Cargo {
+            // The orange handle of salvage that can be carried: it comes off the cart again with F.
+            let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
+            let handle = meshes.add(Cuboid::new(0.5, 0.06, 0.12));
+            body.with_child((Mesh3d(handle), MeshMaterial3d(glow), Transform::from_xyz(0.0, CARGO_SIZE.y / 2.0 + 0.03, 0.0)));
+        }
     }
 
     // The physics engine's view of the island: every block anything could touch.
@@ -281,7 +298,7 @@ fn handle_requests(
     mut game: ResMut<Game>,
     mut ui: ResMut<Ui>,
     mut orbit: ResMut<OrbitCamera>,
-    sites: Res<Sites>,
+    mut sites: ResMut<Sites>,
     assets: Res<PropAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
@@ -299,10 +316,13 @@ fn handle_requests(
         }
     }
     for (prop, mut transform, mut visibility) in &mut props {
-        if *prop != Prop::Ghost {
+        if !matches!(*prop, Prop::Ghost | Prop::Cargo) {
             *transform = Transform::from_translation(rest_pose(*prop, &sites));
             *visibility = Visibility::Visible;
         }
+    }
+    if sites.cart != sites.rail_start {
+        sites.cart = sites.rail_start;
     }
     match request {
         Request::Demo(puzzle) => {
@@ -320,8 +340,9 @@ fn handle_requests(
                         commands.entity(mark).despawn();
                     }
                     sim.strobe.clear();
+                    sim.gate_tripped = false;
                     orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X);
-                    Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess }
+                    Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
                 }
                 DemoPlayback::DropAndFire { dropped, fired } => {
                     let site = sites.canyon_launch;
@@ -340,34 +361,8 @@ fn handle_requests(
             });
         }
         Request::Commit(puzzle) => {
-            ui.refusal = None;
-            if !game.unlocked(puzzle) {
-                return;
-            }
-            // A first value committed here may write a page, whether it is tested or refused.
-            if ui.drafts[puzzle].iter().any(|d| !d.trim().is_empty()) && game.find_pages(&mut ui, puzzle, PageEvent::Commit) > 0 {
-                game.persist();
-            }
-            if game.charges_left(puzzle) == 0 {
-                ui.refusal = Some("The station is recharging.".into());
-                return;
-            }
+            let Some((outcome, values)) = judge_commit(&mut game, &mut ui, puzzle) else { return };
             let instance = game.instance(puzzle);
-            let (inputs, values) = match read_blueprint(&game, &ui, puzzle) {
-                Ok(read) => read,
-                Err(problem) => {
-                    ui.refusal = Some(problem);
-                    return;
-                }
-            };
-            // Wrong dimensions and impossible settings are refused here, before a charge is used.
-            let outcome = match instance.evaluate(&inputs) {
-                Ok(outcome) => outcome,
-                Err(problem) => {
-                    ui.refusal = Some(problem.to_string());
-                    return;
-                }
-            };
             // The verdict exists now, but it is recorded and shown only when the test has played out.
             ui.results[puzzle] = None;
             sim.start_trail(TRAIL);
@@ -397,6 +392,46 @@ fn handle_requests(
                     Running::Slide { puzzle, t: 0.0, distance: distance as f32, duration, verdict: Verdict { values, outcome } }
                 }
             });
+        }
+    }
+}
+
+/// A commit at a station, up to the verdict: refused for free (the reason goes to `ui.refusal`), or
+/// judged, with the values committed. Nothing is recorded yet: that waits until the test has played
+/// out in the world.
+pub fn judge_commit(game: &mut Game, ui: &mut Ui, puzzle: usize) -> Option<(Outcome, Vec<CommittedValue>)> {
+    ui.refusal = None;
+    if !game.unlocked(puzzle) {
+        return None;
+    }
+    let instance = game.instance(puzzle);
+    // What has to stand in the world comes first (the cart's cargo). Refused for it, nothing typed
+    // has been committed, so no page is written.
+    if let Some(reason) = instance.unready(game.placed(puzzle)) {
+        ui.refusal = Some(reason);
+        return None;
+    }
+    // A first value committed here may write a page, whether it is tested or refused.
+    if ui.drafts[puzzle].iter().any(|d| !d.trim().is_empty()) && game.find_pages(ui, puzzle, PageEvent::Commit) > 0 {
+        game.persist();
+    }
+    if game.charges_left(puzzle) == 0 {
+        ui.refusal = Some("The station is recharging.".into());
+        return None;
+    }
+    let (inputs, values) = match read_blueprint(game, ui, puzzle) {
+        Ok(read) => read,
+        Err(problem) => {
+            ui.refusal = Some(problem);
+            return None;
+        }
+    };
+    // Wrong dimensions and impossible settings are refused here, before a charge is used.
+    match instance.evaluate(&inputs) {
+        Ok(outcome) => Some((outcome, values)),
+        Err(problem) => {
+            ui.refusal = Some(problem.to_string());
+            None
         }
     }
 }
@@ -469,7 +504,7 @@ fn advance(
     mut game: ResMut<Game>,
     mut ui: ResMut<Ui>,
     mut orbit: ResMut<OrbitCamera>,
-    sites: Res<Sites>,
+    mut sites: ResMut<Sites>,
     mut props: Query<(&Prop, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>)>,
     mut bodies: Query<(Entity, &DemoBody, &mut Transform), Without<Prop>>,
 ) {
@@ -491,10 +526,13 @@ fn advance(
     let mut finished: Option<(usize, Verdict)> = None;
 
     match &mut running {
-        Running::Strobe { puzzle, t, flashes, shown, guess } => {
+        Running::Strobe { puzzle, t, flashes, shown, guess, gate } => {
             *t += dt;
             let height = game.layout.tower_h as f32;
             let fall_time = (2.0 * height / g).sqrt();
+            if *gate > 0 && fallen(g, *t, height) >= *gate as f32 {
+                sim.gate_tripped = true;
+            }
             // Each flash leaves an afterimage of the mass and a tick beside its path.
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
@@ -515,8 +553,7 @@ fn advance(
                 }
             }
             if *t >= fall_time {
-                let reading = Quantity::seconds(game.layout.tower_fall_time());
-                game.save.notebook.add_numbered("t", "fall time from the drop tower", reading, "stopwatch");
+                note_reading(&mut game, *gate);
                 let (puzzle, guess) = (*puzzle, *guess);
                 finish_demo(&mut game, &mut ui, puzzle, guess);
                 sim.running = None;
@@ -644,6 +681,8 @@ fn advance(
                 }
             }
             if progress >= 1.0 {
+                // It stays where it stopped, and that is where its cargo can be reached.
+                sites.cart = start - Vec3::Y * CART_SIZE.y / 2.0 + Vec3::X * *distance;
                 finished = Some((*puzzle, verdict.clone()));
             }
         }
@@ -668,6 +707,34 @@ fn advance(
         }
     }
     ui.results[puzzle] = Some(outcome);
+}
+
+/// Write the stopwatch's reading of a release from the drop tower into the notebook: with the light
+/// gate clamped `gate` metres below the release, the drop and the time to the gate as a pair (`h2`,
+/// `t2`); without, the time of the whole drop.
+pub fn note_reading(game: &mut Game, gate: u32) {
+    if gate == 0 {
+        let reading = Quantity::seconds(game.layout.tower_fall_time());
+        game.save.notebook.add_numbered("t", "fall time from the drop tower", reading, "stopwatch");
+    } else {
+        let (drop, time) = (Quantity::metres(gate as f64), Quantity::seconds(game.layout.gate_time(gate)));
+        game.save.notebook.add_pair(("h", "drop from the release point to the light gate", drop), ("t", "fall time to the light gate", time), "light gate");
+    }
+}
+
+/// The cargo crate rides on the cart while it is loaded.
+fn ride_the_cart(carry: Res<Carry>, mut props: Query<(&Prop, &mut Transform, &mut Visibility)>) {
+    let Some(cart) = props.iter().find(|(p, _, _)| **p == Prop::Cart).map(|(_, t, _)| t.translation) else { return };
+    let loaded = carry.holds(Slot::Cart) > 0;
+    for (prop, mut transform, mut visibility) in &mut props {
+        if *prop == Prop::Cargo {
+            transform.translation = cart + Vec3::Y * (CART_SIZE.y + CARGO_SIZE.y) / 2.0;
+            let want = if loaded { Visibility::Visible } else { Visibility::Hidden };
+            if *visibility != want {
+                *visibility = want;
+            }
+        }
+    }
 }
 
 /// Remove settled bodies when their time is up and put the launcher's load back.
@@ -729,7 +796,13 @@ fn recharge(time: Res<Time>, mut game: ResMut<Game>, mut ui: ResMut<Ui>, sim: Re
     }
 }
 
-fn draw_trail(sim: Res<Sim>, mut gizmos: Gizmos) {
+fn draw_trail(sim: Res<Sim>, sites: Res<Sites>, mut gizmos: Gizmos) {
+    // The light gate's beam across the fall line, bright once the mass has passed it.
+    let gate = &sites.pins[sites.gate_pin];
+    if gate.present() {
+        let colour = if sim.gate_tripped { Color::srgb(1.0, 0.95, 0.5) } else { Color::srgb(1.0, 0.2, 0.15) };
+        gizmos.line(gate.position - Vec3::Z * 0.56, gate.position + Vec3::Z * 0.56, colour);
+    }
     // Lines keep their width on screen, so the strobe's ticks read from a distance.
     for at in &sim.strobe {
         let base = *at - Vec3::Y * MASS_SIZE.y / 2.0;
@@ -739,5 +812,55 @@ fn draw_trail(sim: Res<Sim>, mut gizmos: Gizmos) {
         if trail.len() >= 2 {
             gizmos.linestrip(trail.iter().copied(), Color::srgb(c[0], c[1], c[2]));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn game(seed: u64) -> Game {
+        Game::for_test(seed)
+    }
+
+    #[test]
+    fn an_empty_cart_is_refused_for_free_and_writes_no_page() {
+        let mut game = game(11);
+        let mut ui = Ui::default();
+        ui.drafts[0] = vec![game.layout.rail_target.to_string()];
+        assert!(judge_commit(&mut game, &mut ui, 0).is_none());
+        assert!(ui.refusal.as_deref().is_some_and(|r| r.starts_with("Load the cart first")), "{:?}", ui.refusal);
+        assert!(!game.save.found.contains("units"), "refused for the empty cart, nothing was committed");
+        assert_eq!(game.charges_left(0), 3);
+
+        // Loaded, the bare number is refused for its missing unit, and that first commit writes the page.
+        game.save.placed.insert("1.1.0".into(), 1);
+        assert!(judge_commit(&mut game, &mut ui, 0).is_none());
+        assert!(ui.refusal.as_deref().is_some_and(|r| r.contains("pure number")), "{:?}", ui.refusal);
+        assert!(game.save.found.contains("units"));
+        assert_eq!(ui.unread_pages, ["units"]);
+        assert_eq!(game.charges_left(0), 3, "a refusal costs no charge");
+
+        ui.drafts[0] = vec![format!("{} m", game.layout.rail_target)];
+        let (outcome, values) = judge_commit(&mut game, &mut ui, 0).expect("a loaded cart runs");
+        assert!(outcome.pass && ui.refusal.is_none());
+        assert_eq!(values.len(), 1);
+        let _ = std::fs::remove_file(&game.save_path);
+    }
+
+    #[test]
+    fn the_light_gate_notes_a_pair_and_the_bare_tower_a_time() {
+        let mut game = game(12);
+        game.save.notebook.add_numbered("h", "tower height", Quantity::metres(game.layout.tower_h as f64), "ruler");
+        note_reading(&mut game, 0);
+        let nb = &game.save.notebook;
+        assert_eq!(nb.get("t1").unwrap().quantity, Quantity::seconds(game.layout.tower_fall_time()));
+        note_reading(&mut game, 6);
+        note_reading(&mut game, 9);
+        let nb = &game.save.notebook;
+        assert_eq!(nb.get("h2").unwrap().quantity, Quantity::metres(6.0));
+        assert_eq!(nb.get("t2").unwrap().quantity, Quantity::seconds(game.layout.gate_time(6)));
+        assert_eq!(nb.get("h3").unwrap().quantity, Quantity::metres(9.0));
+        assert_eq!(nb.get("t3").unwrap().source, "light gate");
     }
 }

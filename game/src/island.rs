@@ -29,6 +29,16 @@ pub struct Pin {
     pub label: &'static str,
 }
 
+impl Pin {
+    /// Where a pin is put while what it marks is not in the world (no gate on the tower).
+    pub const AWAY: Vec3 = Vec3::new(0.0, -1000.0, 0.0);
+
+    /// Whether the pin marks something in the world now.
+    pub fn present(&self) -> bool {
+        self.position.y > -100.0
+    }
+}
+
 /// A launcher: where the load is released and which way it flies.
 #[derive(Clone, Copy, Debug)]
 pub struct LaunchSite {
@@ -53,9 +63,21 @@ pub struct Sites {
     pub spawn: Vec3,
     /// Underside centre of the rail cart where it starts; it runs along +x.
     pub rail_start: Vec3,
+    /// Underside centre of the rail cart where it stands now: at the start, or where the last test
+    /// stopped it (see `sim`).
+    pub cart: Vec3,
+    /// Where the cart's cargo crate stands at the start, beside the rail.
+    pub cargo_cell: IVec3,
+    /// Corners (inclusive) of the ground beside the rail start where the cargo crate may be put down.
+    pub cargo_yard: [IVec3; 2],
     /// Underside of the test mass at rest, and where it lands.
     pub tower_release: Vec3,
     pub tower_plate: Vec3,
+    /// Foot of the light gate's stand by the drop tower's station, where the gate rests.
+    pub gate_stand: Vec3,
+    /// Index in `pins` of the light gate, which moves with the gate (out of sight while none is
+    /// clamped on the tower).
+    pub gate_pin: usize,
     pub mast_release: Vec3,
     pub mast_plate: Vec3,
     /// The ledge launcher. Its origin rises with the crates stacked under it (see `carry`); the
@@ -218,6 +240,10 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let rail_start = Vec3::new(RAIL_X as f32 + 0.5, ground, RAIL_ROW as f32 + 0.5);
     let beside = Vec3::new(0.0, 0.0, -1.0);
     let rail_start_pin = Pin { position: rail_start + beside, label: "Rail cart: starting point" };
+    // The cargo crate stands on the station's side of the rail, two blocks short of the start mark so
+    // it never hides the pin, with room around it to be put down again.
+    let cargo_cell = IVec3::new(RAIL_X - 2, GROUND, RAIL_ROW - 1);
+    let cargo_yard = [IVec3::new(RAIL_X - 3, GROUND, RAIL_ROW - 2), IVec3::new(RAIL_X - 1, GROUND, RAIL_ROW - 1)];
     let rail_marker_pin = Pin { position: rail_start + beside + Vec3::X * layout.rail_target as f32, label: "Rail marker: centre" };
     let station0 = IVec3::new(RAIL_X - 1, GROUND, RAIL_ROW - 3);
     for z in [RAIL_ROW as f32 - 1.7, RAIL_ROW as f32 + 2.7] {
@@ -247,6 +273,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     pins.push(Pin { position: mast_release, label: "Survey mast: release point" });
     pins.push(Pin { position: mast_plate, label: "Survey mast: landing plate" });
     let station1 = IVec3::new(TOWER.x + 1, GROUND, TOWER.z + 5);
+    // The light gate rests on a stand on the station's apron until it is clamped on the tower.
+    let gate_stand = Vec3::new(TOWER.x as f32 + 3.5, ground, TOWER.z as f32 + 3.5);
 
     // --- Puzzle 2: ledge, canyon, platform ----------------------------------------------------
     let ledge_top = GROUND + layout.ledge_h as i32;
@@ -341,9 +369,11 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     }
 
     // Pins are numbered in the order they were added (the scripted tour picks them by number), so the
-    // tutorial's go last.
+    // tutorial's go last, and the light gate's after them.
     pins.push(rail_start_pin);
     pins.push(rail_marker_pin);
+    let gate_pin = pins.len();
+    pins.push(Pin { position: Pin::AWAY, label: "Light gate" });
 
     // Worn paths from the wreck past each station in turn, then on to the shipyard.
     let ramp_foot = LEDGE_X - layout.ledge_h as i32 - 2;
@@ -366,8 +396,13 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let sites = Sites {
         spawn: Vec3::new(OX as f32 + 30.5, ground, OZ as f32 + 40.5),
         rail_start,
+        cart: rail_start,
+        cargo_cell,
+        cargo_yard,
         tower_release,
         tower_plate,
+        gate_stand,
+        gate_pin,
         mast_release,
         mast_plate,
         canyon_launch,
@@ -976,6 +1011,40 @@ mod tests {
                 assert_eq!(world.surface(p.x.floor() as i32, p.z.floor() as i32), GROUND, "seed {seed}: rail blocked at {x} m");
                 assert!(!world.box_collides(p + Vec3::new(-0.45, 0.01, -0.45), p + Vec3::new(0.45, 0.9, 0.45)), "seed {seed}: cart hits something at {x} m");
             }
+
+            // The cargo crate's cell is free and on the ground, in its yard, off the rail and clear of
+            // the pins; every cell of the yard can take it.
+            let [low, high] = sites.cargo_yard;
+            let cell = sites.cargo_cell;
+            assert!(cell.cmpge(low).all() && cell.cmple(high).all(), "seed {seed}: the cargo crate starts outside its yard");
+            assert_eq!(cell.y, GROUND);
+            for x in low.x..=high.x {
+                for z in low.z..=high.z {
+                    let c = IVec3::new(x, low.y, z);
+                    assert!(world.is_solid(c - IVec3::Y), "seed {seed}: nothing under the cargo yard at {c}");
+                    assert!(!world.is_solid(c) && !world.is_solid(c + IVec3::Y), "seed {seed}: the cargo yard is blocked at {c}");
+                    assert_ne!(z, sites.rail_start.z.floor() as i32, "the yard is off the rail");
+                    for p in [start, marker] {
+                        assert_ne!(p.floor().as_ivec3().with_y(c.y), c, "seed {seed}: the yard covers a pin");
+                    }
+                }
+            }
+            assert_eq!(sites.cart, sites.rail_start, "the island is built with the cart at its start");
+        }
+    }
+
+    #[test]
+    fn the_light_gate_has_a_stand_and_a_pin() {
+        for seed in 0..200 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            let stand = sites.gate_stand.floor().as_ivec3();
+            assert!(world.is_solid(stand - IVec3::Y), "seed {seed}: the stand floats");
+            assert!(!world.is_solid(stand) && !world.is_solid(stand + IVec3::Y), "seed {seed}: the stand is buried");
+            let pin = &sites.pins[sites.gate_pin];
+            assert_eq!(pin.label, "Light gate");
+            assert!(!pin.present(), "no gate is on the tower when the island is built");
+            assert!(sites.pins.iter().enumerate().all(|(i, p)| i == sites.gate_pin || p.present()));
         }
     }
 }

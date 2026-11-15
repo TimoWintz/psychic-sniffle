@@ -119,6 +119,9 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
     }
     let _ = write!(w, "\nBrief shown to the player:\n{}\n\nHow to measure:\n{}\n", ctx.brief, ctx.how_to_measure);
 
+    if let Some(placed) = &ctx.placed {
+        let _ = writeln!(w, "\nIn the world at this station now: {placed}.");
+    }
     let _ = writeln!(w, "\nThe player must enter:");
     for asked in &ctx.asked {
         let draft = if let Some(built) = &asked.built {

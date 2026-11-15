@@ -76,6 +76,9 @@ pub struct TutorContext {
     pub how_to_measure: String,
     pub concepts: Vec<ConceptCard>,
     pub experiment: Option<ExperimentLine>,
+    /// What the player has placed at the station in the world, in words ("the cargo crate is on the
+    /// cart", "the light gate is clamped 7 m below the release point"), where something can be.
+    pub placed: Option<String>,
     pub asked: Vec<AskedValue>,
     pub notebook: Vec<NotebookLine>,
     pub attempts: Vec<AttemptLine>,
@@ -109,6 +112,7 @@ impl TutorContext {
     pub fn build(chapter: &Chapter, def: &PuzzleDef, instance: &Instance, save: &Save, drafts: &[String]) -> Self {
         let progress = save.progress(&def.id);
         let solution = instance.solution();
+        let placed = instance.built(save.placed.get(&def.id).copied().unwrap_or(0));
 
         let mut secrets = Vec::new();
         for answer in &solution.answers {
@@ -173,6 +177,13 @@ impl TutorContext {
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
         }
+        if instance.kind == PuzzleKind::Gravity
+            && let Some(&notch) = save.placed.get(&def.id)
+            && notch > 0
+        {
+            // The light gate's notch: the player chose it and it is shown when it is clamped.
+            known_numbers.push(notch as f64);
+        }
         if instance.kind == PuzzleKind::Canyon {
             // On the launcher's rating plate, in plain view.
             known_numbers.extend([instance.layout.canyon_speed_min, instance.layout.canyon_speed_max]);
@@ -208,6 +219,7 @@ impl TutorContext {
                 watched: save.demo_watched(&def.id),
                 guess: save.first_guess(&def.id).and_then(|i| demo.choices.get(i).cloned()),
             }),
+            placed: placed.clone(),
             asked: instance
                 .inputs()
                 .iter()
@@ -220,10 +232,7 @@ impl TutorContext {
                         spec.dim.describe()
                     },
                     draft: drafts.get(i).cloned().unwrap_or_default(),
-                    built: (spec.source == InputSource::Placed).then(|| {
-                        let crates = save.placed.get(&def.id).copied().unwrap_or(0);
-                        format!("{crates} crate{} in the jack frame", if crates == 1 { "" } else { "s" })
-                    }),
+                    built: (spec.source == InputSource::Placed).then(|| placed.clone().unwrap_or_default()),
                 })
                 .collect(),
             notebook: save

@@ -255,6 +255,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Station(Some(1)),
         expect_gaze("Crawler: rear coupler"),
         Shot("06c_haul_track"),
+        // The crawler carries the launchers' guidance unit on its back.
+        Watch(Some(sites.haul_at(game.layout.head_start as f64 + 0.7))),
+        Look { yaw: HAUL_YAW, pitch: 0.35, distance: 6.0 },
+        Wait(1.0),
+        Shot("06c2_guidance_unit_on_the_crawler"),
+        Watch(None),
+        Look { yaw: HAUL_YAW, pitch: 0.5, distance: 34.0 },
         Guess(1, 0),
         RunDemo(1),
         Wait(4.0),
@@ -307,6 +314,14 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.5),
         ExpectSolved(1),
         Shot("06j_chase_result"),
+        // Caught: the guidance unit waits at the foot of the transfer crane.
+        Station(None),
+        Watch(Some(sites.crane_foot)),
+        // From above, so the crane's mast does not stand between the camera and the unit.
+        Look { yaw: HAUL_YAW, pitch: 1.1, distance: 9.0 },
+        Wait(1.0),
+        Shot("06k_guidance_unit_at_the_crane"),
+        Watch(None),
         // Puzzle 2: measure the tower, time the drop, work out g.
         GoToStation(2),
         expect_gaze(station_name(game, 2)),
@@ -457,6 +472,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.5),
         ExpectSolved(3),
         Shot("16_canyon_result"),
+        // The cradle the crate carried waits on the shipyard floor for the beam.
+        Station(None),
+        Watch(Some(sites.shipyard)),
+        Look { yaw: -0.6, pitch: 0.55, distance: 22.0 },
+        Wait(3.0),
+        Shot("16c_cradle_on_the_shipyard_floor"),
+        Watch(None),
         // Puzzle 4: 45 degrees strikes the ridge; an angle inside the window clears it.
         GoToStation(4),
         Look { yaw: -1.15, pitch: 0.4, distance: 34.0 },

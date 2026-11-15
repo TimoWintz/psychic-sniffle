@@ -1,0 +1,6 @@
+// Tier 1: the skiff. What the tier is for in the story; its chapters are in tier1_ch*.ron.
+Tier(
+    number: 1,
+    ship: "Skiff",
+    goal: "Build a skiff and cross the strait to the main hull, where the rest of Lumen is.",
+)

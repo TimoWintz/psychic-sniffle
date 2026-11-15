@@ -2,7 +2,7 @@
 //! interface is showing.
 
 use bevy::prelude::*;
-use physics_core::content::{Chapter, Found, PuzzleDef, chapter_1_1};
+use physics_core::content::{Chapter, Found, PuzzleDef, Tier, chapter_1_1, tier_1};
 use physics_core::progress::Save;
 use physics_core::puzzle::{Ch1Layout, Instance, Outcome};
 use std::collections::BTreeMap;
@@ -21,6 +21,8 @@ pub const PUZZLES: usize = 5;
 
 #[derive(Resource)]
 pub struct Game {
+    /// The tier the chapter belongs to: what the ship is for.
+    pub tier: Tier,
     pub chapter: Chapter,
     pub layout: Ch1Layout,
     pub save: Save,
@@ -54,14 +56,14 @@ impl Game {
         });
         let chapter = chapter_1_1();
         assert_eq!(chapter.puzzles.len(), PUZZLES, "the chapter's puzzles and the island's stations must match");
-        Game { chapter, layout: Ch1Layout::generate(save.seed), save, save_path, save_problem }
+        Game { tier: tier_1(), chapter, layout: Ch1Layout::generate(save.seed), save, save_path, save_problem }
     }
 
     /// A new game on `seed` that saves to a scratch file, for tests.
     #[cfg(test)]
     pub fn for_test(seed: u64) -> Self {
         let save_path = std::env::temp_dir().join(format!("fp-test-{seed}-{}-{:?}.ron", std::process::id(), std::thread::current().id()));
-        Game { chapter: chapter_1_1(), layout: Ch1Layout::generate(seed), save: Save::new(seed), save_path, save_problem: None }
+        Game { tier: tier_1(), chapter: chapter_1_1(), layout: Ch1Layout::generate(seed), save: Save::new(seed), save_path, save_problem: None }
     }
 
     pub fn def(&self, puzzle: usize) -> &PuzzleDef {

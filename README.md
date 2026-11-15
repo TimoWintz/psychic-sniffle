@@ -53,8 +53,10 @@ Progress is saved to `saves/slot1.ron`. Delete it to start over on a new planet 
 
 ### Lumen
 
-Lumen, the ship's computer, is the eye in the lower left. It points at what to do next with a beam of
-light and comments on your tests, with or without a language model.
+Lumen, the ship's computer, is the eye in the lower left: or what is left of it on the island, a
+backup whose core lies in the main hull across the strait. The skiff you build in tier 1 is how the
+two of you get there. Lumen points at what to do next with a beam of light, says why each station
+matters, comments on your tests and, now and then, on where you are, with or without a language model.
 
 ![Lumen points at the platform after a missed shot](docs/screenshots/lumen.png)
 

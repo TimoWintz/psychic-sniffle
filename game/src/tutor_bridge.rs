@@ -22,6 +22,7 @@ impl Lumen {
     pub fn ask(&mut self, game: &Game, ui: &Ui, landmarks: &Landmarks, puzzle: usize, text: &str) -> bool {
         let mut context = TutorContext::build(&game.chapter, game.def(puzzle), &game.instance(puzzle), &game.save, &ui.drafts[puzzle]);
         context.landmarks = landmarks.names();
+        context.tier_goal = game.tier.goal.clone();
         self.conversations[puzzle].ask(&self.tutor, &context, text)
     }
 }

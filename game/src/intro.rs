@@ -132,8 +132,9 @@ impl Mainland {
         MAINLAND_ORIGIN + local * MAINLAND_SCALE
     }
 
-    /// Where the main hull comes down: the foot of the wreck, on the plain.
-    pub fn wreck(&self) -> Vec3 {
+    /// Where the main hull comes down: the foot of the wreck, on the plain. It needs only the
+    /// mainland's constants, so places that look across the strait can know it without building it.
+    pub fn wreck() -> Vec3 {
         Self::to_world(Vec3::new(MAINLAND_SITE.x as f32 + 0.5, MAINLAND_PLAIN as f32, MAINLAND_SITE.y as f32 + 0.5))
     }
 
@@ -247,7 +248,7 @@ fn setup(
 ) {
     let mainland = Mainland::new(sites.wreck);
     let focus = sites.spawn + Vec3::Y * 1.5;
-    let sets = Sets::new(&world, sites.wreck, sites.spawn, mainland.wreck(), (orbit.eye(focus), focus));
+    let sets = Sets::new(&world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
 
     // The mainland, lit and coloured as the island is.
     let blocks = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });

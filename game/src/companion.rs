@@ -7,6 +7,10 @@
 //! It points only where it helps: at the next station for a while when one opens, at the job of an
 //! unsolved puzzle, at a running test. Nothing about a solved puzzle draws the beam.
 //! The scripted lines never contain a number, so they cannot give an answer away.
+//!
+//! Lumen also carries the story: an opening in a fresh game, why each station matters when it first
+//! opens, what a pass got us, and remarks about places, each said once and only when nothing else is
+//! going on (see [`quiet`]). The words are in the chapter's file; this module decides when.
 
 use crate::carry::{Carry, Item, Slot, Yard};
 use crate::island::Sites;
@@ -18,6 +22,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use std::collections::BTreeSet;
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
+use physics_core::content::{RemarkWhen, Spoken};
 use physics_core::puzzle::PuzzleKind;
 
 /// How long Lumen keeps looking where the tutor pointed, in seconds.
@@ -26,6 +31,8 @@ const MODEL_LOOK_SECONDS: f32 = 9.0;
 const RESULT_LOOK_SECONDS: f32 = 6.0;
 /// How long Lumen points the way to the next station once it opens (and at the start).
 const BECKON_SECONDS: f32 = 12.0;
+/// How long Lumen keeps quiet after saying anything before it makes a remark of its own, in seconds.
+const REMARK_AFTER: f32 = 40.0;
 
 /// Places Lumen can look at, by name, with where they are.
 #[derive(Resource, Clone, Debug)]
@@ -48,6 +55,8 @@ impl Landmarks {
         places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
         places.push(("The shipyard floor".into(), sites.shipyard + Vec3::Y * 1.0));
+        places.push((MAIN_HULL.into(), crate::intro::Mainland::wreck() + Vec3::Y * 6.0));
+        places.push((SHORE.into(), sites.shore + Vec3::Y * 1.0));
         Landmarks(places)
     }
 
@@ -69,6 +78,9 @@ const RAIL_CART: &str = "Rail cart";
 /// The light gate on its stand, and the drop tower it clamps on.
 const LIGHT_GATE: &str = "Light gate on its stand";
 const TOWER_NOTCHES: &str = "Notches on the drop tower";
+/// The main hull on the mainland, where the rest of Lumen is, and the island's shore facing it.
+const MAIN_HULL: &str = "The main hull, across the strait";
+const SHORE: &str = "The shore";
 
 pub fn station_name(game: &Game, puzzle: usize) -> String {
     format!("Station: {}", game.def(puzzle).title)
@@ -142,6 +154,12 @@ struct Line {
     text: String,
     left: f32,
     shown: f32,
+    /// A place the eye holds while the line is said.
+    look: Option<String>,
+    /// Part of a story (the opening): what is said meanwhile waits its turn instead of cutting it.
+    keep: bool,
+    /// The frame it was said in.
+    said: u64,
 }
 
 /// Lumen's state: where it looks, how it feels, what it is saying, and its animation.
@@ -160,15 +178,37 @@ pub struct Companion {
     nudged: BTreeSet<(usize, Nudge)>,
     /// Seconds left of pointing the way to the next station.
     beckon_left: f32,
+    /// Seconds since Lumen last said anything.
+    since_spoke: f32,
+    /// Remarks already made this session, by their index in the chapter.
+    remarked: BTreeSet<usize>,
+    /// Frames directed so far, to tell lines said in the same moment.
+    frame: u64,
 }
 
 impl Companion {
     /// Say a line. Something new to say cuts short what is being said and drops what was waiting,
     /// so the line on screen is always about what just happened. Lines said in the same moment are
     /// kept, in order.
+    ///
+    /// While a story is being told (lines said with `keep`), nothing cuts it short: a new line waits
+    /// behind it, and replaces what was waiting there from an earlier moment, so what is said after
+    /// the story is still about what just happened.
     fn say(&mut self, text: impl Into<String>) {
-        let text = text.into();
-        if let Some(current) = self.lines.first_mut()
+        self.speak(text.into(), None, false);
+    }
+
+    /// Say one of the chapter's lines, holding the eye on its place, if it names one.
+    fn say_spoken(&mut self, line: &Spoken, keep: bool) {
+        self.speak(line.text.clone(), line.look.clone(), keep);
+    }
+
+    fn speak(&mut self, text: String, look: Option<String>, keep: bool) {
+        let telling = self.lines.iter().any(|l| l.keep);
+        if telling {
+            let now = self.frame;
+            self.lines.retain(|l| l.keep || l.shown > 0.0 || l.said == now);
+        } else if let Some(current) = self.lines.first_mut()
             && current.shown > 0.0
         {
             current.left = current.left.min(0.3);
@@ -176,7 +216,22 @@ impl Companion {
         }
         let words = text.split_whitespace().count() as f32;
         // Long enough to read, then out of the way.
-        self.lines.push(Line { text, left: (2.5 + words * 0.32).min(10.0), shown: 0.0 });
+        self.lines.push(Line { text, left: (2.5 + words * 0.32).min(10.0), shown: 0.0, look, keep, said: self.frame });
+        self.since_spoke = 0.0;
+    }
+
+    /// Make a remark, if Lumen is not saying anything else.
+    fn remark(&mut self, line: &Spoken) -> bool {
+        if !self.lines.is_empty() {
+            return false;
+        }
+        self.say_spoken(line, false);
+        true
+    }
+
+    /// Seconds until everything waiting to be said has been said.
+    fn talking_for(&self) -> f32 {
+        self.lines.iter().map(|l| l.left).sum()
     }
 
     fn feel(&mut self, mood: Mood, seconds: f32) {
@@ -189,11 +244,50 @@ impl Companion {
     }
 }
 
-/// What Lumen suggests when a station opens, once per session each.
+/// What Lumen says once per station per session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Nudge {
+    /// Why the station matters, when it first opens.
+    Why,
+    /// Suggestions when a station opens.
     Experiment,
     Build,
+    /// After a miss with the player's own g: it held up at the drop tower.
+    YourG,
+    /// The station has run out of charges.
+    Recharge,
+    /// After two misses, if the player has not talked to Lumen about the puzzle.
+    AskMe,
+}
+
+/// What decides whether Lumen may make a remark of its own. A plain copy, so it can be tested.
+#[derive(Clone, Copy, Debug, Default)]
+struct Quiet {
+    station_open: bool,
+    /// A test or an experiment is running.
+    running: bool,
+    ruler: bool,
+    conversation_open: bool,
+    carrying: bool,
+    /// Something is being said, or waits to be.
+    speaking: bool,
+    since_spoke: f32,
+}
+
+/// Lumen remarks on a place only when the player is not busy and it has been quiet for a while: a
+/// remark never gets in the way of the physics.
+fn quiet(q: &Quiet) -> bool {
+    !(q.station_open || q.running || q.ruler || q.conversation_open || q.carrying || q.speaking) && q.since_spoke >= REMARK_AFTER
+}
+
+/// Whether a remark's condition holds.
+fn remark_due(when: &RemarkWhen, game: &Game) -> bool {
+    let solved = |id: &str| game.chapter.puzzles.iter().position(|p| p.id == id).is_some_and(|i| game.solved(i));
+    match when {
+        RemarkWhen::Always => true,
+        RemarkWhen::Before(id) => !solved(id),
+        RemarkWhen::After(id) => solved(id),
+    }
 }
 
 /// What the director looks at to decide where Lumen's eye goes. A plain copy, so the decision can
@@ -223,6 +317,8 @@ struct Facts {
     at_finished_station: bool,
     /// A place that outranks the rest for now.
     held: Option<String>,
+    /// The place the line being said is about: the eye holds it when nothing is going on.
+    line_look: Option<String>,
     /// What the avatar is carrying.
     carrying: Option<Item>,
     /// Nothing is placed at the focused puzzle's station: no crate in the jack frame, no cargo on
@@ -282,6 +378,9 @@ fn choose_gaze(f: &Facts) -> Option<String> {
         }
         return Some(guide(kind).study.into());
     }
+    if let Some(look) = &f.line_look {
+        return Some(look.clone());
+    }
     if !(f.beckon || f.at_finished_station) {
         return None;
     }
@@ -307,6 +406,7 @@ struct Seen {
     /// Handbook pages whose quiz has been answered in full.
     quizzes: BTreeSet<String>,
     station: Option<usize>,
+    recharging: [bool; PUZZLES],
 }
 
 pub struct CompanionPlugin;
@@ -331,12 +431,14 @@ fn direct(
     ruler: Res<Ruler>,
     carry: Res<Carry>,
     landmarks: Res<Landmarks>,
+    player: Single<&Transform, With<crate::player::Player>>,
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
     mut last: Local<Option<Seen>>,
 ) {
     let dt = time.delta_secs();
     let companion = &mut *companion;
+    companion.frame += 1;
     let focus = ui.focus(&game);
     let focus_kind = game.def(focus).kind;
     let next = game.next_unsolved();
@@ -362,25 +464,34 @@ fn direct(
         found: game.save.found.clone(),
         quizzes: game.chapter.concepts.iter().filter(|c| game.save.quiz_done(&game.chapter, &c.id)).map(|c| c.id.clone()).collect(),
         station: ui.station,
+        recharging: std::array::from_fn(|i| ui.recharging[i].is_some()),
     };
     match last.as_ref() {
         None => {
             // The first frame: a greeting.
             let fresh = game.save.puzzles.values().all(|p| p.attempts.is_empty());
-            companion.beckon_left = BECKON_SECONDS;
             match next {
                 Some(n) if fresh => {
-                    companion.say(first_sentence(&game.chapter.intro));
-                    companion.say(format!("{} Follow my beam to the station.", game.def(n).task));
+                    // The opening is a story: it is not cut short, and Lumen points the way after it.
+                    for line in &game.chapter.opening {
+                        companion.say_spoken(line, true);
+                    }
+                    let first = Spoken { text: format!("{} Follow my beam to the station.", game.def(n).task), look: None };
+                    companion.say_spoken(&first, true);
                 }
                 Some(n) => companion.say(format!("Welcome back. Next: {}", lowercase_first(&game.def(n).task))),
                 None => companion.say("Welcome back. The frame stands on the shipyard floor."),
             }
+            companion.beckon_left = BECKON_SECONDS + companion.talking_for();
         }
         Some(before) => {
             for puzzle in 0..PUZZLES {
                 if now.results[puzzle] && !before.results[puzzle] {
-                    react_to_result(companion, &game, &ui, puzzle);
+                    let ask_me = lumen.tutor.is_online() && lumen.conversations[puzzle].turns.is_empty();
+                    react_to_result(companion, &game, &ui, puzzle, ask_me);
+                }
+                if now.recharging[puzzle] && !before.recharging[puzzle] && companion.nudged.insert((puzzle, Nudge::Recharge)) {
+                    companion.say("Recharging. A good moment to check your readings against the handbook.");
                 }
             }
             if now.refusal.is_some() && now.refusal != before.refusal {
@@ -409,6 +520,10 @@ fn direct(
                 && !game.solved(p)
             {
                 let kind = game.def(p).kind;
+                let why = &game.def(p).why;
+                if !why.is_empty() && companion.nudged.insert((p, Nudge::Why)) {
+                    companion.say(why.clone());
+                }
                 let nudge = if game.def(p).demo.is_some() && !now.watched[p] {
                     Some((Nudge::Experiment, "Before any numbers, try the experiment. Make your guess first."))
                 } else {
@@ -435,7 +550,11 @@ fn direct(
                 companion.beckon_left = BECKON_SECONDS;
                 match now.next {
                     Some(n) => companion.say(format!("Next: {} Follow my beam.", lowercase_first(&game.def(n).task))),
-                    None => companion.say("That is the whole frame. Come and see it on the shipyard floor."),
+                    None => {
+                        for line in &game.chapter.closing {
+                            companion.say_spoken(line, false);
+                        }
+                    }
                 }
             }
             if now.ruler_active && !before.ruler_active {
@@ -460,6 +579,7 @@ fn direct(
         }
     }
     companion.beckon_left = (companion.beckon_left - dt).max(0.0);
+    companion.since_spoke += dt;
     companion.mood_left -= dt;
     if companion.mood_left <= 0.0 && companion.mood != Mood::Neutral {
         companion.mood = Mood::Neutral;
@@ -473,6 +593,31 @@ fn direct(
     }
 
     let testing = sim.testing().map(|p| game.def(p).kind);
+
+    // A remark about where the player is, if nothing else is going on.
+    let calm = Quiet {
+        station_open: ui.station.is_some(),
+        running: testing.is_some() || sim.demo().is_some(),
+        ruler: ruler.active || ruler.in_use(),
+        conversation_open: ui.tutor_open,
+        carrying: carry.holding.is_some(),
+        speaking: !companion.lines.is_empty(),
+        since_spoke: companion.since_spoke,
+    };
+    if quiet(&calm) {
+        let here = player.translation.xz();
+        let due = game.chapter.remarks.iter().enumerate().find(|(i, remark)| {
+            !companion.remarked.contains(i)
+                && remark_due(&remark.when, &game)
+                && landmarks.position(&remark.near).is_some_and(|at| at.xz().distance(here) <= remark.radius)
+        });
+        if let Some((i, remark)) = due
+            && companion.remark(&remark.line)
+        {
+            companion.remarked.insert(i);
+        }
+    }
+
     let focus_def = game.def(focus);
     if testing.is_some() && !asking {
         companion.feel(Mood::Thinking, 0.3);
@@ -491,6 +636,7 @@ fn direct(
         beckon: companion.beckon_left > 0.0,
         at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
         held: companion.held.as_ref().map(|(place, _, _)| place.clone()),
+        line_look: companion.lines.first().filter(|l| l.shown > 0.0).and_then(|l| l.look.clone()),
         carrying: carry.holding,
         slot_empty: crate::carry::SLOTS.iter().find(|s| s.puzzle() == focus_kind).is_some_and(|s| carry.holds(*s) == 0),
         gate_pending: focus_kind == PuzzleKind::Gravity && gate_pending(&game, focus),
@@ -503,21 +649,17 @@ fn gate_pending(game: &Game, puzzle: usize) -> bool {
     game.save.demo_watched(&game.def(puzzle).id) && !game.save.notebook.entries.iter().any(|e| e.source == "light gate")
 }
 
-fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usize) {
+/// After a test: the station's line on a pass; on a miss, where to look, and where to read or ask.
+/// `ask_me`: the tutor is online and the player has not talked to it about this puzzle.
+fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usize, ask_me: bool) {
     let Some(outcome) = &ui.results[puzzle] else { return };
     let kind = game.def(puzzle).kind;
     let target = guide(kind).target;
     companion.hold(target, RESULT_LOOK_SECONDS, false);
     if outcome.pass {
         companion.feel(Mood::Pleased, 5.0);
-        let cheers = [
-            "Right on the mark.",
-            "Caught it right where you said.",
-            "The world agrees with you.",
-            "Clean. That one is ours.",
-            "Over and down, right where you said.",
-        ];
-        companion.say(cheers[puzzle % cheers.len()]);
+        let done = &game.def(puzzle).done;
+        companion.say(if done.is_empty() { "Right on the mark." } else { done.as_str() });
     } else {
         companion.feel(Mood::Concerned, 5.0);
         companion.say(match kind {
@@ -525,8 +667,18 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
             PuzzleKind::Chase => "Not quite. Look where the cart reached the crawler, compared with the marker.",
             _ => "Not this time. Look where it ended, compared with the target.",
         });
-        // Point back to the idea the station is about: its page, or the experiment that writes it.
         let def = game.def(puzzle);
+        // The shots after the drop tower are worked out with the player's own g, which passed there.
+        if matches!(kind, PuzzleKind::Canyon | PuzzleKind::Ridge) && companion.nudged.insert((puzzle, Nudge::YourG)) {
+            companion.say("Your g held up at the drop tower. Check the other readings first.");
+            return;
+        }
+        let misses = game.save.progress(&def.id).attempts.iter().filter(|a| !a.pass).count();
+        if ask_me && misses >= 2 && companion.nudged.insert((puzzle, Nudge::AskMe)) {
+            companion.say("Two misses. Talk to me with T: I will not give you the number, but I can help you find it.");
+            return;
+        }
+        // Point back to the idea the station is about: its page, or the experiment that writes it.
         if def.demo.is_some()
             && let Some(page) = game.chapter.pages_found_at(&def.id).last()
         {
@@ -969,6 +1121,71 @@ mod tests {
             assert!(landmarks.position(place).is_some(), "{place}");
         }
         assert!(landmarks.position("Light gate").is_none(), "the gate's pin is away until it is clamped");
+    }
+
+    #[test]
+    fn every_place_the_story_names_is_a_landmark() {
+        for seed in [1, 7, 23] {
+            let layout = Ch1Layout::generate(seed);
+            let (_, sites) = island::build(&layout);
+            let game = Game::for_test(seed);
+            let landmarks = Landmarks::new(&sites, &game);
+            for place in game.chapter.places_named() {
+                assert!(landmarks.position(place).is_some(), "seed {seed}: {place}");
+            }
+            // The shore is on the island, on the side facing the main hull.
+            let hull = landmarks.position(MAIN_HULL).unwrap();
+            assert!(sites.shore.xz().distance(hull.xz()) < sites.wreck.xz().distance(hull.xz()), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn remarks_wait_for_a_quiet_moment() {
+        let calm = Quiet { since_spoke: REMARK_AFTER, ..Quiet::default() };
+        assert!(quiet(&calm));
+        assert!(!quiet(&Quiet { since_spoke: REMARK_AFTER - 1.0, ..calm }), "not right after another line");
+        for busy in [
+            Quiet { station_open: true, ..calm },
+            Quiet { running: true, ..calm },
+            Quiet { ruler: true, ..calm },
+            Quiet { conversation_open: true, ..calm },
+            Quiet { carrying: true, ..calm },
+            Quiet { speaking: true, ..calm },
+        ] {
+            assert!(!quiet(&busy), "{busy:?}");
+        }
+    }
+
+    #[test]
+    fn the_opening_is_not_cut_short_but_other_lines_are() {
+        let mut lumen = Companion::default();
+        lumen.say("A line.");
+        lumen.lines[0].shown = 1.0;
+        lumen.say("Something new.");
+        assert_eq!(lumen.lines.len(), 2);
+        assert!(lumen.lines[0].left <= 0.3, "the line on screen makes way");
+
+        let mut lumen = Companion::default();
+        lumen.say_spoken(&Spoken { text: "Once upon a time.".into(), look: None }, true);
+        lumen.say_spoken(&Spoken { text: "Then this.".into(), look: None }, true);
+        lumen.lines[0].shown = 1.0;
+        lumen.say("Refused before launch.");
+        assert_eq!(lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["Once upon a time.", "Then this.", "Refused before launch."]);
+        assert!(lumen.lines[0].left > 0.3, "the story goes on");
+        // A moment later, something newer replaces what was waiting; lines of one moment stay together.
+        lumen.frame += 1;
+        lumen.say("Why this station.");
+        lumen.say("Try the experiment.");
+        assert_eq!(lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["Once upon a time.", "Then this.", "Why this station.", "Try the experiment."]);
+    }
+
+    #[test]
+    fn a_line_about_a_place_looks_at_it_unless_there_is_work_to_show() {
+        let telling = Facts { line_look: Some(MAIN_HULL.into()), ..walking_to(0) };
+        assert_eq!(choose_gaze(&telling).as_deref(), Some(MAIN_HULL));
+        let at_work = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, slot_empty: true, ..telling.clone() };
+        assert_eq!(choose_gaze(&at_work).as_deref(), Some(SALVAGE_CRATES));
+        assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Rail), ..telling }).as_deref(), Some("Rail marker: centre"));
     }
 
     #[test]

@@ -29,6 +29,8 @@ pub(crate) const GOOD: Color32 = Color32::from_rgb(110, 220, 130);
 pub(crate) const WARN: Color32 = Color32::from_rgb(240, 190, 80);
 pub(crate) const BAD: Color32 = Color32::from_rgb(240, 110, 100);
 pub(crate) const DIM: Color32 = Color32::from_rgb(160, 165, 175);
+/// Lumen's colour, the cyan of its eye, for its words in the panels.
+const LUMEN: Color32 = Color32::from_rgb(110, 205, 240);
 
 pub struct UiPlugin;
 
@@ -139,7 +141,11 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
         ui.spacing_mut().item_spacing.y = 6.0;
         egui::Frame::window(ui.style()).show(ui, |ui| {
             ui.set_max_width(DOCK_WIDTH);
+            ui.label(RichText::new(format!("Tier {} · {}", game.tier.number, game.tier.goal)).small().color(DIM));
             ui.label(RichText::new(format!("{}  {}", game.chapter.id, game.chapter.title)).strong());
+            if !game.chapter.goal.is_empty() {
+                ui.label(RichText::new(&game.chapter.goal).color(DIM));
+            }
             let marks: String = (0..game.chapter.puzzles.len())
                 .map(|i| if game.solved(i) { "■ " } else if game.unlocked(i) { "□ " } else { "· " })
                 .collect();
@@ -288,6 +294,10 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
             });
             ui.separator();
             egui::ScrollArea::vertical().max_height(ctx.content_rect().height() - 110.0).show(ui, |ui| {
+                if !def.why.is_empty() {
+                    ui.label(RichText::new(format!("Lumen: {}", def.why)).italics().color(LUMEN));
+                    ui.add_space(4.0);
+                }
                 ui.label(&def.brief);
                 if def.kind == PuzzleKind::Ridge {
                     ui.label(RichText::new(format!("Launcher rating: {} maximum.", Quantity::speed(game.layout.v_max).display())).strong());

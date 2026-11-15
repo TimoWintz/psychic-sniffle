@@ -343,6 +343,26 @@ pub(crate) fn setup(
                 }
             });
     }
+    // More of it lies where it was thrown clear, or where it was dragged to a camp: still, resting on
+    // the ground, a little larger than the loose pieces. The loose pieces can land on it.
+    const SCRAP_SCALE: f32 = 1.35;
+    for (j, ground) in sites.scrap.iter().enumerate() {
+        let piece = props::debris(&mut meshes, &finishes, j);
+        let lift = Vec3::Y * piece.depth(&meshes) * SCRAP_SCALE;
+        commands
+            .spawn((
+                RigidBody::Static,
+                piece.collider,
+                Mesh3d(piece.mesh),
+                MeshMaterial3d(piece.material),
+                Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
+            ))
+            .with_children(|trim| {
+                for (mesh, material, transform) in piece.trim {
+                    trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
+                }
+            });
+    }
     let unlit = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), unlit: true, ..default() })
     };

@@ -261,6 +261,24 @@ pub struct Debris {
     pub trim: Vec<(Handle<Mesh>, Handle<StandardMaterial>, Transform)>,
 }
 
+impl Debris {
+    /// How far the piece reaches below its centre as built: what it rests on when it lies unturned.
+    pub fn depth(&self, meshes: &Assets<Mesh>) -> f32 {
+        let mut lowest = lowest_y(meshes.get(&self.mesh).expect("the debris mesh is added"), Transform::default());
+        for (mesh, _, transform) in &self.trim {
+            lowest = lowest.min(lowest_y(meshes.get(mesh).expect("trim meshes are added"), *transform));
+        }
+        -lowest
+    }
+}
+
+/// The lowest point of `mesh` placed by `transform`.
+fn lowest_y(mesh: &Mesh, transform: Transform) -> f32 {
+    use bevy::mesh::VertexAttributeValues;
+    let Some(VertexAttributeValues::Float32x3(points)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else { return 0.0 };
+    points.iter().map(|p| transform.transform_point(Vec3::from(*p)).y).fold(f32::MAX, f32::min)
+}
+
 /// The kinds of wreckage thrown clear of the hull, `kind` taken modulo their number.
 pub fn debris(meshes: &mut Assets<Mesh>, finishes: &Finishes, kind: usize) -> Debris {
     match kind % 5 {
@@ -332,7 +350,8 @@ pub fn debris(meshes: &mut Assets<Mesh>, finishes: &Finishes, kind: usize) -> De
                 trim: vec![
                     (meshes.add(Cuboid::new(0.56, 0.3, 0.02)), finishes.screen.clone(), Transform::from_xyz(0.0, 0.03, size.z / 2.0 + 0.005)),
                     (meshes.add(Cuboid::new(size.x + 0.04, 0.05, size.z + 0.04)), finishes.alloy.clone(), Transform::from_xyz(0.0, size.y / 2.0 - 0.025, 0.0)),
-                    (meshes.add(Cylinder::new(0.025, 0.4)), finishes.copper.clone(), Transform::from_xyz(-0.2, -size.y / 2.0 - 0.1, 0.0).with_rotation(Quat::from_rotation_z(0.6))),
+                    // A torn cable out of its back.
+                    (meshes.add(Cylinder::new(0.025, 0.4)), finishes.copper.clone(), Transform::from_xyz(-0.2, -0.1, -size.z / 2.0 - 0.17).with_rotation(Quat::from_rotation_x(FRAC_PI_2 - 0.4))),
                 ],
             }
         }

@@ -15,8 +15,9 @@ player's job.
 
 Lumen is on screen as a holographic eye in the lower left corner. It points with a beam of light only
 where that helps: the way to the next station for a while after it opens (and again when you stand at
-a station that is done or locked), the experiment and the job of an unsolved station, the yellow pin to
-click while measuring, the target while a test runs. Nothing about a solved puzzle draws the beam;
+a station that is done or locked), the experiment and the job of an unsolved station (and what to
+carry for it: the cargo crate, the light gate, the ledge's crates, then where they go), the yellow pin
+to click while measuring, the target while a test runs. Nothing about a solved puzzle draws the beam;
 otherwise the eye just looks about. When the place is off screen, the beam ends in an arrow at the
 edge of the screen. It says short lines in a bubble above the eye when something happens (a test lands,
 a station refuses an entry, a new station opens) and its eye shows a mood: pleased, concerned,
@@ -102,8 +103,39 @@ Every puzzle runs through the same five steps at a **station** (a workbench in t
 5. **Result.** Pass: the part is fabricated and appears on the ship. Fail: a diagnostic says what
    happened in physical terms ("landed 3.2 m short"), never what the answer is.
 
+### Doing it with your hands
+
+Typing a number is not the only way to commit. Some puzzles are answered, or investigated, by moving
+things in the world. Three patterns, each with the same rule: the player works it out first, then
+builds it, and the exact simulator judges what was built.
+
+| Pattern | What the player does | Where |
+|---|---|---|
+| Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: crates under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the canyon (built) |
+| Place to measure | Put an instrument where it measures what is wanted: a light gate clamped at a chosen notch of the drop tower, so the player designs their own measurement and collects pairs of drop and time. | 1.1 Local gravity (built) |
+| Place the catcher | The setting is fixed and read off a plate; carry the target (net, stop, bin) to where the load will end up. | 1.3, the sled: place the stop where it comes to rest under friction (planned; see the curriculum) |
+
+The verb is taught first with nothing at stake: the tutorial's cart will not run until the player
+has carried its cargo crate onto it. That refusal is free, like a value of the wrong kind, and since
+nothing typed was committed it does not write the tutorial's handbook page.
+
+Placements snap to whole blocks or to fixed notches, so what is built can be counted and measured
+exactly. A placement on its own is a small choice (a handful of stacks), which a few tries find by
+luck, so a built answer comes with a calculated one or a small target: guessing should cost at least
+as many tests as guessing a typed value, and every wrong stack also costs a walk with crates. An
+instrument that is placed (the light gate) answers nothing itself; what it measures still has to be
+worked into the typed answer.
+
 ### What makes guessing a bad strategy
 
+- **Measure how fast a guess finds the answer.** Every miss says which way it went (short or
+  beyond, sooner or later), so any answer can be found by halving after each miss. How likely a
+  lucky pass is, is really how many tests that halving takes: the size of the target against
+  everything the station accepts, in bits. Every answer that is built in the world gets a test that
+  plays such a guesser against it across many seeds: it must need well over a station's charges on
+  average, and rarely pass within them. At the canyon the same guesser needed 3.9 tests (31 % within three) with the
+  old typed speed, 2.8 (75 %) with crates alone at a fixed speed, and 7.6 (32 %) now that the stack is
+  built and the speed is calculated for it.
 - **Commit before test.** Values cannot be adjusted while the simulation runs.
 - **Prototype charges.** Each test consumes one charge; a puzzle starts with three. At zero the station
   needs recharging (a short wait in the slice; a resource errand later). Never a hard lock.
@@ -139,28 +171,40 @@ Unlocked as the curriculum needs them.
   with where to find it. Lumen announces new pages, each station has buttons for the pages its job
   uses, and after a miss Lumen names the page worth rereading.
 - **Launchers show the blueprint.** As a value is typed, the tilting launcher's arm swings to the
-  angle and a gauge beside each launcher fills to the speed, against the launcher's rating. The
-  player's number is visible in the world before it is committed; the path is never previewed.
+  angle and its gauge fills to the speed, against the launcher's rating. The ledge launcher's gauge
+  marks the bottom of its band too and turns red outside it, and the launcher itself rides up its jack
+  frame as crates go in.
+  The player's choice is visible in the world before it is committed; the path is never previewed.
 - **Grapher** (tier 2 onward). Plot a notebook series; read slopes and areas.
 
 ## Avatar, camera, controls
 
-Third-person view of a blocky engineer. Walk, jump, look around; `E` uses a station; `R` measures
-with the ruler; `N` notebook and calculator; `H` handbook; `T` (or a click on Lumen's eye) talks to
-Lumen. The avatar carries no inventory in the slice.
+Third-person view of a blocky engineer. Walk, jump, look around; `E` uses a station; `F` picks up
+and puts down; `R` measures with the ruler; `N` notebook and calculator; `H` handbook; `T` (or a click
+on Lumen's eye) talks to Lumen. The avatar carries one thing at a time, in its hands; there is no
+inventory.
 
 - **Stations.** While a station is open the engineer stays at its console: the movement keys do
   nothing, the camera still turns and zooms. `E`, `Esc` or the panel's Leave button steps away.
 - **Ruler.** `R` takes one measurement: two clicks, then the ruler stops taking clicks and its reading
   stays on screen to be noted. `R` again measures anew; `Esc` or the card's close button puts it
   away; `R` or `Esc` before the second click cancels.
+- **Carrying.** Salvage with an orange handle can be moved. `F` picks up what is in front of the
+  avatar; a ghost block shows where it will go, and `F` puts it down there: on the ground, or on top
+  of a crate, at most one block above the feet (so crates can be stacked into steps). Crates are real
+  blocks: they can be stood on and measured, and each stays near where it belongs (the ledge's
+  salvage on the ledge, the cart's cargo beside the rail). Where a station reads a placement,
+  putting the thing into its place is the act: a crate onto the cart or into the jack frame, the
+  light gate onto a notch of the drop tower (the notch is the one the pointer marks on the tower, or
+  the one at hand height). The station shows what is placed there, and the save keeps it.
 - **Notebook, handbook, Lumen.** Always on screen. The notebook and the handbook sit in a fixed column
   at the top left under the chapter's progress, reduced to a header; `N` and `H` (or a click on the
   header) expand and reduce them. Lumen reduced is its eye; `T` expands its conversation.
 
 The engineer is a jointed figure of blocks, animated in code. Its stride follows its speed, it
-tucks on a jump and gives at the knees on landing, and it works the panel of an open station. It turns
-to watch a test in flight, then cheers a pass or hangs its head at a miss. When idle, it glances where
+tucks on a jump and gives at the knees on landing, and it works the panel of an open station. It carries a
+crate in both hands, arms forward. It turns to watch a test in flight, then cheers a pass or hangs its
+head at a miss. When idle, it glances where
 Lumen is pointing.
 
 ## The ship and progression
@@ -188,5 +232,5 @@ honest when the player is wrong.
 
 ## Out of scope for the slice
 
-Mining or free building, inventory, multiplayer, sound, saving more than chapter progress, tiers 2 and 3
+Mining or free building (only marked salvage moves, and only where a puzzle has room for it), inventory, multiplayer, sound, saving more than chapter progress, tiers 2 and 3
 content, the relay server for the tutor.

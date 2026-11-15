@@ -56,6 +56,13 @@ impl Game {
         Game { chapter, layout: Ch1Layout::generate(save.seed), save, save_path, save_problem }
     }
 
+    /// A new game on `seed` that saves to a scratch file, for tests.
+    #[cfg(test)]
+    pub fn for_test(seed: u64) -> Self {
+        let save_path = std::env::temp_dir().join(format!("fp-test-{seed}-{}-{:?}.ron", std::process::id(), std::thread::current().id()));
+        Game { chapter: chapter_1_1(), layout: Ch1Layout::generate(seed), save: Save::new(seed), save_path, save_problem: None }
+    }
+
     pub fn def(&self, puzzle: usize) -> &PuzzleDef {
         &self.chapter.puzzles[puzzle]
     }
@@ -79,6 +86,12 @@ impl Game {
     /// The first puzzle not yet solved, if any.
     pub fn next_unsolved(&self) -> Option<usize> {
         (0..self.chapter.puzzles.len()).find(|&i| !self.solved(i))
+    }
+
+    /// What is placed at a puzzle's station: the cargo crate on the cart, the light gate's notch,
+    /// the number of crates under the ledge launcher (see `Save::placed`).
+    pub fn placed(&self, puzzle: usize) -> u32 {
+        self.save.placed.get(&self.def(puzzle).id).copied().unwrap_or(0)
     }
 
     /// Whether a handbook page can be read.

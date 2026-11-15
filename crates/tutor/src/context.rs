@@ -5,7 +5,7 @@
 
 use physics_core::content::{Chapter, PuzzleDef};
 use physics_core::progress::Save;
-use physics_core::puzzle::{Instance, PuzzleKind};
+use physics_core::puzzle::{InputSource, Instance, PuzzleKind};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -37,6 +37,9 @@ pub struct AskedValue {
     pub dimension: String,
     /// What the player has typed in the blueprint so far, if anything.
     pub draft: String,
+    /// For a value the player sets by building in the world rather than typing: what stands there
+    /// now ("2 crates in the jack frame").
+    pub built: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -73,6 +76,9 @@ pub struct TutorContext {
     pub how_to_measure: String,
     pub concepts: Vec<ConceptCard>,
     pub experiment: Option<ExperimentLine>,
+    /// What the player has placed at the station in the world, in words ("the cargo crate is on the
+    /// cart", "the light gate is clamped 7 m below the release point"), where something can be.
+    pub placed: Option<String>,
     pub asked: Vec<AskedValue>,
     pub notebook: Vec<NotebookLine>,
     pub attempts: Vec<AttemptLine>,
@@ -106,6 +112,7 @@ impl TutorContext {
     pub fn build(chapter: &Chapter, def: &PuzzleDef, instance: &Instance, save: &Save, drafts: &[String]) -> Self {
         let progress = save.progress(&def.id);
         let solution = instance.solution();
+        let placed = instance.built(save.placed.get(&def.id).copied().unwrap_or(0));
 
         let mut secrets = Vec::new();
         for answer in &solution.answers {
@@ -119,6 +126,35 @@ impl TutorContext {
                 let (a, b) = (v * (1.0 - SECRET_MARGIN), v * (1.0 + SECRET_MARGIN));
                 secrets.push(Secret { low: a.min(b), high: a.max(b), only_before: Vec::new() });
             }
+        }
+        if instance.kind == PuzzleKind::Canyon {
+            // One or two stacks work, each with its own speed. A stack is a small whole number, too
+            // common to redact on its own: guard it where it counts crates, and guard the release height
+            // it gives, in metres. Guard the speeds across all of them, in m/s.
+            secrets.clear();
+            let layout = &instance.layout;
+            let stacks = layout.canyon_stacks();
+            for stack in stacks.clone() {
+                let stack_f = stack as f64;
+                secrets.push(Secret {
+                    low: stack_f - 0.01,
+                    high: stack_f + 0.01,
+                    only_before: ["crate", "crates", "more crate", "boxes", "blocks"].map(String::from).to_vec(),
+                });
+                for height in [stack_f, layout.ledge_h as f64 + stack_f] {
+                    secrets.push(Secret {
+                        low: height * (1.0 - SECRET_MARGIN) - 0.15,
+                        high: height * (1.0 + SECRET_MARGIN) + 0.15,
+                        only_before: ["m ", "m.", "m,", "metre", "meter"].map(String::from).to_vec(),
+                    });
+                }
+            }
+            let (fast, slow) = (layout.canyon_speed_needed(*stacks.start()), layout.canyon_speed_needed(*stacks.end()));
+            secrets.push(Secret {
+                low: slow * (1.0 - SECRET_MARGIN),
+                high: fast * (1.0 + SECRET_MARGIN),
+                only_before: ["m/s", "m s", "metres per second", "meters per second"].map(String::from).to_vec(),
+            });
         }
         if instance.kind == PuzzleKind::Ridge {
             // Many angle and speed pairs work here, so guard the whole working window.
@@ -140,6 +176,17 @@ impl TutorContext {
         let mut known_numbers: Vec<f64> = save.notebook.entries.iter().map(|e| e.quantity.value).collect();
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
+        }
+        if instance.kind == PuzzleKind::Gravity
+            && let Some(&notch) = save.placed.get(&def.id)
+            && notch > 0
+        {
+            // The light gate's notch: the player chose it and it is shown when it is clamped.
+            known_numbers.push(notch as f64);
+        }
+        if instance.kind == PuzzleKind::Canyon {
+            // On the launcher's rating plate, in plain view.
+            known_numbers.extend([instance.layout.canyon_speed_min, instance.layout.canyon_speed_max]);
         }
         // The experiment's question and choices are on the player's screen (the ridge's names its
         // two angles, which may fall inside the working window).
@@ -172,6 +219,7 @@ impl TutorContext {
                 watched: save.demo_watched(&def.id),
                 guess: save.first_guess(&def.id).and_then(|i| demo.choices.get(i).cloned()),
             }),
+            placed: placed.clone(),
             asked: instance
                 .inputs()
                 .iter()
@@ -184,6 +232,7 @@ impl TutorContext {
                         spec.dim.describe()
                     },
                     draft: drafts.get(i).cloned().unwrap_or_default(),
+                    built: (spec.source == InputSource::Placed).then(|| placed.clone().unwrap_or_default()),
                 })
                 .collect(),
             notebook: save

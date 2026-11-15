@@ -75,7 +75,13 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Purpose.** Teach the station loop before any physics: brief, ruler, notebook, blueprint, units,
   commit, result, charges. It needs no mathematics; the answer is the measurement itself.
 - **Brief.** A powered cart on a straight, level rail beside the wreck drives exactly as far as it is
-  told and stops. Send it to the orange marker.
+  told and stops. Load it, then send it to the orange marker.
+- **Carrying.** The cart starts empty and will not run so. Its cargo crate stands beside the rail
+  start; the player picks it up (`F`) and puts it on the cart (`F`), which teaches the verb the
+  canyon needs, with nothing at stake. Committing with an empty cart is refused for free ("load the
+  cart first"), before anything typed is read, so it is not the first commit that writes the page.
+  The crate rides with the cart on every run and stays on it; it can be taken off again and put
+  back down beside the rail, and the save keeps whether it is loaded.
 - **Investigate.** Ruler: the cart's starting point to the marker centre (both pinned, on the near
   side of the rail so the cart does not hide them). The distance is a whole number of metres, 9 to 17,
   drawn after every other number so existing saves keep their layout.
@@ -84,14 +90,27 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Pass.** The cart stops on the marker (one block, so centre ± 0.5 m). Too short or too far is
   reported in metres. The rail is 24 m long; longer runs are refused.
 - **Gates.** Puzzle 1 requires it.
-- **First page.** The first value committed here, tested or refused, writes *Measurements carry
-  units*: the handbook is met in the tutorial.
+- **First page.** The first value committed here with the cart loaded, tested or refused, writes
+  *Measurements carry units*: the handbook is met in the tutorial.
 
 ### Puzzle 1 — Local gravity
 
 - **Brief.** The launcher needs this planet's gravitational acceleration.
 - **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
   fall with the stopwatch (free, repeatable).
+- **Place to measure: the light gate.** A gate on a stand by the station, carried (`F`) and clamped on
+  the drop tower at any whole-metre notch, from 1 m below the release down to the plate: the notch
+  the pointer marks on the tower, or the one at hand height. With a gate fitted, each release times
+  the fall from the release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`,
+  `t3`, ...), so the player designs their own measurement and can see that doubling the drop does not
+  double the time. Without one, the stopwatch times the whole drop. The gate's notch is kept in the
+  save; a ruler pin rides on it. The answer stays the typed `g`.
+- **Short drops are worth less.** Readings are rounded to 0.01 s, so at 1 m (about 0.4 to 0.55 s)
+  the rounding alone is up to about 2.6 % of `g`, beyond the 2 % pass. A reading of a second or more
+  (`h ≥ g/2`, 3.3 to 6.8 m) gives `g` to 1 %. The station's text says only that the longer the drop,
+  the better the reading; players find the rest by fitting several notches. Tests hold every notch
+  that times a second or more to 1 %, and a straight line through all the pairs (`h` against `t²`) as
+  well. A plot of `h` against `t²` belongs to the grapher (tier 2), not here.
 - **Try it first.** "How will flashes at equal moments be spaced?" Evenly / further apart lower down /
   closer together. The release is the experiment: the flashes leave afterimages and ticks whose
   gaps grow. Writes the page *Free fall*.
@@ -104,16 +123,37 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 2 — Across the canyon
 
-- **Brief.** Launch a salvage crate horizontally from the ledge so it lands on the platform on the far
-  side.
-- **Investigate.** Ruler: horizontal distance to the platform centre, and the drop from the ledge.
+- **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
+  horizontally, but its damaged dial turns only within a band (`vmin` to `vmax`), and from the bare
+  ledge no speed in the band reaches the strip. The launcher rides in a jack frame at the rim; every
+  crate slid into the frame raises it one metre.
+- **Investigate.** Ruler: horizontal distance from the release point to the strip's centre, and the
+  drop to it (the release point's pin rises with the launcher). The rating plate on the station gives
+  the band, with a button to note it (`vmin`, `vmax`).
 - **Try it first.** "One crate dropped, one fired sideways, at the same moment: which reaches the
-  canyon floor first?" Both at once. The fired crate is slow enough to land mid-canyon; both fall the
-  ledge plus the canyon's depth, not the drop to the platform, so the time is not the puzzle's.
-  Writes *Horizontal and vertical motion are independent*.
-- **Predict.** Enter the launch speed.
-- **Pass.** The crate lands on the platform (centre ± 1.5 m).
-- **Relations.** `t = sqrt(2h/g)`, `d = v t`.
+  canyon floor first?" Both at once. The test crates leave from wherever the launcher stands. The fired
+  crate is slow enough to land mid-canyon; both fall the launcher's height plus the canyon's depth, not
+  the drop to the strip, so the time is not the puzzle's. Writes *Horizontal and vertical motion are
+  independent*.
+- **Build, then compute.** Work out which release heights the band allows, carry crates (`F`) from
+  the pile of eight on the ledge into the frame, then type the speed for the height built. The
+  blueprint shows the frame's crates beside the typed speed, and the save keeps them. A speed outside
+  the band is refused before launch and costs nothing, so a wrong stack shows up for free once the
+  speed for it has been worked out.
+- **Pass.** The crate lands on the strip (one block long, so centre ± 0.5 m).
+- **Relations.** `v = d / sqrt(2H/g)` for a release height `H`; the band allows
+  `g d² / (2 vmax²) ≤ H ≤ g d² / (2 vmin²)`; crates = `H −` the ledge's height, in whole metres.
+- **Design of the numbers.** The ledge is 3 to 5 m above the strip and the strip 22 to 42 m out. The
+  band is placed halfway between the speeds that neighbouring stacks need, so that one or two stacks
+  between 1 and 6 crates are inside it, and no stack's speed is within 1.5 % of either end: a
+  player's own `g` (good to about 0.5 %) never tips a stack in or out. Both ends are rounded to
+  0.1 m/s on the plate. The longest shot the dial allows, from a full frame, still comes down on the
+  flat ground beyond the canyon. These numbers are drawn after all the others, so the rest of an older
+  save's island stays as it was.
+- **Guessing.** A player who guesses but uses every miss well (halving the band on the side the miss
+  points to, and moving a crate when it runs out) needs 7.6 tests on average and is done within three
+  in about a third of saves. The old typed-speed canyon took 3.9 (a third within three); the first crate
+  version, with a fixed speed, 2.8 (three quarters within three). A test in `puzzle.rs` keeps it so.
 
 ### Puzzle 3 — Over the ridge (capstone)
 
@@ -131,3 +171,19 @@ value never works. All lengths are whole metres so they can be checked by counti
   both constraints before computing the speed.
 - **Relations.** `x = v cosθ · t`, `y = v sinθ · t − ½ g t²`; on level ground `R = v² sin 2θ / g`.
 - **Reward.** The skiff's frame appears on the shipyard pad.
+
+## Planned: 1.3 The Haul, place the catcher
+
+Direction only; chapter 1.3 has no puzzles in code yet. It is the third "doing it with your hands"
+pattern (see the game design): the setting is fixed, and the answer is where the player carries the
+target.
+
+- A sled is pushed onto a level run (or a ramp) by a fixed launcher, and friction brings it to rest.
+  The push is read off a plate. The player places the stop block where the sled will stop, in a row
+  of slots along the run.
+- It needs a friction simulator in `physics_core`, tested against closed form; the row of slots, as
+  another `carry::Slot` (the cart, the tower's notches and the jack frame are the ones built); and a
+  guesser test (see "What makes guessing a bad strategy").
+- A row of slots alone is a handful of options, the trap the first crate canyon fell into: a guesser
+  found it in 2.8 tests. So make the slots fine and the target tight, or combine the placement with a
+  calculated value: the friction coefficient, measured first from the tilt at which the sled slips.

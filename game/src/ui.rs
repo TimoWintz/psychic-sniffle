@@ -7,6 +7,7 @@
 //! (Lumen: its eye); their key, or a click on the header, expands and reduces them. The handbook has
 //! its own place beside the dock's column, where it opens downward to read at full height.
 
+use crate::carry::Carry;
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
 use crate::sim::{Request, Sim};
@@ -21,7 +22,7 @@ use physics_core::expr::evaluate;
 use physics_core::content::{DemoDef, PuzzleDef};
 use physics_core::materials::Material;
 use physics_core::progress::Quality;
-use physics_core::puzzle::{Instance, Outcome, Playback, PuzzleKind};
+use physics_core::puzzle::{InputSource, Instance, Outcome, Playback, PuzzleKind};
 use physics_core::units::{Quantity, lookup_unit, sig};
 use tutor::Turn;
 
@@ -103,6 +104,7 @@ pub fn draw(
     mut ui_state: ResMut<Ui>,
     mut sim: ResMut<Sim>,
     mut ruler: ResMut<Ruler>,
+    carry: Res<Carry>,
     mut handbook_was_open: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
@@ -110,7 +112,7 @@ pub fn draw(
     let (game, ui_state, sim, ruler) = (&mut *game, &mut *ui_state, &mut *sim, &mut *ruler);
 
     dock(&ctx, game, ui_state, ruler);
-    hints(&ctx, game, ui_state, ruler);
+    hints(&ctx, game, ui_state, ruler, &carry);
     if let Some(puzzle) = ui_state.station {
         station_panel(&ctx, game, ui_state, sim, puzzle);
     }
@@ -222,9 +224,11 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
     response.on_hover_text(format!("{verb} ({key})")).clicked()
 }
 
-fn hints(ctx: &egui::Context, game: &Game, ui_state: &Ui, ruler: &Ruler) {
+fn hints(ctx: &egui::Context, game: &Game, ui_state: &Ui, ruler: &Ruler, carry: &Carry) {
     let prompt = if ruler.active {
         Some("Measuring: left-click two points. R or Esc cancels.".to_string())
+    } else if let Some(line) = crate::carry::hint(carry).filter(|_| ui_state.station.is_none()) {
+        Some(line)
     } else {
         match (ui_state.near_station, ui_state.station) {
             (_, Some(_)) => Some("At the station. E or Esc to leave.".to_string()),
@@ -252,7 +256,7 @@ fn hints(ctx: &egui::Context, game: &Game, ui_state: &Ui, ruler: &Ruler) {
                 ui.vertical_centered(|ui| ui.label(RichText::new(line).strong().color(GOOD)));
             }
             ui.label(
-                RichText::new("WASD move · Shift run · Space jump · right-drag or arrows look · scroll zoom · E station · R measure · N notebook · H handbook · T or click Lumen")
+                RichText::new("WASD move · Shift run · Space jump · right-drag or arrows look · scroll zoom · E station · F carry · R measure · N notebook · H handbook · T or click Lumen")
                     .small()
                     .color(DIM),
             );
@@ -289,6 +293,9 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if def.kind == PuzzleKind::Ridge {
                     ui.label(RichText::new(format!("Launcher rating: {} maximum.", Quantity::speed(game.layout.v_max).display())).strong());
                 }
+                if def.kind == PuzzleKind::Canyon {
+                    rating_plate(ui, game);
+                }
                 ui.add_space(6.0);
                 ui.label(RichText::new("Investigate").strong());
                 ui.label(RichText::new(&def.investigate).color(DIM));
@@ -303,7 +310,35 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 ui.add_space(6.0);
                 ui.separator();
                 ui.label(RichText::new("Blueprint").strong());
+                if def.kind == PuzzleKind::Rail {
+                    // The cart's cargo is not a value, but the cart will not run without it.
+                    let loaded = game.placed(puzzle) > 0;
+                    let built = instance.built(game.placed(puzzle)).unwrap_or_default();
+                    ui.horizontal(|ui| {
+                        ui.label("Cargo:");
+                        ui.label(RichText::new(if loaded { "loaded" } else { "not loaded" }).strong().color(if loaded { GOOD } else { WARN }));
+                    });
+                    let todo = if loaded { "" } else { " Leave the console and carry it on (F)." };
+                    ui.label(RichText::new(format!("    {}.{todo}", capitalise(&built))).small().color(DIM));
+                }
                 for (i, spec) in specs.iter().enumerate() {
+                    if spec.source == InputSource::Placed {
+                        // Built in the world, not typed: the blueprint reads it off the jack frame.
+                        let crates = game.placed(puzzle);
+                        ui.horizontal(|ui| {
+                            ui.label(format!("{}:", spec.label));
+                            ui.label(RichText::new(format!("{crates} {}", spec.unit)).strong().color(GOOD));
+                        });
+                        let plural = if crates == 1 { "" } else { "s" };
+                        ui.label(
+                            RichText::new(format!(
+                                "    {crates} crate{plural} in the jack frame at the rim. Leave the console and carry crates there (F) to change it."
+                            ))
+                            .small()
+                            .color(DIM),
+                        );
+                        continue;
+                    }
                     ui.horizontal(|ui| {
                         ui.label(format!("{}:", spec.label));
                         ui.add(egui::TextEdit::singleline(&mut ui_state.drafts[puzzle][i]).hint_text(spec.example).desired_width(170.0));
@@ -317,12 +352,14 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         };
                     }
                 }
-                let hint = if def.kind == PuzzleKind::Rail {
-                    "Numbers need units: 12 m, not 12. Notebook names work: d1"
-                } else {
-                    "Numbers need units. Notebook names and functions work: (d1 + d2) / 2, sin(30 deg)"
+                let hint = match def.kind {
+                    PuzzleKind::Rail => Some("Numbers need units: 12 m, not 12. Notebook names work: d1"),
+                    _ if specs.iter().all(|s| s.source == InputSource::Placed) => None,
+                    _ => Some("Numbers need units. Notebook names and functions work: (d1 + d2) / 2, sin(30 deg)"),
                 };
-                ui.label(RichText::new(hint).small().color(DIM));
+                if let Some(hint) = hint {
+                    ui.label(RichText::new(hint).small().color(DIM));
+                }
 
                 let charges = game.charges_left(puzzle);
                 ui.add_space(4.0);
@@ -374,6 +411,26 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
         });
 }
 
+/// The ledge launcher's rating plate: its one speed, which can be noted like a ruler reading.
+fn rating_plate(ui: &mut egui::Ui, game: &mut Game) {
+    let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(format!("Rating plate: the damaged dial turns only from {} to {}.", low.display(), high.display())).strong());
+        let noted = game.save.notebook.entries.iter().any(|e| e.source == "plate");
+        if ui.add_enabled(!noted, egui::Button::new("Note")).on_hover_text("Write both ends in the notebook, as vmin and vmax").clicked() {
+            note_plate(game);
+        }
+    });
+}
+
+/// Write the ends of the ledge launcher's speed band into the notebook, as the plate's Note button does.
+pub fn note_plate(game: &mut Game) {
+    let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
+    game.save.notebook.set("vmin", "lowest speed of the ledge launcher's dial", low, "plate");
+    game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, "plate");
+    game.persist();
+}
+
 /// The station's free experiment: a guess first, then the world shows what happens.
 fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &mut Sim, puzzle: usize, demo: &DemoDef) {
     let id = &game.def(puzzle).id;
@@ -417,12 +474,30 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
     }
     if game.def(puzzle).kind == PuzzleKind::Gravity {
-        let last = game.save.notebook.entries.iter().rfind(|e| e.source == "stopwatch");
-        match last {
-            Some(entry) => ui.label(format!("Stopwatch: {} = {}", entry.name, entry.quantity.display())),
+        // Where the light gate is, and the last reading: a pair from the gate, or the whole drop.
+        let gate = game.placed(puzzle);
+        let built = game.instance(puzzle).built(gate).unwrap_or_default();
+        let line = if gate > 0 { format!("{}.", capitalise(&built)) } else { format!("Light gate: none fitted, so {}.", built.trim_start_matches("no light gate on the drop tower: ")) };
+        ui.label(RichText::new(line).color(if gate > 0 { Color32::WHITE } else { DIM }));
+        let entries = &game.save.notebook.entries;
+        let last = entries.iter().rposition(|e| e.source == "stopwatch" || (e.source == "light gate" && e.quantity.dim == physics_core::units::Dim::TIME));
+        match last.map(|i| &entries[i]) {
+            Some(time) if time.source == "light gate" => {
+                let number = time.name.trim_start_matches('t');
+                let drop = game.save.notebook.get(&format!("h{number}"));
+                let drop = drop.map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
+                ui.label(format!("Light gate: {drop}{} = {}", time.name, time.quantity.display()))
+            }
+            Some(time) => ui.label(format!("Stopwatch: {} = {}", time.name, time.quantity.display())),
             None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),
         };
     }
+}
+
+/// A sentence's first letter in capitals.
+fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or(String::new(), |first| first.to_uppercase().chain(chars).collect())
 }
 
 /// The handbook pages a station's job uses: a button for each found page, the hint for a locked one.

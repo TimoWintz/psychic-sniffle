@@ -1,6 +1,7 @@
 //! Everything that is looked at and never touched: the island's meshes, the sea, the sun, a sky with a
 //! ringed giant and a moon in it, haze, islands on the horizon and the small plants in the turf.
 
+use crate::carry::DirtyCells;
 use crate::island::{GROUND, SEA_LEVEL, Sites};
 use crate::voxel::{VoxelWorld, fbm, hash01, tint};
 use bevy::asset::RenderAssetUsages;
@@ -18,6 +19,14 @@ const ZENITH: Color = Color::srgb(0.30, 0.56, 0.78);
 /// Radius of the sky dome; inside the camera's far plane.
 const SKY: f32 = 900.0;
 
+/// One terrain mesh: the columns from `x0`, `z0` to the next chunk, its glowing blocks or the rest.
+#[derive(Component)]
+struct TerrainChunk {
+    x0: i32,
+    z0: i32,
+    glow: bool,
+}
+
 /// Moves with the camera, so the sky and what is in it never come closer.
 #[derive(Component)]
 struct SkyAnchor;
@@ -30,11 +39,14 @@ pub struct SceneryPlugin;
 
 impl Plugin for SceneryPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(HORIZON)).add_systems(Startup, spawn).add_systems(PostUpdate, follow_camera.before(TransformSystems::Propagate));
+        app.insert_resource(ClearColor(HORIZON))
+            .add_systems(Startup, spawn)
+            .add_systems(Update, rebuild_chunks)
+            .add_systems(PostUpdate, follow_camera.before(TransformSystems::Propagate));
     }
 }
 
-fn spawn(
+pub(crate) fn spawn(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -48,8 +60,13 @@ fn spawn(
     for z0 in (0..world.size.z).step_by(CHUNK as usize) {
         for x0 in (0..world.size.x).step_by(CHUNK as usize) {
             let (x1, z1) = ((x0 + CHUNK).min(world.size.x), (z0 + CHUNK).min(world.size.z));
-            commands.spawn((Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, false))), MeshMaterial3d(blocks.clone())));
-            commands.spawn((Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, true))), MeshMaterial3d(glow.clone()), NotShadowCaster));
+            commands.spawn((TerrainChunk { x0, z0, glow: false }, Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, false))), MeshMaterial3d(blocks.clone())));
+            commands.spawn((
+                TerrainChunk { x0, z0, glow: true },
+                Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, true))),
+                MeshMaterial3d(glow.clone()),
+                NotShadowCaster,
+            ));
         }
     }
     commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(blocks.clone()), NotShadowCaster));
@@ -155,6 +172,32 @@ fn spawn(
             NotShadowCaster,
         ));
     });
+}
+
+/// Mesh again the chunks whose blocks have changed (crates picked up and put down), and their
+/// neighbours, whose faces against the changed blocks may now show or hide.
+fn rebuild_chunks(mut dirty: ResMut<DirtyCells>, world: Res<VoxelWorld>, mut meshes: ResMut<Assets<Mesh>>, chunks: Query<(&TerrainChunk, &Mesh3d)>) {
+    if dirty.0.is_empty() {
+        return;
+    }
+    let mut touched: Vec<IVec2> = Vec::new();
+    for cell in dirty.0.drain(..) {
+        for (dx, dz) in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)] {
+            let chunk = IVec2::new((cell.x + dx).div_euclid(CHUNK) * CHUNK, (cell.z + dz).div_euclid(CHUNK) * CHUNK);
+            if !touched.contains(&chunk) {
+                touched.push(chunk);
+            }
+        }
+    }
+    for (chunk, handle) in &chunks {
+        if !touched.contains(&IVec2::new(chunk.x0, chunk.z0)) {
+            continue;
+        }
+        let (x1, z1) = ((chunk.x0 + CHUNK).min(world.size.x), (chunk.z0 + CHUNK).min(world.size.z));
+        if let Some(mut mesh) = meshes.get_mut(&handle.0) {
+            *mesh = world.mesh(chunk.x0, x1, chunk.z0, z1, chunk.glow);
+        }
+    }
 }
 
 fn follow_camera(camera: Single<&Transform, (With<Camera3d>, Without<SkyAnchor>)>, mut sky: Single<&mut Transform, With<SkyAnchor>>) {

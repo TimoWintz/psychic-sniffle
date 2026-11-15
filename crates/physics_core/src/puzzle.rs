@@ -54,7 +54,7 @@ pub struct Ch1Layout {
     /// Puzzle 1: height of the survey mast's release point, used for the test drop.
     pub mast_h: u32,
 
-    /// Puzzle 2: height of the ledge above the far plateau.
+    /// Puzzle 2: height of the ledge above the far plateau, before any crates raise the launcher.
     pub ledge_h: u32,
     /// Puzzle 2: width of the canyon, from the ledge edge to the far rim.
     pub canyon_width: u32,
@@ -63,6 +63,11 @@ pub struct Ch1Layout {
     /// Puzzle 2: distance from the ledge edge to the centre of the landing platform.
     pub platform_centre: f64,
     pub platform_half: f64,
+    /// Puzzle 2: the speeds the ledge launcher's damaged dial turns between, m/s. From the bare ledge
+    /// the crate would need more than the top of the band, so the launcher has to be raised on crates
+    /// before a speed inside it will do.
+    pub canyon_speed_min: f64,
+    pub canyon_speed_max: f64,
 
     /// Puzzle 3: distance from the launcher to the centre of the shipyard pad (level ground).
     pub pad_centre: f64,
@@ -83,6 +88,18 @@ impl Ch1Layout {
     pub const RAIL_LENGTH: u32 = 24;
     /// Half the width of the rail marker along the rail (the marker is one block).
     pub const RAIL_MARKER_HALF: f64 = 0.5;
+    /// Puzzle 2: how many crates the jack frame under the ledge launcher holds (and how many lie in
+    /// the salvage pile on the ledge). Each raises the launcher one metre.
+    pub const MAX_STACK: u32 = 8;
+    /// Puzzle 2: no stack's needed speed comes closer than this fraction to either end of the
+    /// launcher's band, so a player's own measurement of g never moves a stack in or out of it.
+    pub const BAND_MARGIN: f64 = 0.015;
+    /// Puzzle 2: half the length of the catch strip on the far side, along the launch line. One block:
+    /// a worked-out speed lands within a few centimetres; a guessed one rarely does.
+    pub const CATCH_HALF: f64 = 0.5;
+    /// Puzzle 2: metres of flat ground the island keeps beyond the rim, which the furthest shot the
+    /// launcher can make must come down on.
+    pub const CANYON_RUN: usize = 70;
 
     pub fn generate(seed: u64) -> Self {
         let mut rng = Rng::new(seed ^ 0x1_0001);
@@ -98,9 +115,11 @@ impl Ch1Layout {
         let tower_h = rng.int(12, 24);
         let mast_h = tower_h + rng.int(8, 14);
 
-        let ledge_h = rng.int(6, 12);
+        // The canyon's ledge height and platform distance used to be drawn here. They are drawn anew
+        // below, but these draws are kept so that every other number stays what it was for older saves.
+        rng.int(6, 12);
         let canyon_width = rng.int(12, 20);
-        let platform_centre = (canyon_width + rng.int(4, 8)) as f64 + 0.5;
+        rng.int(4, 8);
 
         let pad_centre = rng.int(40, 56) as f64 + 0.5;
         let ridge_x = (pad_centre * rng.range(0.20, 0.30)).round() as u32;
@@ -118,6 +137,41 @@ impl Ch1Layout {
         // Drawn last, so the numbers above stay what they were for saves made before the tutorial.
         let rail_target = rng.int(9, 17);
 
+        // The canyon, drawn after the rest. The platform is one block long now, and the band is put between the speeds the stacks need, so
+        // that the first two stacks never do and one or two stacks after them do. Draws that crowd an
+        // end of the band are drawn again.
+        let round = |v: f64| (v * 10.0).round() / 10.0;
+        let (ledge_h, platform_centre, canyon_speed_min, canyon_speed_max) = loop {
+            let ledge_h = rng.int(3, 5);
+            let first = rng.int(1, 5);
+            let last = first + rng.int(0, 1);
+            let platform_centre = rng.int(canyon_width + 10, canyon_width + 22) as f64 + 0.5;
+            let need = |stack: u32| platform_centre / fall_time((ledge_h + stack) as f64, g);
+            let top = round((need(first - 1) + need(first)) / 2.0);
+            let bottom = round((need(last) + need(last + 1)) / 2.0);
+            let trial = Ch1Layout {
+                g,
+                rail_target,
+                tower_h,
+                mast_h,
+                ledge_h,
+                canyon_width,
+                canyon_depth: 10,
+                platform_centre,
+                platform_half: Self::CATCH_HALF,
+                canyon_speed_min: bottom,
+                canyon_speed_max: top,
+                pad_centre,
+                pad_half: 2.5,
+                ridge_x,
+                ridge_h,
+                v_max,
+            };
+            if trial.canyon_stacks() == (first..=last) && trial.canyon_is_fair() {
+                break (ledge_h, platform_centre, bottom, top);
+            }
+        };
+
         Ch1Layout {
             g,
             rail_target,
@@ -127,7 +181,9 @@ impl Ch1Layout {
             canyon_width,
             canyon_depth: 10,
             platform_centre,
-            platform_half: 1.5,
+            platform_half: Self::CATCH_HALF,
+            canyon_speed_min,
+            canyon_speed_max,
             pad_centre,
             pad_half: 2.5,
             ridge_x,
@@ -136,9 +192,72 @@ impl Ch1Layout {
         }
     }
 
+    /// Terrain along the canyon's launch line, with the rim at `x = 0` and the far plateau at `y = 0`.
+    pub fn canyon_profile(&self) -> Profile {
+        // Long enough for the furthest shot the launcher can make, with room to spare.
+        let furthest = self.canyon_speed_max * fall_time((self.ledge_h + Self::MAX_STACK) as f64, self.g);
+        let length = (furthest.max(self.platform_centre + self.platform_half) + 6.0).ceil() as usize;
+        let mut p = Profile::flat(0.0, length, 0.0);
+        p.set(0.0, self.canyon_width as f64, -(self.canyon_depth as f64));
+        p
+    }
+
+    /// The ledge launcher's shot with `stack` crates under it, at `speed`.
+    pub fn canyon_shot(&self, stack: u32, speed: f64) -> (Projectile, Flight) {
+        let projectile = Projectile::from_angle(0.0, (self.ledge_h + stack) as f64, speed, 0.0, self.g);
+        (projectile, fly(&projectile, &self.canyon_profile()))
+    }
+
+    /// The speed that puts the crate on the platform centre with `stack` crates under the launcher.
+    pub fn canyon_speed_needed(&self, stack: u32) -> f64 {
+        self.platform_centre / fall_time((self.ledge_h + stack) as f64, self.g)
+    }
+
+    /// The stacks for which the speed needed is inside the launcher's band.
+    pub fn canyon_stacks(&self) -> std::ops::RangeInclusive<u32> {
+        let inside = |n: &u32| (self.canyon_speed_min..=self.canyon_speed_max).contains(&self.canyon_speed_needed(*n));
+        let first = (0..=Self::MAX_STACK).find(inside).unwrap_or(Self::MAX_STACK + 1);
+        let last = (0..=Self::MAX_STACK).rev().find(inside).unwrap_or(0);
+        first..=last
+    }
+
+    /// Whether the band is within the launcher's limits and no stack's speed crowds an end of it,
+    /// and every stack inside it, at its speed, lands on the platform past the far rim.
+    fn canyon_is_fair(&self) -> bool {
+        let (low, high) = (self.canyon_speed_min, self.canyon_speed_max);
+        if high >= LAUNCHER_HARD_LIMIT || low >= high || self.canyon_profile().heights.len() > Self::CANYON_RUN {
+            return false;
+        }
+        let clear = |n: u32| {
+            let v = self.canyon_speed_needed(n);
+            ((v - low) / v).abs() >= Self::BAND_MARGIN && ((v - high) / v).abs() >= Self::BAND_MARGIN
+        };
+        let stacks = self.canyon_stacks();
+        !stacks.is_empty()
+            && (0..=Self::MAX_STACK).all(clear)
+            && stacks.clone().all(|n| {
+                let (projectile, flight) = self.canyon_shot(n, self.canyon_speed_needed(n));
+                flight.end == FlightEnd::Landed
+                    && (flight.x - self.platform_centre).abs() < 0.1
+                    && projectile.height_at_x(self.canyon_width as f64).is_some_and(|y| y > 1.0)
+            })
+    }
+
     /// Fall time from the drop tower as the stopwatch shows it (hundredths of a second).
     pub fn tower_fall_time(&self) -> f64 {
-        (fall_time(self.tower_h as f64, self.g) * 100.0).round() / 100.0
+        self.gate_time(self.tower_h)
+    }
+
+    /// Puzzle 1: the light gate's reading with the gate clamped `drop` metres below the release point
+    /// (one of the notches `1..=tower_h`; the last is at the landing plate): the time from the release
+    /// until the mass reaches the gate, as the stopwatch shows it (hundredths of a second).
+    pub fn gate_time(&self, drop: u32) -> f64 {
+        (fall_time(drop as f64, self.g) * 100.0).round() / 100.0
+    }
+
+    /// Puzzle 1: the notches the light gate can be clamped at, as drops below the release point.
+    pub fn gate_notches(&self) -> std::ops::RangeInclusive<u32> {
+        1..=self.tower_h
     }
 
     /// Launch angles (radians) between which a shot aimed at the pad centre clears the ridge and
@@ -162,6 +281,16 @@ pub enum PuzzleKind {
     Ridge,
 }
 
+/// Where a committed value comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputSource {
+    /// Typed into the blueprint: a number with its unit, or an expression over the notebook.
+    Typed,
+    /// Read from the world: what the player has built or placed there (the crates under the ledge
+    /// launcher). Shown in the blueprint, not typed.
+    Placed,
+}
+
 /// One value the player must commit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputSpec {
@@ -171,6 +300,7 @@ pub struct InputSpec {
     /// Unit the value is shown in and suggested to the player ("m/s", "deg").
     pub unit: &'static str,
     pub example: &'static str,
+    pub source: InputSource,
 }
 
 /// A fact about the world that the player can measure.
@@ -268,6 +398,7 @@ impl Instance {
             dim: Dim::SPEED,
             unit: "m/s",
             example: "14.2 m/s",
+            source: InputSource::Typed,
         };
         match self.kind {
             PuzzleKind::Rail => vec![InputSpec {
@@ -276,6 +407,7 @@ impl Instance {
                 dim: Dim::LENGTH,
                 unit: "m",
                 example: "d1   or   12 m",
+                source: InputSource::Typed,
             }],
             PuzzleKind::Gravity => vec![InputSpec {
                 key: "g",
@@ -283,8 +415,19 @@ impl Instance {
                 dim: Dim::ACCELERATION,
                 unit: "m/s^2",
                 example: "3.7 m/s^2",
+                source: InputSource::Typed,
             }],
-            PuzzleKind::Canyon => vec![speed],
+            PuzzleKind::Canyon => vec![
+                InputSpec {
+                    key: "stack",
+                    label: "Launcher raised by",
+                    dim: Dim::LENGTH,
+                    unit: "m",
+                    example: "",
+                    source: InputSource::Placed,
+                },
+                speed,
+            ],
             PuzzleKind::Ridge => vec![
                 InputSpec {
                     key: "angle",
@@ -292,6 +435,7 @@ impl Instance {
                     dim: Dim::NONE,
                     unit: "deg",
                     example: "30 deg",
+                    source: InputSource::Typed,
                 },
                 speed,
             ],
@@ -313,9 +457,12 @@ impl Instance {
                 given("height of the survey mast", Quantity::metres(l.mast_h as f64)),
             ],
             PuzzleKind::Canyon => vec![
-                given("drop from the ledge to the platform", Quantity::metres(l.ledge_h as f64)),
+                given("drop from the ledge to the platform, with no crates under the launcher", Quantity::metres(l.ledge_h as f64)),
                 given("horizontal distance to the platform centre", Quantity::metres(l.platform_centre)),
                 given("length of the platform", Quantity::metres(2.0 * l.platform_half)),
+                given("lowest speed the ledge launcher's dial turns to", Quantity::speed(l.canyon_speed_min)),
+                given("highest speed the ledge launcher's dial turns to", Quantity::speed(l.canyon_speed_max)),
+                given("height of one crate", Quantity::metres(1.0)),
             ],
             PuzzleKind::Ridge => vec![
                 given("distance to the pad centre", Quantity::metres(l.pad_centre)),
@@ -332,12 +479,7 @@ impl Instance {
         let l = &self.layout;
         match self.kind {
             PuzzleKind::Rail | PuzzleKind::Gravity => None,
-            PuzzleKind::Canyon => {
-                let length = (l.platform_centre + l.platform_half) as usize + 40;
-                let mut p = Profile::flat(0.0, length, 0.0);
-                p.set(0.0, l.canyon_width as f64, -(l.canyon_depth as f64));
-                Some(p)
-            }
+            PuzzleKind::Canyon => Some(l.canyon_profile()),
             PuzzleKind::Ridge => {
                 let length = (l.pad_centre + l.pad_half) as usize + 40;
                 let mut p = Profile::flat(0.0, length, 0.0);
@@ -347,13 +489,38 @@ impl Instance {
         }
     }
 
-    /// The projectile a set of inputs produces, if the puzzle launches one.
+    /// The tilting launcher's projectile for a speed and an angle.
     fn projectile(&self, speed: f64, angle: f64) -> Projectile {
-        let y0 = match self.kind {
-            PuzzleKind::Canyon => self.layout.ledge_h as f64,
-            _ => 0.0,
-        };
-        Projectile::from_angle(0.0, y0, speed, angle, self.layout.g)
+        Projectile::from_angle(0.0, 0.0, speed, angle, self.layout.g)
+    }
+
+    /// What stands at this puzzle's station in the world, given what the save says is placed there
+    /// (`placed`: crates in the jack frame, the cargo crate on the cart, the light gate's notch), in
+    /// words for the station panel and the tutor. `None` where nothing is placed (the ridge).
+    pub fn built(&self, placed: u32) -> Option<String> {
+        let plural = |n: u32| if n == 1 { "" } else { "s" };
+        Some(match self.kind {
+            PuzzleKind::Rail if placed == 0 => "the cart is empty; the cargo crate stands beside the rail".into(),
+            PuzzleKind::Rail => "the cargo crate is on the cart".into(),
+            PuzzleKind::Gravity if placed == 0 => {
+                "no light gate on the drop tower: the stopwatch times the whole drop to the plate".into()
+            }
+            PuzzleKind::Gravity => format!("the light gate is clamped {placed} m below the release point"),
+            PuzzleKind::Canyon => format!("{placed} crate{} in the jack frame", plural(placed)),
+            PuzzleKind::Ridge => return None,
+        })
+    }
+
+    /// Why the station will not run a test with what is placed in the world, before anything typed
+    /// is read: the supply rail's cart must carry its cargo. Refused for free, like a value of the
+    /// wrong kind, but it is not a value committed, so it writes no handbook page.
+    pub fn unready(&self, placed: u32) -> Option<String> {
+        match self.kind {
+            PuzzleKind::Rail if placed == 0 => {
+                Some("Load the cart first: pick up the cargo crate beside the rail (F) and put it on the cart (F).".into())
+            }
+            _ => None,
+        }
     }
 
     /// Check that every input is present, has the right dimension and is physically usable. Passing
@@ -384,6 +551,17 @@ impl Instance {
                         ));
                     }
                 }
+                "stack" => {
+                    if q.value < -1e-9 {
+                        return out_of_range("the launcher cannot stand lower than the ledge.".into());
+                    }
+                    if (q.value - q.value.round()).abs() > 1e-6 {
+                        return out_of_range("the jack frame holds whole crates, one metre each.".into());
+                    }
+                    if q.value.round() > Ch1Layout::MAX_STACK as f64 {
+                        return out_of_range(format!("the jack frame holds at most {} crates.", Ch1Layout::MAX_STACK));
+                    }
+                }
                 "g" if q.value <= 0.0 => {
                     return out_of_range("gravity pulls downward; enter its size as a positive value.".into());
                 }
@@ -394,6 +572,17 @@ impl Instance {
                     };
                     if q.value <= 0.0 {
                         return out_of_range("the speed must be greater than zero.".into());
+                    }
+                    if self.kind == PuzzleKind::Canyon {
+                        let (low, high) = (self.layout.canyon_speed_min, self.layout.canyon_speed_max);
+                        if !(low..=high).contains(&q.value) {
+                            return out_of_range(format!(
+                                "the launcher's damaged dial turns only from {} to {}; {} is outside it.",
+                                Quantity::speed(low).display(),
+                                Quantity::speed(high).display(),
+                                Quantity::speed(q.value).display()
+                            ));
+                        }
                     }
                     if q.value > limit {
                         return out_of_range(format!(
@@ -503,8 +692,7 @@ impl Instance {
                 }
             }
             PuzzleKind::Canyon => {
-                let projectile = self.projectile(value("speed"), 0.0);
-                let flight = fly(&projectile, &self.profile().expect("canyon has terrain"));
+                let (projectile, flight) = l.canyon_shot(value("stack").round() as u32, value("speed"));
                 let miss = flight.x - l.platform_centre;
                 let on_plateau = flight.end == FlightEnd::Landed && flight.surface == 0.0;
                 let pass = on_plateau && miss.abs() <= l.platform_half;
@@ -656,33 +844,62 @@ impl Instance {
                     answers: vec![answer("g", "Gravitational acceleration", Quantity::acceleration(l.g), "m/s^2")],
                     note: format!(
                         "The true value is {} m/s^2. The stopwatch reads to 0.01 s, so the player's result differs \
-                         slightly; anything within {}% passes.",
+                         slightly; anything within {}% passes. With the light gate clamped at a notch, the same \
+                         relation holds for the drop h to the gate and the time t to it. Short drops are worth \
+                         less: the rounding is a bigger share of a short time, so a reading of a second or more \
+                         gives g to 1%, and fitting several notches shows that doubling the drop does not double \
+                         the time.",
                         l.g,
                         GRAVITY_TOLERANCE * 100.0
                     ),
                 }
             }
             PuzzleKind::Canyon => {
-                let (h, d) = (l.ledge_h as f64, l.platform_centre);
-                let t = fall_time(h, l.g);
-                let v = d / t;
+                let (low, high, d, ledge) = (l.canyon_speed_min, l.canyon_speed_max, l.platform_centre, l.ledge_h as f64);
+                let stacks = l.canyon_stacks();
+                let stack = *stacks.start();
+                let v = l.canyon_speed_needed(stack);
+                // Release heights at which the band's two ends reach the platform centre.
+                let at = |speed: f64| l.g * d * d / (2.0 * speed * speed);
+                let others: Vec<String> = stacks.clone().skip(1).map(|n| n.to_string()).collect();
                 Solution {
                     steps: vec![
-                        "Horizontal and vertical motion are independent. Launched horizontally, the crate starts \
-                         with no vertical speed."
+                        "Horizontal and vertical motion are independent. The launcher fires horizontally, so the \
+                         crate starts with no vertical speed: from a release height H it falls for t = sqrt(2 H / g), \
+                         and in that time covers d = v t."
                             .into(),
                         format!(
-                            "Vertical: it falls h = {h} m, so h = (1/2) g t^2 and t = sqrt(2 h / g) = {} s.",
-                            sig(t, 4)
+                            "So the speed needed to reach d = {d} m from height H is v = d / sqrt(2 H / g). The dial \
+                             turns from {low} to {high} m/s, which allows H from g d^2 / (2 v^2): between {} m (at \
+                             {high} m/s) and {} m (at {low} m/s).",
+                            sig(at(high), 3),
+                            sig(at(low), 3)
                         ),
                         format!(
-                            "Horizontal: constant speed, so d = v t. To cover d = {d} m: v = d / t = {} m/s.",
+                            "The ledge is {ledge} m above the platform and crates come in whole metres, so {} \
+                             crate{} will do.",
+                            if others.is_empty() { stack.to_string() } else { format!("{stack} or {}", others.join(" or ")) },
+                            if stacks.end() == &1 { "" } else { "s" }
+                        ),
+                        format!(
+                            "With {stack} crates H = {} m, t = {} s and v = d / t = {} m/s.",
+                            ledge + stack as f64,
+                            sig(fall_time(ledge + stack as f64, l.g), 4),
                             sig(v, 4)
                         ),
                     ],
-                    answers: vec![answer("speed", "Launch speed", Quantity::speed(v), "m/s")],
+                    answers: vec![
+                        answer("stack", "Launcher raised by", Quantity::metres(stack as f64), "m"),
+                        answer("speed", "Launch speed", Quantity::speed(v), "m/s"),
+                    ],
                     note: format!(
-                        "The platform is {} m long, so landing within {} m of the centre passes.",
+                        "Fewer crates would need more than {high} m/s, more would need less than {low} m/s. {}The \
+                         platform is {} m long, so landing within {} m of the centre passes.",
+                        if others.is_empty() {
+                            String::new()
+                        } else {
+                            format!("{} crates with the matching speed works too. ", others.join(" or "))
+                        },
                         2.0 * l.platform_half,
                         l.platform_half
                     ),
@@ -761,7 +978,93 @@ mod tests {
             assert!(l.v_max < LAUNCHER_HARD_LIMIT);
             assert!((9..=17).contains(&l.rail_target), "rail target {}", l.rail_target);
             assert!(l.rail_target + 4 <= Ch1Layout::RAIL_LENGTH);
+            assert!((3..=5).contains(&l.ledge_h), "seed {seed}: ledge {}", l.ledge_h);
+            let (low, high) = (l.canyon_speed_min, l.canyon_speed_max);
+            assert!(0.0 < low && low < high && high < LAUNCHER_HARD_LIMIT, "seed {seed}: {low} to {high}");
+            for v in [low, high] {
+                assert_eq!(v, (v * 10.0).round() / 10.0, "the rating plate reads to 0.1 m/s");
+            }
+            // The launch line, out to the furthest shot, fits on the flat ground the island keeps for it.
+            assert!(l.canyon_profile().heights.len() <= Ch1Layout::CANYON_RUN, "seed {seed}: {} m", l.canyon_profile().heights.len());
+            for stack in 0..=Ch1Layout::MAX_STACK {
+                assert_ne!(l.canyon_shot(stack, high).1.end, FlightEnd::LeftTerrain, "seed {seed}: {stack} crates");
+            }
         }
+    }
+
+    #[test]
+    fn older_saves_keep_every_number_but_the_canyons() {
+        // Values from before the canyon was reworked: (seed, g, rail, tower, mast, canyon width, pad,
+        // ridge distance, ridge height, rated speed of the tilting launcher).
+        let before = [
+            (0, 8.734, 17, 20, 30, 15, 46.5, 10, 10, 22.7),
+            (7, 10.891, 9, 23, 34, 12, 53.5, 15, 14, 27.3),
+            (42, 8.789, 11, 23, 32, 13, 54.5, 12, 11, 23.9),
+            (999, 7.945, 10, 23, 34, 13, 41.5, 9, 9, 20.4),
+        ];
+        for (seed, g, rail, tower, mast, width, pad, ridge_x, ridge_h, v_max) in before {
+            let l = Ch1Layout::generate(seed);
+            assert_eq!(
+                (l.g, l.rail_target, l.tower_h, l.mast_h, l.canyon_width, l.pad_centre, l.ridge_x, l.ridge_h, l.v_max),
+                (g, rail, tower, mast, width, pad, ridge_x, ridge_h, v_max),
+                "seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_band_admits_one_or_two_stacks_and_never_none() {
+        for seed in 0..SEEDS {
+            let l = Ch1Layout::generate(seed);
+            let stacks = l.canyon_stacks();
+            let count = stacks.clone().count();
+            assert!((1..=2).contains(&count), "seed {seed}: {count} stacks");
+            assert!(*stacks.start() >= 1 && *stacks.end() <= 6, "seed {seed}: {stacks:?}");
+            // No stack's speed sits near an end of the band, where a measured g could tip it over.
+            for n in 0..=Ch1Layout::MAX_STACK {
+                let v = l.canyon_speed_needed(n);
+                for end in [l.canyon_speed_min, l.canyon_speed_max] {
+                    assert!(((v - end) / v).abs() >= Ch1Layout::BAND_MARGIN, "seed {seed}: {n} crates need {v}, the band ends at {end}");
+                }
+            }
+            let canyon = Instance::new(PuzzleKind::Canyon, &l);
+            let attempt = |n: u32, v: f64| inputs(&[("stack", Quantity::metres(n as f64)), ("speed", Quantity::speed(v))]);
+            // Every stack in the band, at its speed, lands; off by a tenth, it misses.
+            for n in stacks.clone() {
+                let v = l.canyon_speed_needed(n);
+                assert!(canyon.evaluate(&attempt(n, v)).unwrap().pass, "seed {seed}: {n} crates");
+                for factor in [0.9, 1.1] {
+                    match canyon.evaluate(&attempt(n, v * factor)) {
+                        Ok(outcome) => assert!(!outcome.pass, "seed {seed}: {n} crates at x{factor} passed"),
+                        Err(InputError::OutOfRange { .. }) => {}
+                        Err(other) => panic!("seed {seed}: {other}"),
+                    }
+                }
+            }
+            // Without crates, nothing the dial allows reaches the platform.
+            for v in [l.canyon_speed_min, l.canyon_speed_max] {
+                let outcome = canyon.evaluate(&attempt(0, v)).unwrap();
+                assert!(!outcome.pass, "seed {seed}: no crates at {v} passed");
+            }
+        }
+    }
+
+    #[test]
+    fn the_jack_frame_takes_whole_crates_and_the_dial_its_band() {
+        let l = Ch1Layout::generate(2);
+        let canyon = Instance::new(PuzzleKind::Canyon, &l);
+        let v = l.canyon_speed_min;
+        for bad in [-1.0, 2.5, 9.0] {
+            let err = canyon.evaluate(&inputs(&[("stack", Quantity::metres(bad)), ("speed", Quantity::speed(v))])).unwrap_err();
+            assert!(matches!(err, InputError::OutOfRange { .. }), "{bad}: {err}");
+        }
+        assert!(canyon.evaluate(&inputs(&[("stack", Quantity::metres(0.0)), ("speed", Quantity::speed(v))])).is_ok(), "no crates is a valid try");
+        for speed in [l.canyon_speed_min - 0.5, l.canyon_speed_max + 0.5] {
+            let err = canyon.evaluate(&inputs(&[("stack", Quantity::metres(3.0)), ("speed", Quantity::speed(speed))])).unwrap_err();
+            assert!(err.to_string().contains("dial turns only from"), "{err}");
+        }
+        assert_eq!(canyon.inputs()[0].source, InputSource::Placed);
+        assert_eq!(canyon.inputs()[1].source, InputSource::Typed);
     }
 
     #[test]
@@ -808,9 +1111,15 @@ mod tests {
             let gravity = Instance::new(PuzzleKind::Gravity, &layout);
             assert!(gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_measured))])).unwrap().pass);
 
-            let v = layout.platform_centre / fall_time(layout.ledge_h as f64, g_measured);
+            // The canyon from the player's g, the ruler's readings and the rating plate: the lowest
+            // release height the band allows, rounded up to whole crates, then the speed for it.
+            let d = layout.platform_centre;
+            let lowest = g_measured * d * d / (2.0 * layout.canyon_speed_max.powi(2)) - layout.ledge_h as f64;
+            let stack = lowest.ceil();
+            let speed = d / fall_time(layout.ledge_h as f64 + stack, g_measured);
             let canyon = Instance::new(PuzzleKind::Canyon, &layout);
-            assert!(canyon.evaluate(&inputs(&[("speed", Quantity::speed(v))])).unwrap().pass, "seed {seed}");
+            let attempt = inputs(&[("stack", Quantity::metres(stack)), ("speed", Quantity::speed(speed))]);
+            assert!(canyon.evaluate(&attempt).unwrap().pass, "seed {seed}");
 
             let (min, max) = layout.ridge_angle_window();
             let angle = (min + max) / 2.0;
@@ -819,6 +1128,74 @@ mod tests {
             let attempt = inputs(&[("angle", Quantity::number(angle)), ("speed", Quantity::speed(v))]);
             assert!(ridge.evaluate(&attempt).unwrap().pass, "seed {seed}");
         }
+    }
+
+    #[test]
+    fn the_light_gate_reads_the_fall_to_every_notch() {
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let notches = layout.gate_notches();
+            assert_eq!((*notches.start(), *notches.end()), (1, layout.tower_h), "from a metre below the release down to the plate");
+            for drop in notches {
+                let t = layout.gate_time(drop);
+                assert!((t - fall_time(drop as f64, layout.g)).abs() <= 0.005 + 1e-12, "seed {seed}: {drop} m reads {t} s");
+                assert_eq!(t, (t * 100.0).round() / 100.0, "the stopwatch reads to 0.01 s");
+            }
+            // At the plate the gate reads what the stopwatch read for the whole drop.
+            assert_eq!(layout.gate_time(layout.tower_h), layout.tower_fall_time());
+            // Doubling the drop does not double the time.
+            let half = layout.tower_h / 2;
+            assert!(layout.gate_time(2 * half) < 1.5 * layout.gate_time(half), "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn g_from_a_good_enough_notch_passes() {
+        // The rule the brief gives: a reading of a second or more gives g to 1%. Shorter drops are worth
+        // less, and at the shortest the rounding alone can push g past the 2% a pass allows.
+        let mut a_short_drop_failed = false;
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let gravity = Instance::new(PuzzleKind::Gravity, &layout);
+            let g_at = |drop: u32| 2.0 * drop as f64 / layout.gate_time(drop).powi(2);
+            let mut good = 0;
+            for drop in layout.gate_notches() {
+                let g = g_at(drop);
+                let passes = gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g))])).unwrap().pass;
+                if layout.gate_time(drop) >= 1.0 {
+                    good += 1;
+                    assert!(((g - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: {drop} m gives g = {g}, true {}", layout.g);
+                    assert!(passes, "seed {seed}: {drop} m");
+                } else {
+                    a_short_drop_failed |= !passes;
+                }
+            }
+            assert!(good >= 5, "seed {seed}: only {good} notches time a second or more");
+            // A straight line through the origin fitted to every pair (h against t^2) passes too.
+            let (num, den) = layout.gate_notches().fold((0.0, 0.0), |(n, d), drop| {
+                let t2 = layout.gate_time(drop).powi(2);
+                (n + drop as f64 * t2, d + t2 * t2)
+            });
+            let g_fit = 2.0 * num / den;
+            assert!(((g_fit - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: the fit gives {g_fit}");
+        }
+        assert!(a_short_drop_failed, "a one-metre drop should sometimes be too short to pass");
+    }
+
+    #[test]
+    fn the_cart_must_be_loaded_before_a_test() {
+        let layout = Ch1Layout::generate(6);
+        let rail = Instance::new(PuzzleKind::Rail, &layout);
+        let reason = rail.unready(0).expect("an empty cart is refused");
+        assert!(reason.starts_with("Load the cart first"), "{reason}");
+        assert_eq!(rail.unready(1), None);
+        for kind in [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+            assert_eq!(Instance::new(kind, &layout).unready(0), None, "{kind:?}");
+        }
+        assert_eq!(rail.built(1).as_deref(), Some("the cargo crate is on the cart"));
+        assert_eq!(Instance::new(PuzzleKind::Gravity, &layout).built(7).as_deref(), Some("the light gate is clamped 7 m below the release point"));
+        assert_eq!(Instance::new(PuzzleKind::Canyon, &layout).built(1).as_deref(), Some("1 crate in the jack frame"));
+        assert_eq!(Instance::new(PuzzleKind::Ridge, &layout).built(0), None);
     }
 
     #[test]
@@ -836,8 +1213,8 @@ mod tests {
 
     #[test]
     fn wrong_dimension_is_refused_with_an_explanation() {
-        let puzzle = Instance::new(PuzzleKind::Canyon, &Ch1Layout::generate(1));
-        let err = puzzle.evaluate(&inputs(&[("speed", Quantity::seconds(3.0))])).unwrap_err();
+        let puzzle = Instance::new(PuzzleKind::Ridge, &Ch1Layout::generate(1));
+        let err = puzzle.evaluate(&inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::seconds(3.0))])).unwrap_err();
         assert_eq!(
             err.to_string(),
             "Launch speed must be a speed (m/s), but what you entered is a time (s)."
@@ -862,17 +1239,54 @@ mod tests {
 
     #[test]
     fn failures_describe_what_happened_without_the_answer() {
-        let layout = Ch1Layout::generate(11);
-        let canyon = Instance::new(PuzzleKind::Canyon, &layout);
-        let right = canyon.solution().answers[0].quantity.value;
-
-        let slow = canyon.evaluate(&inputs(&[("speed", Quantity::speed(right * 0.3))])).unwrap();
-        assert_eq!(slow.headline, "Fell short");
-        let fast = canyon.evaluate(&inputs(&[("speed", Quantity::speed(right * 1.3))])).unwrap();
-        assert!(fast.detail.contains("beyond the platform centre"), "{}", fast.detail);
-        for outcome in [slow, fast] {
-            assert!(!outcome.detail.contains(&sig(right, 3)), "{}", outcome.detail);
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let canyon = Instance::new(PuzzleKind::Canyon, &layout);
+            let try_ = |n: u32, v: f64| canyon.evaluate(&inputs(&[("stack", Quantity::metres(n as f64)), ("speed", Quantity::speed(v))])).unwrap();
+            let low = try_(0, layout.canyon_speed_max);
+            assert!(!low.pass);
+            assert!(low.headline == "Fell short" || low.detail.contains("short of the platform centre"), "seed {seed}: {}", low.detail);
+            let high = try_(Ch1Layout::MAX_STACK, layout.canyon_speed_min);
+            assert!(high.detail.contains("beyond the platform centre"), "seed {seed}: {}", high.detail);
+            let right = layout.canyon_speed_needed(*layout.canyon_stacks().start());
+            for outcome in [low, high] {
+                assert!(!outcome.detail.contains(&sig(right, 3)), "{}", outcome.detail);
+            }
         }
+    }
+
+    /// Tests a player needs who guesses instead of calculating, but uses every miss well: they halve
+    /// the dial's band on whichever side the miss points to, and move a crate when the band runs out.
+    fn tests_by_guessing(layout: &Ch1Layout) -> u32 {
+        let canyon = Instance::new(PuzzleKind::Canyon, layout);
+        let (mut stack, mut low, mut high) = (Ch1Layout::MAX_STACK / 2, layout.canyon_speed_min, layout.canyon_speed_max);
+        for tests in 1..=60 {
+            let v = (low + high) / 2.0;
+            let outcome = canyon.evaluate(&inputs(&[("stack", Quantity::metres(stack as f64)), ("speed", Quantity::speed(v))])).unwrap();
+            if outcome.pass {
+                return tests;
+            }
+            let short = outcome.headline == "Fell short" || outcome.detail.contains("short of");
+            if short { low = v } else { high = v }
+            if (high - low) / high < 0.003 {
+                stack = if short { stack + 1 } else { stack - 1 }.min(Ch1Layout::MAX_STACK);
+                (low, high) = (layout.canyon_speed_min, layout.canyon_speed_max);
+            }
+        }
+        60
+    }
+
+    /// For comparison, the same player at the old canyon (speed typed, 3 m platform) needed 3.9 tests on
+    /// average and was done within three 31% of the time; at the first crate canyon (fixed speed, crates
+    /// only) 2.8 and 75%.
+    #[test]
+    fn guessing_takes_more_tests_than_a_station_has_charges() {
+        let tests: Vec<u32> = (0..SEEDS).map(|seed| tests_by_guessing(&Ch1Layout::generate(seed))).collect();
+        let mean = tests.iter().sum::<u32>() as f64 / tests.len() as f64;
+        let lucky = tests.iter().filter(|t| **t <= 3).count() as f64 / tests.len() as f64;
+        println!("guessing: {mean:.2} tests on average, {:.0}% within three", lucky * 100.0);
+        assert!(mean >= 6.0, "a guesser needs only {mean:.2} tests on average");
+        assert!(lucky <= 0.35, "a guesser lands within three tests {:.0}% of the time", lucky * 100.0);
     }
 
     #[test]

@@ -1,7 +1,8 @@
 //! Scripted runs for automated checks. Development only; enabled by `GAME_SCRIPT`.
 //!
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
-//!   screenshots.
+//!   screenshots. It loads the cart, times drops with the light gate at two notches, and stacks the
+//!   canyon's crates.
 //! - `walk` drives the avatar with key presses: up the steps, off the rim, out of the canyon, a jump.
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
 //!   test, and its reactions to a miss and a pass.
@@ -14,6 +15,7 @@
 //! does not see what it expects panics, which fails the run.
 
 use crate::avatar::{Activity, AvatarState};
+use crate::carry::{self, Carry, DirtyCells, Slot, Target};
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
@@ -57,6 +59,19 @@ enum Step {
     OpenPage(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
+    /// Stand at `feet` facing along `facing`, with the pointer marking `aim` on the drop tower, and
+    /// press F; fail unless F would do what is expected.
+    CarryAt { feet: Vec3, facing: Vec3, expect: Expect, aim: Option<f32> },
+    /// Fail unless the last commit was refused for this reason.
+    ExpectRefusal(&'static str),
+    /// Fail if a handbook page has been written.
+    ExpectNotFound(&'static str),
+    /// Press the ledge launcher's rating plate's Note button.
+    NotePlate,
+    /// Type into the calculator.
+    Calculate(String),
+    /// Fail unless the puzzle is solved.
+    ExpectSolved(usize),
     Windows { notebook: bool, handbook: bool, tutor: bool },
     Shot(&'static str),
     /// Press or release a key, as the keyboard would.
@@ -78,6 +93,40 @@ enum Step {
     /// Wait until the avatar has moved a metre from where it stood when the step began.
     UntilMoved { from: Option<Vec3>, within: f32 },
     Quit,
+}
+
+/// What a press of F should do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Expect {
+    /// Pick up a loose crate.
+    Take,
+    TakeGate,
+    PutIn(Slot),
+    TakeOut(Slot),
+    /// Clamp the light gate at this notch.
+    Clamp(u32),
+}
+
+impl Expect {
+    fn matches(self, target: Option<Target>) -> bool {
+        match (self, target) {
+            (Expect::Take, Some(Target::Take(_))) | (Expect::TakeGate, Some(Target::TakeGate)) => true,
+            (Expect::PutIn(slot), Some(Target::PutIn(s, _))) | (Expect::TakeOut(slot), Some(Target::TakeOut(s, _))) => s == slot,
+            (Expect::Clamp(notch), Some(Target::PutIn(Slot::Tower, n))) => n == notch,
+            _ => false,
+        }
+    }
+}
+
+/// Stand at `feet` facing along `facing` and press F.
+fn carry_at(feet: Vec3, facing: Vec3, expect: Expect) -> Step {
+    Step::CarryAt { feet, facing, expect, aim: None }
+}
+
+/// Where to stand to pick up the cargo crate, and to load it onto the cart.
+fn by_the_rail(sites: &Sites) -> (Vec3, Vec3) {
+    let cell = sites.cargo_cell;
+    (Vec3::new(cell.x as f32 - 0.6, cell.y as f32, cell.z as f32 + 0.5), sites.rail_start - Vec3::X * 1.2)
 }
 
 #[derive(Resource)]
@@ -112,7 +161,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let (min, max) = game.layout.ridge_angle_window();
     let angle = ((min + max) / 2.0).to_degrees().round();
     let closed = Windows { notebook: false, handbook: false, tutor: false };
-    vec![
+    let (cargo_at, cart_at) = by_the_rail(sites);
+    // The light gate: off its stand, then clamped at a short drop and a long one.
+    let at_stand = sites.gate_stand - Vec3::X * 1.0;
+    let at_tower = sites.tower_plate + Vec3::Z * 1.8;
+    let (short, long) = (3, game.layout.tower_h - 2);
+    let clamp = |notch: u32| Step::CarryAt { feet: at_tower, facing: Vec3::NEG_Z, expect: Expect::Clamp(notch), aim: Some(sites.tower_release.y - notch as f32) };
+    let mut steps = vec![
         Start,
         UntilPlaying { within: 10.0 },
         Shot("01_start"),
@@ -131,6 +186,26 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: 0.35, pitch: 0.5, distance: 22.0 },
         Wait(1.0),
         expect_gaze(station_name(game, 0)),
+        Station(Some(0)),
+        // The cart will not run empty: refused, for free, and no page is written for it.
+        Draft(0, vec![game.layout.rail_target.to_string()]),
+        Commit(0),
+        Wait(0.3),
+        ExpectRefusal("Load the cart first"),
+        ExpectNotFound("units"),
+        expect_gaze("Cargo crate beside the rail"),
+        Shot("03a_cart_empty"),
+        Station(None),
+        carry_at(cargo_at, Vec3::X, Expect::Take),
+        expect_gaze("Rail cart"),
+        Look { yaw: 1.2, pitch: 0.3, distance: 6.0 },
+        Wait(0.8),
+        Shot("03b_carrying_the_cargo"),
+        carry_at(cart_at, Vec3::X, Expect::PutIn(Slot::Cart)),
+        Wait(0.5),
+        Shot("03c_cart_loaded"),
+        GoToStation(0),
+        Look { yaw: 0.35, pitch: 0.5, distance: 22.0 },
         Station(Some(0)),
         RulerOn,
         expect_gaze("Rail cart: starting point"),
@@ -183,8 +258,33 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         ExpectFound { page: "free_fall", within: 2.0 },
         Wait(0.6),
         Shot("08b_strobe_seen"),
+        // Then the light gate: a short drop, then a long one, each timed by a run of the experiment.
+        expect_gaze("Light gate on its stand"),
+        Station(None),
+        carry_at(at_stand, Vec3::X, Expect::TakeGate),
+        expect_gaze("Notches on the drop tower"),
+        clamp(short),
+        Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
+        Wait(0.8),
+        Shot("08c_gate_clamped"),
+        GoToStation(1),
+        Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
+        Station(Some(1)),
+        RunDemo(1),
+        WaitIdle,
+        Station(None),
+        carry_at(at_tower, Vec3::NEG_Z, Expect::TakeOut(Slot::Tower)),
+        clamp(long),
+        GoToStation(1),
+        Station(Some(1)),
+        RunDemo(1),
+        Wait(1.4),
+        Shot("08d_gate_tripped"),
+        WaitIdle,
+        Wait(0.4),
+        Shot("08e_gate_reading"),
         Windows { notebook: true, handbook: false, tutor: false },
-        Draft(1, vec!["2*h1/t1^2".into()]),
+        Draft(1, vec!["2*h3/t3^2".into()]),
         Wait(0.3),
         Shot("09_gravity_blueprint"),
         closed_step(),
@@ -216,21 +316,50 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         RulerNote(0),
         RulerNote(1),
         RulerOff,
-        Draft(2, vec!["sqrt(2*h2/g)".into()]),
+        // The rating plate, then the lowest height above the ledge the band allows, in the calculator.
+        NotePlate,
+        Windows { notebook: true, handbook: false, tutor: false },
+        Calculate("hmin = g*d2^2/(2*vmax^2) - h4".into()),
+        Wait(0.5),
+        Shot("13_calculator_rise"),
+        closed_step(),
+        // Straight from the bare ledge first: the speed it needs is past the top of the dial.
+        Draft(2, vec![String::new(), "d2/sqrt(2*h4/g)".into()]),
         Commit(2),
         Wait(0.3),
-        Shot("13_wrong_dimension_refused"),
-        Draft(2, vec!["9 m/s".into()]),
-        Commit(2),
-        WaitIdle,
-        Wait(2.0),
-        Shot("14_canyon_miss"),
-        Draft(2, vec!["d2/sqrt(2*h2/g)".into()]),
+        Shot("13b_dial_refuses"),
+        Station(None),
+    ];
+    // Then the stack worked out, and the speed for it.
+    let stack = *game.layout.canyon_stacks().start();
+    let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
+    let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
+    let ledge = sites.canyon_well.y as f32;
+    let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
+    let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
+    for k in 0..stack {
+        steps.push(carry_at(at_pile, Vec3::X, Expect::Take));
+        if k == 0 {
+            steps.extend([Look { yaw: 2.3, pitch: 0.35, distance: 7.0 }, Wait(0.8), Shot("14a_carrying")]);
+        }
+        steps.push(carry_at(at_frame, Vec3::X, Expect::PutIn(Slot::Frame)));
+    }
+    steps.extend([
+        Look { yaw: 2.5, pitch: 0.12, distance: 17.0 },
+        Wait(1.0),
+        Shot("14b_launcher_raised"),
+        GoToStation(2),
+        Look { yaw: -1.4, pitch: 0.45, distance: 30.0 },
+        Station(Some(2)),
+        Draft(2, vec![String::new(), format!("d2/sqrt(2*(h4 + {stack} m)/g)")]),
+        Wait(0.5),
+        Shot("14c_blueprint"),
         Commit(2),
         Wait(1.2),
         Shot("15_canyon_flight"),
         WaitIdle,
         Wait(2.5),
+        ExpectSolved(2),
         Shot("16_canyon_result"),
         // Puzzle 3: 45 degrees strikes the ridge; an angle inside the window clears it.
         GoToStation(3),
@@ -282,7 +411,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("21_notebook_handbook_lumen"),
         closed,
         Quit,
-    ]
+    ]);
+    steps
 }
 
 fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
@@ -356,6 +486,11 @@ fn intro() -> Vec<Step> {
 
 fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
+    let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
+    let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
+    let at_pile = Vec3::new(pile_west - 0.6, sites.canyon_well.y as f32, pile_row + 0.5);
+    let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
+    let (cargo_at, cart_at) = by_the_rail(sites);
     let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };
     let at_console = || Look { yaw: 0.9, pitch: 0.2, distance: 4.5 };
     vec![
@@ -384,6 +519,22 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.1),
         Shot("pose_04_jump"),
         expect_activity(Activity::Idle),
+        // A crate from the ledge's pile, carried.
+        carry_at(at_pile, Vec3::X, Expect::Take),
+        Look { yaw: 2.3, pitch: 0.25, distance: 4.5 },
+        Wait(0.8),
+        Shot("pose_09_carrying"),
+        Key(KeyCode::KeyS, true),
+        Wait(0.45),
+        Shot("pose_10_carrying_walk"),
+        Key(KeyCode::KeyS, false),
+        // Hands free again before the console: the crate goes into the jack frame.
+        carry_at(at_frame, Vec3::X, Expect::PutIn(Slot::Frame)),
+        Wait(0.5),
+        // The cart will not run empty.
+        carry_at(cargo_at, Vec3::X, Expect::Take),
+        carry_at(cart_at, Vec3::X, Expect::PutIn(Slot::Cart)),
+        Wait(0.3),
         // At the rail's console: working the panel, watching the cart, a miss and then a pass.
         GoToStation(0),
         at_console(),
@@ -436,14 +587,14 @@ fn run(
     mut sim: ResMut<Sim>,
     mut ruler: ResMut<Ruler>,
     mut orbit: ResMut<OrbitCamera>,
-    world: Res<VoxelWorld>,
-    sites: Res<Sites>,
+    mut world: ResMut<VoxelWorld>,
+    mut sites: ResMut<Sites>,
     mut player: Single<(&mut Player, &mut Transform), Without<Camera3d>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>),
+    (mut intro, mode, avatar, mut carry, mut dirty): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>, ResMut<Carry>, ResMut<DirtyCells>),
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -510,6 +661,24 @@ fn run(
         Step::OpenPage(page) => ui.open_page(page),
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
+        Step::CarryAt { feet, facing, expect, aim } => {
+            player.1.translation = feet;
+            player.1.rotation = Quat::from_rotation_y(f32::atan2(-facing.x, -facing.z));
+            player.0.velocity = Vec3::ZERO;
+            let target = carry::target_for(&world, &sites, &carry, feet, facing, aim);
+            assert!(expect.matches(target), "at {feet} facing {facing}, F would do {target:?}, not {expect:?}");
+            carry::apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target.expect("checked above"));
+            script.wait = 0.3;
+        }
+        Step::ExpectRefusal(reason) => {
+            assert!(ui.refusal.as_deref().is_some_and(|r| r.contains(reason)), "expected a refusal for '{reason}', got {:?}", ui.refusal);
+        }
+        Step::ExpectNotFound(page) => assert!(!game.save.found.contains(page), "the handbook page '{page}' was written"),
+        Step::NotePlate => {
+            crate::ui::note_plate(&mut game);
+        }
+        Step::Calculate(text) => ui.calculator = text,
+        Step::ExpectSolved(puzzle) => assert!(game.solved(puzzle), "{} is not solved: {:?}", game.def(puzzle).title, ui.results[puzzle].as_ref().map(|o| &o.detail)),
         Step::Windows { notebook, handbook, tutor } => {
             ui.notebook_open = notebook;
             ui.handbook_open = handbook;

@@ -62,6 +62,12 @@ pub struct Save {
     /// Demonstrations watched, by puzzle id, with the choice made before the first run (if any).
     #[serde(default)]
     pub demos: BTreeMap<String, Option<usize>>,
+    /// What the player has placed at each station, by puzzle id: the cargo crate on the rail cart
+    /// (0 or 1), the light gate's notch on the drop tower (its drop below the release point in metres,
+    /// 0 for none), the number of crates under the ledge launcher. Kept between sessions so the world
+    /// looks as it was left.
+    #[serde(default)]
+    pub placed: BTreeMap<String, u32>,
 }
 
 impl Save {
@@ -75,6 +81,7 @@ impl Save {
             puzzles: BTreeMap::new(),
             found: BTreeSet::new(),
             demos: BTreeMap::new(),
+            placed: BTreeMap::new(),
         }
     }
 
@@ -167,7 +174,14 @@ mod tests {
         let puzzle = Instance::new(kind, &Ch1Layout::generate(save.seed));
         let mut inputs = puzzle.solution().inputs();
         let key = puzzle.inputs().last().unwrap().key;
-        inputs.get_mut(key).unwrap().value *= scale;
+        let value = &mut inputs.get_mut(key).unwrap().value;
+        if kind == PuzzleKind::Canyon && scale != 1.0 {
+            // The dial turns only so far: a miss is the top or the bottom of its band.
+            let layout = &puzzle.layout;
+            *value = if scale < 1.0 { layout.canyon_speed_min } else { layout.canyon_speed_max };
+        } else {
+            *value *= scale;
+        }
         let outcome = puzzle.evaluate(&inputs).unwrap();
         save.record(id, Vec::new(), &outcome);
         outcome.pass
@@ -214,6 +228,9 @@ mod tests {
     fn save_round_trips() {
         let mut save = Save::new(9);
         save.notebook.set("g", "gravity", Quantity::acceleration(8.25), "calculated");
+        save.placed.insert("1.1.2".into(), 4);
+        save.placed.insert("1.1.1".into(), 9);
+        save.placed.insert("1.1.0".into(), 1);
         attempt(&mut save, "1.1.1", PuzzleKind::Gravity, 1.0);
         let text = save.to_ron();
         assert_eq!(Save::from_ron(&text).unwrap(), save);
@@ -224,7 +241,7 @@ mod tests {
     fn saves_from_before_pages_and_demonstrations_still_load() {
         let old = r#"(version: 1, seed: 5, notebook: (entries: []), puzzles: {"1.1.0": (attempts: [], charges_used: 1, solved: true)})"#;
         let save = Save::from_ron(old).unwrap();
-        assert!(save.found.is_empty() && save.demos.is_empty());
+        assert!(save.found.is_empty() && save.demos.is_empty() && save.placed.is_empty());
         // The tutorial is done, so its page is there; the drop tower's is not yet.
         let chapter = chapter_1_1();
         assert!(save.is_found(&chapter, "units"));

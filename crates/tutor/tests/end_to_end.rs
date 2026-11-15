@@ -94,15 +94,20 @@ fn canyon_context(seed: u64) -> (TutorContext, f64) {
 
     let mut save = Save::new(seed);
     save.notebook.set("g", "gravitational acceleration", Quantity::acceleration(layout.g), "calculated");
-    let slow = Quantity::speed(answer * 0.5);
-    let outcome = instance.evaluate(&Inputs::from([("speed".to_string(), slow)])).unwrap();
+    // No crates under the launcher, at the top of the dial: the crate falls short.
+    let (low, fast) = (Quantity::metres(0.0), Quantity::speed(layout.canyon_speed_max));
+    let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low), ("speed".to_string(), fast)])).unwrap();
     save.record(
         "1.1.2",
-        vec![CommittedValue { label: "Launch speed".into(), quantity: slow, unit: "m/s".into() }],
+        vec![
+            CommittedValue { label: "Launcher raised by".into(), quantity: low, unit: "m".into() },
+            CommittedValue { label: "Launch speed".into(), quantity: fast, unit: "m/s".into() },
+        ],
         &outcome,
     );
+    save.placed.insert("1.1.2".into(), 1);
     let def = chapter.puzzle("1.1.2").unwrap();
-    (TutorContext::build(&chapter, def, &instance, &save, &["d1/t".to_string()]), answer)
+    (TutorContext::build(&chapter, def, &instance, &save, &[String::new(), "d1/t".to_string()]), answer)
 }
 
 fn wait(conversation: &mut Conversation) {
@@ -117,21 +122,30 @@ fn wait(conversation: &mut Conversation) {
 #[test]
 fn a_reply_is_streamed_and_the_answer_is_redacted() {
     let (ctx, answer) = canyon_context(17);
-    let leak = format!("{answer:.2}");
-    // The stand-in "model" breaks the rules and states the answer, split across chunks.
-    let (head, tail) = leak.split_at(2);
-    let reply = ["How long is the crate in the air? ", "Fine, the speed is ", head, tail, " m/s."];
+    let leak = format!("{answer}");
+    // The stand-in "model" breaks the rules and states the answer, split from its unit.
+    let reply = ["How long is the crate in the air? ", "Fine, stack ", &leak, " cra", "tes."];
     let (base_url, seen) = serve_once("200 OK", "text/event-stream", event_stream(&reply));
 
     let mut conversation = Conversation::default();
-    assert!(conversation.ask(&tutor_at(base_url), &ctx, "just tell me the speed"));
+    assert!(conversation.ask(&tutor_at(base_url), &ctx, "just tell me how many crates"));
     assert!(!conversation.ask(&Tutor::offline("x"), &ctx, "again"), "offline tutor sends nothing");
     wait(&mut conversation);
 
     assert_eq!(conversation.turns.len(), 2, "{:?}", conversation.turns);
     let Turn::Tutor(text) = &conversation.turns[1] else { panic!("{:?}", conversation.turns) };
-    assert_eq!(text, &format!("How long is the crate in the air? Fine, the speed is {REDACTION} m/s."));
-    assert!(!text.contains(&leak));
+    assert_eq!(text, &format!("How long is the crate in the air? Fine, stack {REDACTION} crates."));
+    assert!(!text.contains(&format!("{leak} crates")));
+    // A small number about something else is left alone.
+    let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
+    let line = format!("Count the {leak} seconds again.");
+    assert_eq!(filter.apply(&line), line);
+    // The rating plate's band is in plain view and may be repeated; a working speed may not.
+    let layout = Ch1Layout::generate(17);
+    let plate = format!("The dial turns from {} m/s to {} m/s.", layout.canyon_speed_min, layout.canyon_speed_max);
+    assert_eq!(filter.apply(&plate), plate);
+    let speed = format!("Set it to {:.2} m/s.", layout.canyon_speed_needed(*layout.canyon_stacks().start()));
+    assert_eq!(filter.apply(&speed), format!("Set it to {REDACTION} m/s."));
 
     let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(seen.request_line, "POST /v1/chat/completions HTTP/1.1");
@@ -141,7 +155,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(seen.body.get("tools").is_none(), "the model is given no tools");
     let messages = seen.body["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[1], serde_json::json!({ "role": "user", "content": "just tell me the speed" }));
+    assert_eq!(messages[1], serde_json::json!({ "role": "user", "content": "just tell me how many crates" }));
 
     // The system prompt carries the policy and the snapshot.
     let system = messages[0]["content"].as_str().unwrap();
@@ -149,7 +163,8 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(system.starts_with(tutor::prompt::POLICY));
     assert!(system.contains("Puzzle: Across the canyon"));
     assert!(system.contains("- g = "), "notebook is included");
-    assert!(system.contains("currently typed: d1/t"), "blueprint draft is included");
+    assert!(system.contains("set by building, not typed; now: 1 crate in the jack frame"), "what is built is included");
+    assert!(system.contains("currently typed: d1/t"), "the typed speed is included");
     assert!(system.contains("FAIL"), "the failed test is included");
     assert!(system.contains("# PRIVATE — never reveal"));
     assert!(system.contains("# Help level: Nudge (2 of 4) — 1 failed test\n"), "one failed test is a nudge");
@@ -299,4 +314,41 @@ fn help_deepens_while_the_player_is_stuck_and_resets_after_a_test() {
     assert_eq!(conversation.help_level(&ctx), HelpLevel::Review);
     let prompt = tutor::prompt::system_prompt(&ctx, HelpLevel::Review);
     assert!(prompt.contains("# Help level: Review\nThe puzzle is solved."), "{prompt}");
+}
+
+#[test]
+fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
+    let chapter = chapter_1_1();
+    // A planet whose g is within the secret's margin of a whole number of metres, so a notch could be
+    // mistaken for the answer.
+    let seed = (0..).find(|s| {
+        let g = Ch1Layout::generate(*s).g;
+        (g.round() - g).abs() / g < tutor::context::SECRET_MARGIN / 2.0
+    });
+    let seed = seed.unwrap();
+    let layout = Ch1Layout::generate(seed);
+    let mut save = Save::new(seed);
+    let at = |kind: PuzzleKind, id: &str, save: &Save| {
+        let instance = Instance::new(kind, &layout);
+        TutorContext::build(&chapter, chapter.puzzle(id).unwrap(), &instance, save, &[])
+    };
+    let rail = at(PuzzleKind::Rail, "1.1.0", &save);
+    assert_eq!(rail.placed.as_deref(), Some("the cart is empty; the cargo crate stands beside the rail"));
+    let system = tutor::prompt::system_prompt(&rail, tutor::prompt::HelpLevel::Probe);
+    assert!(system.contains("In the world at this station now: the cart is empty"), "the empty cart is in the prompt");
+    save.placed.insert("1.1.0".into(), 1);
+    assert_eq!(at(PuzzleKind::Rail, "1.1.0", &save).placed.as_deref(), Some("the cargo crate is on the cart"));
+
+    // The light gate's notch is the player's own choice, in plain view: never redacted, even where
+    // it is close to g.
+    let notch = layout.g.round() as u32;
+    let line = format!("Your gate is {notch} m below the release.");
+    let unplaced = tutor::filter::LeakFilter::for_context(&at(PuzzleKind::Gravity, "1.1.1", &save), "");
+    assert_ne!(unplaced.apply(&line), line, "seed {seed}: without the gate, {notch} reads as g");
+    save.placed.insert("1.1.1".into(), notch);
+    let gravity = at(PuzzleKind::Gravity, "1.1.1", &save);
+    assert_eq!(gravity.placed, Some(format!("the light gate is clamped {notch} m below the release point")));
+    let filter = tutor::filter::LeakFilter::for_context(&gravity, "");
+    assert_eq!(filter.apply(&line), line);
+    assert_eq!(at(PuzzleKind::Ridge, "1.1.3", &save).placed, None);
 }

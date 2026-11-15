@@ -156,9 +156,8 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
             if ui_state.notebook_open {
                 ui.separator();
                 let room = (floor - ui.cursor().top() - 20.0).max(70.0);
-                // An area's contents are capped at its size the frame before; let it grow.
-                ui.set_max_height(room);
-                notebook_body(ui, game, ui_state, room);
+                // An area's contents are capped at its size the frame before; give the body its room.
+                ui.allocate_ui(egui::vec2(ui.available_width(), room), |ui| notebook_body(ui, game, ui_state, room));
             }
         });
     });
@@ -186,9 +185,8 @@ fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
                 ui.separator();
                 let room = (screen.bottom() - HANDBOOK_BOTTOM_RESERVE - ui.cursor().top()).max(120.0);
                 // An area's contents are capped at its size the frame before, which was only the
-                // header when the handbook was just opened; let it grow to the room it has.
-                ui.set_max_height(room);
-                handbook_body(ui, game, ui_state, room);
+                // header when the handbook was just opened; give the body the room it has.
+                ui.allocate_ui(egui::vec2(ui.available_width(), room), |ui| handbook_body(ui, game, ui_state, room));
             }
         });
     });

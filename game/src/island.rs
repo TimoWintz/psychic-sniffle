@@ -258,14 +258,16 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         origin: Vec3::new(CANYON_X as f32, ledge_top as f32, CANYON_ROW as f32 + 0.5),
         direction: Vec3::X,
     };
-    // Landing platform: three by three marker blocks set flush into the far plateau.
+    // Landing platform: marker blocks set flush into the far plateau, as long along the launch line as
+    // the layout says (one block) and three wide across it.
     let platform_mid = CANYON_X + layout.platform_centre.floor() as i32;
+    let reach = (layout.platform_half - 0.5).round() as i32;
     world.fill(
-        IVec3::new(platform_mid - 1, GROUND - 1, CANYON_ROW - 1),
-        IVec3::new(platform_mid + 1, GROUND - 1, CANYON_ROW + 1),
+        IVec3::new(platform_mid - reach, GROUND - 1, CANYON_ROW - 1),
+        IVec3::new(platform_mid + reach, GROUND - 1, CANYON_ROW + 1),
         Material::Marker,
     );
-    stakes.extend(corners(platform_mid - 1, platform_mid + 1, CANYON_ROW - 1, CANYON_ROW + 1, ground));
+    stakes.extend(corners(platform_mid - reach, platform_mid + reach, CANYON_ROW - 1, CANYON_ROW + 1, ground));
     let canyon_release_pin = pins.len();
     pins.push(Pin { position: canyon_launch.origin, label: "Ledge launcher: release point" });
     pins.push(Pin { position: canyon_launch.at(layout.platform_centre, 0.0, ground), label: "Platform: centre" });

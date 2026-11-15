@@ -173,10 +173,12 @@ mod tests {
         let mut inputs = puzzle.solution().inputs();
         let key = puzzle.inputs().last().unwrap().key;
         let value = &mut inputs.get_mut(key).unwrap().value;
-        *value *= scale;
-        if key == "stack" {
-            // Crates come whole.
-            *value = value.round();
+        if kind == PuzzleKind::Canyon && scale != 1.0 {
+            // The dial turns only so far: a miss is the top or the bottom of its band.
+            let layout = &puzzle.layout;
+            *value = if scale < 1.0 { layout.canyon_speed_min } else { layout.canyon_speed_max };
+        } else {
+            *value *= scale;
         }
         let outcome = puzzle.evaluate(&inputs).unwrap();
         save.record(id, Vec::new(), &outcome);

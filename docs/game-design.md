@@ -110,13 +110,14 @@ builds it, and the exact simulator judges what was built.
 
 | Pattern | What the player does | Where |
 |---|---|---|
-| Build the answer | Change the world until it holds the value worked out: crates stacked under a launcher whose speed is fixed set its release height. | 1.1 Across the canyon (built) |
+| Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: crates under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the canyon (built) |
 | Place the catcher | The setting is fixed and read off a plate; carry the target (net, stop, bin) to where the load will end up. | 1.3, the sled: place the stop where it comes to rest under friction (planned) |
 | Place to measure | Put an instrument where it measures what is wanted: a light gate clamped at a chosen height on the drop tower, so the player collects their own readings. | 1.1 Local gravity (planned) |
 
 Placements snap to whole blocks or to fixed notches, so what is built can be counted and measured
-exactly, and the numbers are chosen so that exactly one placement passes and its neighbours miss
-clearly: building by trial costs charges like any other guess.
+exactly. A placement on its own is a small choice (a handful of stacks), which a few tries find by
+luck, so a built answer comes with a calculated one or a small target: guessing should cost at least
+as many tests as guessing a typed value, and every wrong stack also costs a walk with crates.
 
 ### What makes guessing a bad strategy
 
@@ -156,7 +157,8 @@ Unlocked as the curriculum needs them.
   uses, and after a miss Lumen names the page worth rereading.
 - **Launchers show the blueprint.** As a value is typed, the tilting launcher's arm swings to the
   angle and its gauge fills to the speed, against the launcher's rating. The ledge launcher's gauge
-  stands full at its one fixed speed, and the launcher itself rides up its jack frame as crates go in.
+  marks the bottom of its band too and turns red outside it, and the launcher itself rides up its jack
+  frame as crates go in.
   The player's choice is visible in the world before it is committed; the path is never previewed.
 - **Grapher** (tier 2 onward). Plot a notebook series; read slopes and areas.
 

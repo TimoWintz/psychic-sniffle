@@ -64,6 +64,8 @@ enum Step {
     NotePlate,
     /// Type into the calculator.
     Calculate(String),
+    /// Fail unless the puzzle is solved.
+    ExpectSolved(usize),
     Windows { notebook: bool, handbook: bool, tutor: bool },
     Shot(&'static str),
     /// Press or release a key, as the keyboard would.
@@ -230,41 +232,33 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         RulerNote(0),
         RulerNote(1),
         RulerOff,
-        // The rating plate, then the height the launcher needs above the ledge, in the calculator.
+        // The rating plate, then the lowest height above the ledge the band allows, in the calculator.
         NotePlate,
         Windows { notebook: true, handbook: false, tutor: false },
-        Calculate("rise = 0.5*g*(d2/v1)^2 - h2".into()),
+        Calculate("hmin = g*d2^2/(2*vmax^2) - h2".into()),
         Wait(0.5),
         Shot("13_calculator_rise"),
         closed_step(),
+        // Straight from the bare ledge first: the speed it needs is past the top of the dial.
+        Draft(2, vec![String::new(), "d2/sqrt(2*h2/g)".into()]),
+        Commit(2),
+        Wait(0.3),
+        Shot("13b_dial_refuses"),
         Station(None),
     ];
-    // One crate first, on purpose: it falls short. Then the rest of the worked-out stack.
-    let stack = game.layout.canyon_answer().expect("the canyon has one answer");
+    // Then the stack worked out, and the speed for it.
+    let stack = *game.layout.canyon_stacks().start();
     let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
     let ledge = sites.canyon_well.y as f32;
     let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
     let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
-    let fetch = |steps: &mut Vec<Step>, shots: bool| {
+    for k in 0..stack {
         steps.push(CarryAt { feet: at_pile, facing: Vec3::X, expect: Expect::Take });
-        if shots {
+        if k == 0 {
             steps.extend([Look { yaw: 2.3, pitch: 0.35, distance: 7.0 }, Wait(0.8), Shot("14a_carrying")]);
         }
         steps.push(CarryAt { feet: at_frame, facing: Vec3::X, expect: Expect::PutInFrame });
-    };
-    fetch(&mut steps, true);
-    steps.extend([
-        GoToStation(2),
-        Station(Some(2)),
-        Commit(2),
-        WaitIdle,
-        Wait(2.0),
-        Shot("14_canyon_miss"),
-        Station(None),
-    ]);
-    for _ in 1..stack {
-        fetch(&mut steps, false);
     }
     steps.extend([
         Look { yaw: 2.5, pitch: 0.12, distance: 17.0 },
@@ -273,11 +267,15 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         GoToStation(2),
         Look { yaw: -1.4, pitch: 0.45, distance: 30.0 },
         Station(Some(2)),
+        Draft(2, vec![String::new(), format!("d2/sqrt(2*(h2 + {stack} m)/g)")]),
+        Wait(0.5),
+        Shot("14c_blueprint"),
         Commit(2),
         Wait(1.2),
         Shot("15_canyon_flight"),
         WaitIdle,
         Wait(2.5),
+        ExpectSolved(2),
         Shot("16_canyon_result"),
         // Puzzle 3: 45 degrees strikes the ridge; an angle inside the window clears it.
         GoToStation(3),
@@ -588,6 +586,7 @@ fn run(
             crate::ui::note_plate(&mut game);
         }
         Step::Calculate(text) => ui.calculator = text,
+        Step::ExpectSolved(puzzle) => assert!(game.solved(puzzle), "{} is not solved: {:?}", game.def(puzzle).title, ui.results[puzzle].as_ref().map(|o| &o.detail)),
         Step::Windows { notebook, handbook, tutor } => {
             ui.notebook_open = notebook;
             ui.handbook_open = handbook;

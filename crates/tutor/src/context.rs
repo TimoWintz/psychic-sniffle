@@ -124,23 +124,33 @@ impl TutorContext {
             }
         }
         if instance.kind == PuzzleKind::Canyon {
-            // The answer is a small whole number, too common to redact on its own: guard it where it
-            // counts crates, and guard the release height it gives, in metres.
+            // One or two stacks work, each with its own speed. A stack is a small whole number, too
+            // common to redact on its own: guard it where it counts crates, and guard the release height
+            // it gives, in metres. Guard the speeds across all of them, in m/s.
             secrets.clear();
-            let stack = instance.layout.canyon_answer().unwrap_or(0) as f64;
-            secrets.push(Secret {
-                low: stack - 0.01,
-                high: stack + 0.01,
-                only_before: ["crate", "crates", "more crate", "boxes", "blocks"].map(String::from).to_vec(),
-            });
-            let release = instance.layout.ledge_h as f64 + stack;
-            for height in [stack, release] {
+            let layout = &instance.layout;
+            let stacks = layout.canyon_stacks();
+            for stack in stacks.clone() {
+                let stack_f = stack as f64;
                 secrets.push(Secret {
-                    low: height * (1.0 - SECRET_MARGIN) - 0.15,
-                    high: height * (1.0 + SECRET_MARGIN) + 0.15,
-                    only_before: ["m ", "m.", "m,", "metre", "meter"].map(String::from).to_vec(),
+                    low: stack_f - 0.01,
+                    high: stack_f + 0.01,
+                    only_before: ["crate", "crates", "more crate", "boxes", "blocks"].map(String::from).to_vec(),
                 });
+                for height in [stack_f, layout.ledge_h as f64 + stack_f] {
+                    secrets.push(Secret {
+                        low: height * (1.0 - SECRET_MARGIN) - 0.15,
+                        high: height * (1.0 + SECRET_MARGIN) + 0.15,
+                        only_before: ["m ", "m.", "m,", "metre", "meter"].map(String::from).to_vec(),
+                    });
+                }
             }
+            let (fast, slow) = (layout.canyon_speed_needed(*stacks.start()), layout.canyon_speed_needed(*stacks.end()));
+            secrets.push(Secret {
+                low: slow * (1.0 - SECRET_MARGIN),
+                high: fast * (1.0 + SECRET_MARGIN),
+                only_before: ["m/s", "m s", "metres per second", "meters per second"].map(String::from).to_vec(),
+            });
         }
         if instance.kind == PuzzleKind::Ridge {
             // Many angle and speed pairs work here, so guard the whole working window.
@@ -165,7 +175,7 @@ impl TutorContext {
         }
         if instance.kind == PuzzleKind::Canyon {
             // On the launcher's rating plate, in plain view.
-            known_numbers.push(instance.layout.canyon_speed);
+            known_numbers.extend([instance.layout.canyon_speed_min, instance.layout.canyon_speed_max]);
         }
         // The experiment's question and choices are on the player's screen (the ridge's names its
         // two angles, which may fall inside the working window).

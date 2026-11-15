@@ -94,17 +94,20 @@ fn canyon_context(seed: u64) -> (TutorContext, f64) {
 
     let mut save = Save::new(seed);
     save.notebook.set("g", "gravitational acceleration", Quantity::acceleration(layout.g), "calculated");
-    // No crates under the launcher: the crate falls short.
-    let low = Quantity::metres(0.0);
-    let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low)])).unwrap();
+    // No crates under the launcher, at the top of the dial: the crate falls short.
+    let (low, fast) = (Quantity::metres(0.0), Quantity::speed(layout.canyon_speed_max));
+    let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low), ("speed".to_string(), fast)])).unwrap();
     save.record(
         "1.1.2",
-        vec![CommittedValue { label: "Launcher raised by".into(), quantity: low, unit: "m".into() }],
+        vec![
+            CommittedValue { label: "Launcher raised by".into(), quantity: low, unit: "m".into() },
+            CommittedValue { label: "Launch speed".into(), quantity: fast, unit: "m/s".into() },
+        ],
         &outcome,
     );
     save.placed.insert("1.1.2".into(), 1);
     let def = chapter.puzzle("1.1.2").unwrap();
-    (TutorContext::build(&chapter, def, &instance, &save, &["d1/t".to_string()]), answer)
+    (TutorContext::build(&chapter, def, &instance, &save, &[String::new(), "d1/t".to_string()]), answer)
 }
 
 fn wait(conversation: &mut Conversation) {
@@ -137,9 +140,12 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
     let line = format!("Count the {leak} seconds again.");
     assert_eq!(filter.apply(&line), line);
-    // The rating plate's speed is in plain view and may be repeated.
-    let plate = format!("The plate says {} m/s.", Ch1Layout::generate(17).canyon_speed);
+    // The rating plate's band is in plain view and may be repeated; a working speed may not.
+    let layout = Ch1Layout::generate(17);
+    let plate = format!("The dial turns from {} m/s to {} m/s.", layout.canyon_speed_min, layout.canyon_speed_max);
     assert_eq!(filter.apply(&plate), plate);
+    let speed = format!("Set it to {:.2} m/s.", layout.canyon_speed_needed(*layout.canyon_stacks().start()));
+    assert_eq!(filter.apply(&speed), format!("Set it to {REDACTION} m/s."));
 
     let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(seen.request_line, "POST /v1/chat/completions HTTP/1.1");
@@ -158,6 +164,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(system.contains("Puzzle: Across the canyon"));
     assert!(system.contains("- g = "), "notebook is included");
     assert!(system.contains("set by building, not typed; now: 1 crate in the jack frame"), "what is built is included");
+    assert!(system.contains("currently typed: d1/t"), "the typed speed is included");
     assert!(system.contains("FAIL"), "the failed test is included");
     assert!(system.contains("# PRIVATE — never reveal"));
     assert!(system.contains("# Help level: Nudge (2 of 4) — 1 failed test\n"), "one failed test is a nudge");

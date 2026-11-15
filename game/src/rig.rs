@@ -2,9 +2,9 @@
 //!
 //! The tilting launcher's guide arm swings to the angle typed in, and its gauge fills to the speed
 //! typed in, measured against the launcher's rating. This is the player's own number made visible;
-//! nothing here previews a path or judges anything. The ledge launcher's governor is jammed: its
-//! gauge stands full at its rated speed, and the launcher rides on a cradle in a jack frame, on top
-//! of however many crates the player has slid in (see `carry`).
+//! nothing here previews a path or judges anything. The ledge launcher's dial turns only within a
+//! band, marked on its gauge, and the launcher rides on a cradle in a jack frame, on top of however
+//! many crates the player has slid in (see `carry`).
 
 use crate::island::{LaunchSite, Sites};
 use crate::sim::Sim;
@@ -39,10 +39,10 @@ struct Cradle;
 #[derive(Component)]
 struct GaugeFill {
     puzzle: usize,
-    /// A launcher that fires at one speed only shows that speed, whatever is typed.
-    fixed: Option<f64>,
     /// Speed at the top of the scale, m/s: the launcher's rating.
     limit: f64,
+    /// The lowest speed the launcher accepts, m/s (0 if any will do).
+    floor: f64,
     /// Current fill, as a fraction of the scale; eases toward the blueprint's.
     level: f32,
     /// Centre of the empty scale's bottom edge, in the gauge's frame.
@@ -103,18 +103,18 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
             c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.45, 0.3, 0.0)));
         });
 
-    // A speed gauge beside each launcher, on the station's side. The tilting launcher's is rated to
-    // what it accepts and follows the blueprint; the ledge launcher's stands full at its one speed.
+    // A speed gauge beside each launcher, on the station's side, rated to the most it accepts and
+    // following the blueprint. The ledge launcher's also marks the bottom of its band.
     let canyon = puzzle_of(&game, PuzzleKind::Canyon);
     let gauges = [
-        (canyon, sites.canyon_launch, game.layout.canyon_speed, Some(game.layout.canyon_speed)),
+        (canyon, sites.canyon_launch, game.layout.canyon_speed_max, Some(game.layout.canyon_speed_min)),
         (ridge, sites.ridge_launch, game.layout.v_max, None),
     ];
     let post = meshes.add(Cuboid::new(0.12, GAUGE_HEIGHT + 0.7, 0.12));
     let panel = meshes.add(Cuboid::new(0.42, GAUGE_HEIGHT + 0.16, 0.06));
     let fill = meshes.add(Cuboid::new(0.28, 1.0, 0.09));
     let line = meshes.add(Cuboid::new(0.56, 0.05, 0.1));
-    for (puzzle, site, limit, fixed) in gauges {
+    for (puzzle, site, limit, floor) in gauges {
         let foot = gauge_foot(&site);
         let frame = Transform::from_translation(foot).with_rotation(Quat::from_rotation_arc(Vec3::X, site.direction));
         let bottom = Vec3::new(0.0, 0.6, 0.02);
@@ -124,8 +124,13 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
             gauge.spawn((Mesh3d(panel.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(bottom + Vec3::new(0.0, GAUGE_HEIGHT / 2.0, -0.02))));
             // The rating: the top of the scale.
             gauge.spawn((Mesh3d(line.clone()), MeshMaterial3d(mark.clone()), Transform::from_translation(bottom + Vec3::new(0.0, GAUGE_HEIGHT, 0.02))));
+            if let Some(floor) = floor {
+                // The bottom of the band: the dial will not turn below it.
+                let at = GAUGE_HEIGHT * (floor / limit) as f32;
+                gauge.spawn((Mesh3d(line.clone()), MeshMaterial3d(mark.clone()), Transform::from_translation(bottom + Vec3::new(0.0, at, 0.02))));
+            }
             gauge.spawn((
-                GaugeFill { puzzle, fixed, limit, level: 0.0, bottom },
+                GaugeFill { puzzle, limit, floor: floor.unwrap_or(0.0), level: 0.0, bottom },
                 Mesh3d(fill.clone()),
                 MeshMaterial3d(material),
                 Transform::from_translation(bottom).with_scale(Vec3::new(1.0, 0.001, 1.0)),
@@ -185,8 +190,9 @@ fn follow_blueprint(
         transform.rotation = Quat::from_axis_angle(arm.axis, arm.angle) * arm.base;
     }
     for (mut gauge, mut transform, material) in &mut fills {
-        let speed = gauge.fixed.unwrap_or_else(|| typed(&game, &ui, gauge.puzzle, "speed", Dim::SPEED).map_or(0.0, |q| q.value.max(0.0)));
-        let over = speed > gauge.limit;
+        let speed = typed(&game, &ui, gauge.puzzle, "speed", Dim::SPEED).map_or(0.0, |q| q.value.max(0.0));
+        // Outside what the launcher accepts: too fast, or (on a banded dial) too slow.
+        let over = speed > gauge.limit || (speed > 0.0 && speed < gauge.floor);
         let target = (speed / gauge.limit).min(1.0) as f32;
         gauge.level += (target - gauge.level) * ease;
         let height = (gauge.level * GAUGE_HEIGHT).max(0.001);

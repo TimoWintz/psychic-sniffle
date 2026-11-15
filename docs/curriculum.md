@@ -110,28 +110,37 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 2 — Across the canyon
 
-- **Brief.** Land a salvage crate on the platform across the canyon. The ledge launcher's governor is
-  jammed: it fires horizontally at its rated speed and nothing else. It rides in a jack frame at the
-  rim; every crate slid into the frame raises it one metre.
-- **Investigate.** Ruler: horizontal distance from the release point to the platform centre, and the
+- **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
+  horizontally, but its damaged dial turns only within a band (`vmin` to `vmax`), and from the bare
+  ledge no speed in the band reaches the strip. The launcher rides in a jack frame at the rim; every
+  crate slid into the frame raises it one metre.
+- **Investigate.** Ruler: horizontal distance from the release point to the strip's centre, and the
   drop to it (the release point's pin rises with the launcher). The rating plate on the station gives
-  the speed, with a button to note it (`v1`).
+  the band, with a button to note it (`vmin`, `vmax`).
 - **Try it first.** "One crate dropped, one fired sideways, at the same moment: which reaches the
   canyon floor first?" Both at once. The test crates leave from wherever the launcher stands. The fired
   crate is slow enough to land mid-canyon; both fall the launcher's height plus the canyon's depth, not
-  the drop to the platform, so the time is not the puzzle's. Writes *Horizontal and vertical motion are
+  the drop to the strip, so the time is not the puzzle's. Writes *Horizontal and vertical motion are
   independent*.
-- **Build.** Eight salvage crates lie on the ledge. The player carries them (`F`) into the jack frame,
-  or takes them out again. The blueprint shows the frame's crates instead of a typed value, and the
-  save keeps them.
-- **Pass.** The crate lands on the platform (centre ± 1.5 m).
-- **Relations.** `t = d / v`, `h = ½ g t²`; crates = `h −` the ledge's height.
-- **Design of the numbers.** One crate moves the landing by about `d / (2H)` for a release height `H`,
-  so the ledge is low (3 to 5 m above the platform), the right stack is 2 to 5 crates, and the platform
-  far (`d ≥ 4.2 H`). Exactly one stack from 0 to 8 lands on the platform, within 0.5 m of its centre,
-  and a crate more or fewer misses it by at least 0.5 m past its edge. The speed is rounded to 0.1 m/s
-  on the plate. These numbers are drawn after all the others, so the rest of an older save's island
-  stays as it was.
+- **Build, then compute.** Work out which release heights the band allows, carry crates (`F`) from
+  the pile of eight on the ledge into the frame, then type the speed for the height built. The
+  blueprint shows the frame's crates beside the typed speed, and the save keeps them. A speed outside
+  the band is refused before launch and costs nothing, so a wrong stack shows up for free once the
+  speed for it has been worked out.
+- **Pass.** The crate lands on the strip (one block long, so centre ± 0.5 m).
+- **Relations.** `v = d / sqrt(2H/g)` for a release height `H`; the band allows
+  `g d² / (2 vmax²) ≤ H ≤ g d² / (2 vmin²)`; crates = `H −` the ledge's height, in whole metres.
+- **Design of the numbers.** The ledge is 3 to 5 m above the strip and the strip 22 to 42 m out. The
+  band is placed halfway between the speeds that neighbouring stacks need, so that one or two stacks
+  between 1 and 6 crates are inside it, and no stack's speed is within 1.5 % of either end: a
+  player's own `g` (good to about 0.5 %) never tips a stack in or out. Both ends are rounded to
+  0.1 m/s on the plate. The longest shot the dial allows, from a full frame, still comes down on the
+  flat ground beyond the canyon. These numbers are drawn after all the others, so the rest of an older
+  save's island stays as it was.
+- **Guessing.** A player who guesses but uses every miss well (halving the band on the side the miss
+  points to, and moving a crate when it runs out) needs 7.6 tests on average and is done within three
+  in about a third of saves. The old typed-speed canyon took 3.9 (a third within three); the first crate
+  version, with a fixed speed, 2.8 (three quarters within three). A test in `puzzle.rs` keeps it so.
 
 ### Puzzle 3 — Over the ridge (capstone)
 

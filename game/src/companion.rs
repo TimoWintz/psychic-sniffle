@@ -375,7 +375,7 @@ fn direct(
                 && !companion.nudged[p]
             {
                 companion.nudged[p] = true;
-                companion.say("This launcher's speed is stuck. Its height is not: the crates on the ledge fit the frame at the rim.");
+                companion.say("Its dial only turns so far. The crates on the ledge fit the frame at the rim and raise the launcher.");
             }
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;

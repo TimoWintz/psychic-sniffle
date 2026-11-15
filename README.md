@@ -32,8 +32,9 @@ E use a station (E or Esc leaves) · F pick up and put down · R measure once wi
 N notebook and calculator · H handbook · T (or click the eye) Lumen. N, H and T expand and reduce panels
 that stay on screen.
 
-At the canyon the launcher's speed is fixed; you set its height by carrying salvage crates into the
-jack frame under it, one metre each.
+At the canyon the launcher's dial only turns within a band, too slow for the bare ledge: work out how
+high it must stand, carry salvage crates into the jack frame under it (one metre each), then set the
+speed for the height you built.
 
 ![Five crates in the jack frame raise the ledge launcher five metres](docs/screenshots/crates.png)
 

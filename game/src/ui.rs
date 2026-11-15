@@ -402,21 +402,22 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
 
 /// The ledge launcher's rating plate: its one speed, which can be noted like a ruler reading.
 fn rating_plate(ui: &mut egui::Ui, game: &mut Game) {
-    let speed = Quantity::speed(game.layout.canyon_speed);
+    let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(format!("Rating plate: fires at {} only (governor jammed).", speed.display())).strong());
+        ui.label(RichText::new(format!("Rating plate: the damaged dial turns only from {} to {}.", low.display(), high.display())).strong());
         let noted = game.save.notebook.entries.iter().any(|e| e.source == "plate");
-        if ui.add_enabled(!noted, egui::Button::new("Note")).on_hover_text("Write it in the notebook").clicked() {
+        if ui.add_enabled(!noted, egui::Button::new("Note")).on_hover_text("Write both ends in the notebook, as vmin and vmax").clicked() {
             note_plate(game);
         }
     });
 }
 
-/// Write the ledge launcher's rated speed into the notebook, as the plate's Note button does.
-pub fn note_plate(game: &mut Game) -> String {
-    let name = game.save.notebook.add_numbered("v", "rated speed of the ledge launcher", Quantity::speed(game.layout.canyon_speed), "plate");
+/// Write the ends of the ledge launcher's speed band into the notebook, as the plate's Note button does.
+pub fn note_plate(game: &mut Game) {
+    let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
+    game.save.notebook.set("vmin", "lowest speed of the ledge launcher's dial", low, "plate");
+    game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, "plate");
     game.persist();
-    name
 }
 
 /// The station's free experiment: a guess first, then the world shows what happens.

@@ -70,6 +70,13 @@ pub struct Sites {
     pub cargo_cell: IVec3,
     /// Corners (inclusive) of the ground beside the rail start where the cargo crate may be put down.
     pub cargo_yard: [IVec3; 2],
+    /// The haul track: the point on the track (at ground level, on its centre line) where the haul
+    /// cart's front coupler stands at the start, and the way the cart and the crawler run. Distances
+    /// along the track are measured from here (see [`Sites::haul_at`]).
+    pub haul_start: Vec3,
+    pub haul_direction: Vec3,
+    /// Where the crawler's rear coupler starts, in metres along the track (its head start).
+    pub crawler_start: f32,
     /// Underside of the test mass at rest, and where it lands.
     pub tower_release: Vec3,
     pub tower_plate: Vec3,
@@ -107,6 +114,18 @@ pub struct Sites {
     pub sites: Vec<[IVec2; 2]>,
 }
 
+impl Sites {
+    /// A point on the haul track's centre line, `s` metres along it from the haul cart's start.
+    pub fn haul_at(&self, s: f64) -> Vec3 {
+        self.haul_start + self.haul_direction * s as f32
+    }
+}
+
+/// Block the haul cart's front coupler starts on, and the row the haul track runs along. The track
+/// runs west, so a side view of a test looks north at it from the beach, clear of the drop tower
+/// and the survey mast.
+const HAUL_X: i32 = OX + 58;
+const HAUL_ROW: i32 = OZ + 10;
 /// Block the rail cart starts on, and the row the supply rail runs along (eastward).
 const RAIL_X: i32 = OX + 28;
 const RAIL_ROW: i32 = OZ + 47;
@@ -153,8 +172,8 @@ struct Plan {
     zones: Vec<Rect>,
     /// Ground the tests' side-view cameras look across: kept low, no tall plants.
     corridors: Vec<Rect>,
-    /// Where the rail test's camera looks from: nothing taller than a crystal.
-    rail_view: Rect,
+    /// Where the rail's and the haul track's test cameras look from: nothing taller than a crystal.
+    views: Vec<Rect>,
 }
 
 impl Plan {
@@ -167,6 +186,8 @@ impl Plan {
             Rect::local(10, 16, 46, 50),
             // Supply rail.
             Rect::local(22, 40, 58, 52),
+            // Haul track, from its buffer to the station by the haul cart.
+            Rect::new(HAUL_X - Ch1Layout::HAUL_LENGTH as i32 - 4, HAUL_ROW - 6, HAUL_X + 7, HAUL_ROW + 4),
             // Ramp foot, outcrop and the launch line out past the canyon.
             Rect::local(34, 50, 142, 62),
             // The canyon, rim to rim.
@@ -180,10 +201,15 @@ impl Plan {
         let corridors = vec![
             Rect::local(18, 48, 62, 100),
             Rect::local(20, 23, 46, 60),
+            Rect::new(HAUL_X - Ch1Layout::HAUL_LENGTH as i32 - 6, HAUL_ROW - 30, HAUL_X + 8, HAUL_ROW),
             Rect::local(60, 59, 148, 140),
             Rect::new(OX + 30, RIDGE_ROW + 3, OX + 142, WORLD_SIZE.z),
         ];
-        Plan { zones, corridors, rail_view: Rect::local(18, 48, 62, 100) }
+        let views = vec![
+            Rect::local(18, 48, 62, 100),
+            Rect::new(HAUL_X - Ch1Layout::HAUL_LENGTH as i32 - 4, HAUL_ROW - 30, HAUL_X + 8, HAUL_ROW - 1),
+        ];
+        Plan { zones, corridors, views }
     }
 
     fn zone_distance(&self, x: i32, z: i32) -> f32 {
@@ -250,7 +276,48 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         stakes.push(Vec3::new(marker_x as f32 + 0.5, ground, z));
     }
 
-    // --- Puzzle 1: drop tower and survey mast -------------------------------------------------
+    // --- Puzzle 1: the haul track ---------------------------------------------------------------
+    // A steel track flush with the turf, running west to a buffer. The haul cart's front coupler and
+    // the crawler's rear coupler start on concrete marks; the transfer marker crosses the track. The
+    // two timing posts stand on the far (north) side, with the transfer crane's mast. The survey pins
+    // sit on the near side of the track, where the cart and the crawler do not hide them.
+    let haul_len = Ch1Layout::HAUL_LENGTH as i32;
+    // Block whose centre is `s` metres along the track (the track runs towards -x).
+    let haul_block = |s: u32| HAUL_X - s as i32;
+    // The crawler stops with its rear coupler at the track's length; its body reaches a metre and a
+    // half further, to the buffer.
+    world.fill(IVec3::new(HAUL_X - haul_len - 1, GROUND - 1, HAUL_ROW), IVec3::new(HAUL_X + 2, GROUND - 1, HAUL_ROW), Material::Steel);
+    world.set(IVec3::new(HAUL_X - haul_len - 2, GROUND, HAUL_ROW), Material::Steel);
+    world.set(IVec3::new(HAUL_X, GROUND - 1, HAUL_ROW - 1), Material::Concrete);
+    world.set(IVec3::new(haul_block(layout.head_start), GROUND - 1, HAUL_ROW - 1), Material::Concrete);
+    let transfer_x = haul_block(layout.transfer_at);
+    world.fill(IVec3::new(transfer_x, GROUND - 1, HAUL_ROW - 1), IVec3::new(transfer_x, GROUND - 1, HAUL_ROW + 1), Material::Marker);
+    for z in [HAUL_ROW as f32 - 1.7, HAUL_ROW as f32 + 2.7] {
+        stakes.push(Vec3::new(transfer_x as f32 + 0.5, ground, z));
+    }
+    // The transfer crane: a mast beyond the far side of the marker, its jib reaching to the track's edge.
+    world.fill(IVec3::new(transfer_x, GROUND, HAUL_ROW + 2), IVec3::new(transfer_x, GROUND + 4, HAUL_ROW + 2), Material::Steel);
+    world.set(IVec3::new(transfer_x, GROUND + 4, HAUL_ROW + 1), Material::Steel);
+    let (post_a, post_b) = layout.posts();
+    for post in [post_a, post_b] {
+        world.fill(IVec3::new(haul_block(post), GROUND, HAUL_ROW + 1), IVec3::new(haul_block(post), GROUND + 1, HAUL_ROW + 1), Material::Steel);
+        world.set(IVec3::new(haul_block(post), GROUND + 2, HAUL_ROW + 1), Material::Marker);
+    }
+    let haul_start = Vec3::new(HAUL_X as f32 + 0.5, ground, HAUL_ROW as f32 + 0.5);
+    let haul_direction = Vec3::NEG_X;
+    let along = |s: u32| haul_start + haul_direction * s as f32;
+    let near = Vec3::NEG_Z;
+    let haul_pins = [
+        Pin { position: along(0) + near, label: "Haul cart: front coupler" },
+        Pin { position: along(layout.head_start) + near, label: "Crawler: rear coupler" },
+        Pin { position: along(layout.transfer_at) + near, label: "Transfer marker: centre" },
+        // On top of the posts, where they can be seen and clicked.
+        Pin { position: along(post_a) + Vec3::new(0.0, 3.0, 1.0), label: "Timing post A" },
+        Pin { position: along(post_b) + Vec3::new(0.0, 3.0, 1.0), label: "Timing post B" },
+    ];
+    let station_haul = IVec3::new(HAUL_X + 3, GROUND, HAUL_ROW - 3);
+
+    // --- Puzzle 2: drop tower and survey mast -------------------------------------------------
     let gantry = |world: &mut VoxelWorld, base: IVec3, height: i32| -> (Vec3, Vec3) {
         // A steel column with an arm; the mass hangs under the end of the arm, two blocks out. It
         // stands on a poured footing that runs out under the landing plate, with three steel feet.
@@ -276,7 +343,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // The light gate rests on a stand on the station's apron until it is clamped on the tower.
     let gate_stand = Vec3::new(TOWER.x as f32 + 3.5, ground, TOWER.z as f32 + 3.5);
 
-    // --- Puzzle 2: ledge, canyon, platform ----------------------------------------------------
+    // --- Puzzle 3: ledge, canyon, platform ----------------------------------------------------
     let ledge_top = GROUND + layout.ledge_h as i32;
     outcrop(&mut world, layout.ledge_h as i32);
     canyon(&mut world, layout);
@@ -309,7 +376,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         .collect();
     let crate_yard = [IVec3::new(LEDGE_X + 1, ledge_top, CANYON_ROW - 4), IVec3::new(CANYON_X - 2, ledge_top + 2, CANYON_ROW - 1)];
 
-    // --- Puzzle 3: tilting launcher, ridge, pad -----------------------------------------------
+    // --- Puzzle 4: tilting launcher, ridge, pad -----------------------------------------------
     let ridge_x = RIDGE_LAUNCH_X + layout.ridge_x as i32;
     ridge(&mut world, ridge_x, layout.ridge_h as i32);
     let pad_mid = RIDGE_LAUNCH_X + layout.pad_centre.floor() as i32;
@@ -374,18 +441,21 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     pins.push(rail_marker_pin);
     let gate_pin = pins.len();
     pins.push(Pin { position: Pin::AWAY, label: "Light gate" });
+    // The haul track's came last of all.
+    pins.extend(haul_pins);
 
     // Worn paths from the wreck past each station in turn, then on to the shipyard.
     let ramp_foot = LEDGE_X - layout.ledge_h as i32 - 2;
     path(&mut world, &[(OX + 24, OZ + 46), (OX + 30, OZ + 42), (OX + 34, OZ + 38), (station1.x, station1.z + 1)]);
+    path(&mut world, &[(OX + 34, OZ + 38), (OX + 46, OZ + 28), (OX + 56, OZ + 16), (station_haul.x, station_haul.z + 1)]);
     path(&mut world, &[(station1.x + 1, station1.z + 1), (OX + 42, OZ + 43), (OX + 46, OZ + 50), (ramp_foot, CANYON_ROW)]);
     path(&mut world, &[(ramp_foot, CANYON_ROW + 1), (ramp_foot - 2, OZ + 66), (OX + 42, OZ + 82), (OX + 38, OZ + 94), (station3.x + 1, station3.z - 1)]);
     path(&mut world, &[(station3.x + 2, RIDGE_ROW - 3), (ridge_x - 3, RIDGE_ROW - 14), (ridge_x + 6, RIDGE_ROW - 14), (pad_mid - 3, RIDGE_ROW - 4), (yard_x, RIDGE_ROW)]);
 
     // Station consoles, each in a small camp of salvage: a plated apron, a quartz lantern and crates.
-    let stations = [station0, station1, station2, station3];
-    let lamps = [IVec2::new(-2, -2), IVec2::new(2, 1), IVec2::new(-2, 2), IVec2::new(-2, 2)];
-    let crates = [IVec2::new(2, -1), IVec2::new(-2, 1), IVec2::new(2, 1), IVec2::new(2, 2)];
+    let stations = [station0, station_haul, station1, station2, station3];
+    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -1), IVec2::new(2, 1), IVec2::new(-2, 2), IVec2::new(-2, 2)];
+    let crates = [IVec2::new(2, -1), IVec2::new(2, 1), IVec2::new(-2, 1), IVec2::new(2, 1), IVec2::new(2, 2)];
     for (i, console) in stations.into_iter().enumerate() {
         camp(&mut world, console, crates[i]);
         lanterns.push(console.as_vec3() + Vec3::new(lamps[i].x as f32 + 0.5, 0.0, lamps[i].y as f32 + 0.5));
@@ -399,6 +469,9 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         cart: rail_start,
         cargo_cell,
         cargo_yard,
+        haul_start,
+        haul_direction,
+        crawler_start: layout.head_start as f32,
         tower_release,
         tower_plate,
         gate_stand,
@@ -721,7 +794,7 @@ fn flora(world: &mut VoxelWorld, plan: &Plan) {
             let roll = hash01(IVec3::new(x, 503, z));
             let shape = hash01(IVec3::new(x, 504, z));
             let grove = fbm(x as f32 / 26.0, z as f32 / 26.0, 81, 2);
-            if plan.rail_view.distance(x, z) < 6.0 {
+            if plan.views.iter().any(|v| v.distance(x, z) < 6.0) {
                 if roll < 0.12 {
                     quartz(world, base, 0.0);
                 }
@@ -1030,6 +1103,38 @@ mod tests {
                 }
             }
             assert_eq!(sites.cart, sites.rail_start, "the island is built with the cart at its start");
+        }
+    }
+
+    #[test]
+    fn the_haul_track_is_clear_and_measures_true() {
+        for seed in 0..200 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            let pin = |label: &str| sites.pins.iter().find(|p| p.label == label).unwrap().position;
+            let across = |a: Vec3, b: Vec3| (b - a).with_y(0.0).dot(sites.haul_direction);
+            let start = pin("Haul cart: front coupler");
+            // The ruler's readings between the pins are the distances the puzzle judges.
+            assert_eq!(across(start, pin("Crawler: rear coupler")), layout.head_start as f32, "seed {seed}");
+            assert_eq!(across(start, pin("Transfer marker: centre")), layout.transfer_at as f32, "seed {seed}");
+            assert_eq!((pin("Timing post B") - pin("Timing post A")).with_y(0.0).length(), layout.post_gap as f32, "seed {seed}");
+            assert_eq!(across(start, pin("Timing post A")), layout.posts().0 as f32, "seed {seed}");
+            let marker = sites.haul_at(layout.transfer_at as f64);
+            assert_eq!(world.get((marker - Vec3::Y * 0.5).floor().as_ivec3()), Material::Marker, "seed {seed}");
+            for s in [-0.4, 0.4] {
+                let edge = sites.haul_at(layout.transfer_at as f64 + s);
+                assert_eq!(world.get((edge - Vec3::Y * 0.5).floor().as_ivec3()), Material::Marker, "seed {seed}");
+            }
+
+            // Nothing stands in the way of the cart or the crawler over the whole track, up to the buffer.
+            let end = Ch1Layout::HAUL_LENGTH as f64 + 1.4;
+            for k in -2..=(end * 2.0) as i32 {
+                let p = sites.haul_at(k as f64 / 2.0);
+                assert_eq!(world.surface(p.x.floor() as i32, p.z.floor() as i32), GROUND, "seed {seed}: track blocked at {} m", k as f64 / 2.0);
+                assert!(!world.box_collides(p + Vec3::new(-0.45, 0.01, -0.45), p + Vec3::new(0.45, 1.0, 0.45)), "seed {seed}: something on the track at {} m", k as f64 / 2.0);
+            }
+            let buffer = sites.haul_at(end + 0.6).floor().as_ivec3();
+            assert!(world.is_solid(buffer), "seed {seed}: no buffer at the track's end");
         }
     }
 

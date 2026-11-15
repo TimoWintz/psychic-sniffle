@@ -45,6 +45,29 @@ enum Running {
     MastDrop { puzzle: usize, t: f32, predicted: f32, actual: f32, verdict: Verdict },
     Flight { puzzle: usize, t: f32, projectile: Projectile, flight: Flight, site: LaunchSite, verdict: Verdict },
     Slide { puzzle: usize, t: f32, distance: f32, duration: f32, verdict: Verdict },
+    /// The haul cart and the crawler set off from their marks at steady speeds; a flash marks both at
+    /// each of `flashes`. Positions are along the track (the cart's front coupler, the crawler's rear).
+    Pace { puzzle: usize, t: f32, flashes: Vec<f64>, shown: usize, guess: Option<usize>, run: Run },
+    /// The haul cart sent after the crawler, until it reaches it or the crawler reaches the buffer.
+    Chase { puzzle: usize, t: f32, run: Run, verdict: Verdict },
+}
+
+/// The haul cart and the crawler on the move: both from their marks, each at its steady speed, for
+/// `end` seconds.
+#[derive(Clone, Copy)]
+struct Run {
+    cart_speed: f32,
+    crawler_speed: f32,
+    head_start: f32,
+    end: f32,
+}
+
+impl Run {
+    /// Where the cart's front coupler and the crawler's rear coupler are at `t`, along the track.
+    fn at(&self, t: f32) -> (f32, f32) {
+        let t = t.clamp(0.0, self.end);
+        (self.cart_speed * t, self.head_start + self.crawler_speed * t)
+    }
 }
 
 /// A judged attempt, kept back until the world has shown what happened.
@@ -78,8 +101,10 @@ impl Sim {
     /// The puzzle whose test is running, if one is (a demonstration is not a test).
     pub fn testing(&self) -> Option<usize> {
         match &self.running {
-            Some(Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. }) => Some(*puzzle),
-            Some(Running::Strobe { .. } | Running::Pair { .. }) | None => None,
+            Some(
+                Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. } | Running::Chase { puzzle, .. },
+            ) => Some(*puzzle),
+            Some(Running::Strobe { .. } | Running::Pair { .. } | Running::Pace { .. }) | None => None,
         }
     }
 
@@ -91,7 +116,7 @@ impl Sim {
     /// The puzzle whose demonstration is running, if one is.
     pub fn demo(&self) -> Option<usize> {
         match &self.running {
-            Some(Running::Strobe { puzzle, .. } | Running::Pair { puzzle, .. }) => Some(*puzzle),
+            Some(Running::Strobe { puzzle, .. } | Running::Pair { puzzle, .. } | Running::Pace { puzzle, .. }) => Some(*puzzle),
             _ => None,
         }
     }
@@ -114,6 +139,10 @@ enum Prop {
     Cart,
     /// The cart's cargo crate, while it is loaded: it rides on the cart.
     Cargo,
+    /// The haul cart, behind its front coupler.
+    HaulCart,
+    /// The survey crawler, ahead of its rear coupler.
+    Crawler,
 }
 
 /// A body handed to the physics engine after a test; removed when its time is up.
@@ -147,6 +176,8 @@ struct PropAssets {
     pair: [Handle<StandardMaterial>; 2],
     afterimage: Handle<StandardMaterial>,
     mass: Handle<Mesh>,
+    /// The haul cart's and the crawler's shapes, for their afterimages.
+    haul: [Handle<Mesh>; 2],
 }
 
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
@@ -154,6 +185,20 @@ const CRATE_SIZE: Vec3 = Vec3::new(0.9, 0.9, 0.9);
 const BEAM_SIZE: Vec3 = Vec3::new(2.4, 0.5, 0.5);
 const CART_SIZE: Vec3 = Vec3::new(0.9, 0.7, 0.9);
 const CARGO_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
+/// The haul cart and the crawler, as long along the track as the first number. The crawler's body
+/// ends short of the buffer when its rear coupler is at the track's length.
+const HAUL_CART_SIZE: Vec3 = Vec3::new(0.9, 0.7, 0.9);
+const CRAWLER_SIZE: Vec3 = Vec3::new(1.4, 0.9, 0.9);
+
+/// Centre of the haul cart with its front coupler `s` metres along the track.
+fn haul_cart_centre(sites: &Sites, s: f32) -> Vec3 {
+    sites.haul_at((s - HAUL_CART_SIZE.x / 2.0) as f64) + Vec3::Y * HAUL_CART_SIZE.y / 2.0
+}
+
+/// Centre of the crawler with its rear coupler `s` metres along the track.
+fn crawler_centre(sites: &Sites, s: f32) -> Vec3 {
+    sites.haul_at((s + CRAWLER_SIZE.x / 2.0) as f64) + Vec3::Y * CRAWLER_SIZE.y / 2.0
+}
 
 fn prop_size(prop: Prop) -> Vec3 {
     match prop {
@@ -162,6 +207,8 @@ fn prop_size(prop: Prop) -> Vec3 {
         Prop::Beam => BEAM_SIZE,
         Prop::Cart => CART_SIZE,
         Prop::Cargo => CARGO_SIZE,
+        Prop::HaulCart => HAUL_CART_SIZE,
+        Prop::Crawler => CRAWLER_SIZE,
     }
 }
 
@@ -186,6 +233,8 @@ fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
         Prop::Beam => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
         Prop::Cart => sites.rail_start + half,
         Prop::Cargo => sites.rail_start + Vec3::Y * CART_SIZE.y + half,
+        Prop::HaulCart => haul_cart_centre(sites, 0.0),
+        Prop::Crawler => crawler_centre(sites, sites.crawler_start),
     }
 }
 
@@ -204,6 +253,7 @@ pub(crate) fn setup(
     let timber = solid(&mut materials, Material::Timber.properties().colour);
     let timber_cargo = timber.clone();
     let alloy = solid(&mut materials, Material::HullAlloy.properties().colour);
+    let crawler = solid(&mut materials, [0.92, 0.78, 0.22]);
     let ghost = materials.add(StandardMaterial {
         base_color: Color::srgba(0.4, 0.8, 1.0, 0.35),
         alpha_mode: AlphaMode::Blend,
@@ -218,6 +268,8 @@ pub(crate) fn setup(
         (Prop::Beam, alloy.clone(), true),
         (Prop::Cart, steel.clone(), true),
         (Prop::Cargo, timber_cargo, false),
+        (Prop::HaulCart, steel.clone(), true),
+        (Prop::Crawler, crawler, true),
     ] {
         let mut body = commands.spawn((
             prop,
@@ -265,6 +317,7 @@ pub(crate) fn setup(
         pair,
         afterimage,
         mass: meshes.add(Cuboid::from_size(MASS_SIZE)),
+        haul: [meshes.add(Cuboid::from_size(HAUL_CART_SIZE)), meshes.add(Cuboid::from_size(CRAWLER_SIZE))],
     });
 }
 
@@ -344,6 +397,17 @@ fn handle_requests(
                     orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X);
                     Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
                 }
+                DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } => {
+                    for mark in &marks {
+                        commands.entity(mark).despawn();
+                    }
+                    sim.strobe.clear();
+                    let run = Run { cart_speed: cart_speed as f32, crawler_speed: crawler_speed as f32, head_start: head_start as f32, end: duration as f32 };
+                    let (_, crawler_end) = run.at(run.end);
+                    frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
+                    sim.trails = PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect();
+                    Running::Pace { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, run }
+                }
                 DemoPlayback::DropAndFire { dropped, fired } => {
                     let site = sites.canyon_launch;
                     let low = site.at(0.0, dropped.flight.y, ground);
@@ -385,6 +449,16 @@ fn handle_requests(
                     orbit.frame_side_view(site.at(0.0, projectile.y0, ground).min(end), highest.max(end), site.direction);
                     Running::Flight { puzzle, t: 0.0, projectile, flight, site, verdict: Verdict { values, outcome } }
                 }
+                Playback::Chase { cart_speed, crawler_speed, head_start, t } => {
+                    // The experiment's afterimages would stand on the track the test runs along.
+                    for mark in &marks {
+                        commands.entity(mark).despawn();
+                    }
+                    let run = Run { cart_speed: cart_speed as f32, crawler_speed: crawler_speed as f32, head_start: head_start as f32, end: t as f32 };
+                    let (_, crawler_end) = run.at(run.end);
+                    frame_track(&mut orbit, &sites, crawler_end.max(game.layout.transfer_at as f32) + CRAWLER_SIZE.x);
+                    Running::Chase { puzzle, t: 0.0, run, verdict: Verdict { values, outcome } }
+                }
                 Playback::Slide { distance } => {
                     let reach = distance.max(game.layout.rail_target as f64) as f32;
                     orbit.frame_side_view(sites.rail_start, sites.rail_start + Vec3::new(reach, 2.0, 0.0), Vec3::X);
@@ -394,6 +468,27 @@ fn handle_requests(
             });
         }
     }
+}
+
+/// Look at the haul track from the side, from just behind the cart's start to `reach` metres along it.
+fn frame_track(orbit: &mut OrbitCamera, sites: &Sites, reach: f32) {
+    let (a, b) = (sites.haul_at(-1.5), sites.haul_at(reach as f64 + 0.5));
+    orbit.frame_side_view(a.min(b), a.max(b) + Vec3::Y * 2.0, sites.haul_direction);
+}
+
+/// Put the haul cart and the crawler where a run has them at `t`. Returns where the action is: between
+/// the two, which is where the eye should be.
+fn place_haul(sites: &Sites, run: &Run, t: f32, props: &mut Query<(&Prop, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>)>) -> Vec3 {
+    let (cart, crawler) = run.at(t);
+    let (cart, crawler) = (haul_cart_centre(sites, cart), crawler_centre(sites, crawler));
+    for (prop, mut transform, _, _) in props.iter_mut() {
+        match prop {
+            Prop::HaulCart => transform.translation = cart,
+            Prop::Crawler => transform.translation = crawler,
+            _ => {}
+        }
+    }
+    (cart + crawler) / 2.0
 }
 
 /// A commit at a station, up to the verdict: refused for free (the reason goes to `ui.refusal`), or
@@ -561,6 +656,45 @@ fn advance(
                 return;
             }
         }
+        Running::Pace { puzzle, t, flashes, shown, guess, run } => {
+            *t += dt;
+            // Each flash leaves an afterimage of both, side by side in time along the track.
+            while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
+                let (cart, crawler) = run.at(flashes[*shown] as f32);
+                for (mesh, centre) in [(0, haul_cart_centre(&sites, cart)), (1, crawler_centre(&sites, crawler))] {
+                    commands.spawn((StrobeMark, Mesh3d(assets.haul[mesh].clone()), MeshMaterial3d(assets.afterimage.clone()), Transform::from_translation(centre)));
+                }
+                *shown += 1;
+            }
+            let (cart, crawler) = run.at(*t);
+            for (k, s) in [cart, crawler].into_iter().enumerate() {
+                if let Some((trail, _)) = sim.trails.get_mut(k) {
+                    trail.push(sites.haul_at(s as f64) + Vec3::Y * 0.05);
+                }
+            }
+            sim.action = Some(place_haul(&sites, run, *t, &mut props));
+            if *t >= run.end {
+                note_crawler(&mut game);
+                let (puzzle, guess) = (*puzzle, *guess);
+                finish_demo(&mut game, &mut ui, puzzle, guess);
+                sim.running = None;
+                sim.watch_left = 2.5;
+                return;
+            }
+        }
+        Running::Chase { puzzle, t, run, verdict } => {
+            // Both run at their steady speeds from the moment they start: no easing. They stay where
+            // the run ended, so a miss can be looked at, until the next run.
+            *t += dt;
+            let (cart, _) = run.at(*t);
+            if let Some((trail, _)) = sim.trails.first_mut() {
+                trail.push(sites.haul_at(cart as f64) + Vec3::Y * 0.05);
+            }
+            sim.action = Some(place_haul(&sites, run, *t, &mut props));
+            if *t >= run.end {
+                finished = Some((*puzzle, verdict.clone()));
+            }
+        }
         Running::Pair { puzzle, t, shots, site, offsets, size, landed, guess } => {
             *t += dt;
             let flying = (*t - PAIR_HOLD).max(0.0) as f64;
@@ -709,13 +843,24 @@ fn advance(
     ui.results[puzzle] = Some(outcome);
 }
 
+/// What the stopwatch's readings are called in the notebook, at the haul track and at the drop tower.
+pub const CRAWLER_TIME: &str = "crawler's time between the timing posts";
+pub const TOWER_TIME: &str = "fall time from the drop tower";
+
+/// Write the stopwatch's reading of the crawler, from the first timing post to the second, into the
+/// notebook.
+pub fn note_crawler(game: &mut Game) {
+    let reading = Quantity::seconds(game.layout.crawler_time());
+    game.save.notebook.add_numbered("t", CRAWLER_TIME, reading, "stopwatch");
+}
+
 /// Write the stopwatch's reading of a release from the drop tower into the notebook: with the light
 /// gate clamped `gate` metres below the release, the drop and the time to the gate as a pair (`h2`,
 /// `t2`); without, the time of the whole drop.
 pub fn note_reading(game: &mut Game, gate: u32) {
     if gate == 0 {
         let reading = Quantity::seconds(game.layout.tower_fall_time());
-        game.save.notebook.add_numbered("t", "fall time from the drop tower", reading, "stopwatch");
+        game.save.notebook.add_numbered("t", TOWER_TIME, reading, "stopwatch");
     } else {
         let (drop, time) = (Quantity::metres(gate as f64), Quantity::seconds(game.layout.gate_time(gate)));
         game.save.notebook.add_pair(("h", "drop from the release point to the light gate", drop), ("t", "fall time to the light gate", time), "light gate");

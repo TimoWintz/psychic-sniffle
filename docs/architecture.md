@@ -132,7 +132,7 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
   land at their wrecks, nothing flies through the ground, no visible jumps, the hand-over ends on the
   player's view).
 - `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`) that drives
-  the game and writes screenshots. The tour loads the rail cart, times drops with the light gate at
-  two notches, and carries the canyon's crates into the jack frame. Headless, it runs under
+  the game and writes screenshots. The tour loads the rail cart, times the crawler and catches it,
+  times drops with the light gate at two notches, and carries the canyon's crates into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`
   installed) and takes about ten minutes.

@@ -4,7 +4,7 @@ A physics game. You are stranded on a block planet and build a ship, part by par
 by doing the physics it depends on. Measure the world, work out the values, commit, and see whether the
 world agrees. The ship's computer, Lumen, can explain anything and touch nothing.
 
-This repository holds the design and a playable slice: tier 1, chapter 1 (kinematics: a tutorial and three puzzles).
+This repository holds the design and a playable slice: tier 1, chapter 1 (kinematics: a tutorial and four puzzles).
 
 ![A test in progress](docs/screenshots/test.png)
 
@@ -33,7 +33,9 @@ N notebook and calculator · H handbook · T (or click the eye) Lumen. N, H and 
 that stay on screen.
 
 Some things are done with your hands. The supply rail's cart will not run until you have carried its
-cargo crate onto it. At the drop tower you can clamp a light gate at any metre of the tower and time
+cargo crate onto it. On the haul track a survey crawler runs at one steady speed you can only
+measure: time it between two posts, then set the haul cart's speed so it catches the crawler on the
+transfer marker. At the drop tower you can clamp a light gate at any metre of the tower and time
 the fall to it, short drops and long. At the canyon the launcher's dial only turns within a band, too
 slow for the bare ledge: work out how high it must stand, carry salvage crates into the jack frame
 under it (one metre each), then set the speed for the height you built.
@@ -76,7 +78,8 @@ GAME_SCRIPT=intro GAME_SEED=7 GAME_SAVE=/tmp/fp-intro.ron cargo run -p game
 GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 ```
 
-`tour` plays the chapter with the expressions a player would type, loads the rail cart, times drops
+`tour` plays the chapter with the expressions a player would type, loads the rail cart, times the
+crawler and catches it (once too soon, once on the marker), times drops
 with the light gate at two notches, carries the canyon's crates into the jack frame, and writes
 screenshots to `shots/`;
 `walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,

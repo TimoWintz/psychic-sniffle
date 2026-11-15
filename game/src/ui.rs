@@ -10,7 +10,7 @@
 use crate::carry::Carry;
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
-use crate::sim::{Request, Sim};
+use crate::sim::{CRAWLER_TIME, Request, Sim, TOWER_TIME};
 use crate::state::{Game, Mode, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
@@ -22,7 +22,7 @@ use physics_core::expr::evaluate;
 use physics_core::content::{DemoDef, PuzzleDef};
 use physics_core::materials::Material;
 use physics_core::progress::Quality;
-use physics_core::puzzle::{InputSource, Instance, Outcome, Playback, PuzzleKind};
+use physics_core::puzzle::{Ch1Layout, InputSource, Instance, Outcome, Playback, PuzzleKind};
 use physics_core::units::{Quantity, lookup_unit, sig};
 use tutor::Turn;
 
@@ -293,6 +293,9 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if def.kind == PuzzleKind::Ridge {
                     ui.label(RichText::new(format!("Launcher rating: {} maximum.", Quantity::speed(game.layout.v_max).display())).strong());
                 }
+                if def.kind == PuzzleKind::Chase {
+                    ui.label(RichText::new(format!("Haul cart rating: {} top speed.", Quantity::speed(Ch1Layout::CART_TOP_SPEED).display())).strong());
+                }
                 if def.kind == PuzzleKind::Canyon {
                     rating_plate(ui, game);
                 }
@@ -480,7 +483,9 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         let line = if gate > 0 { format!("{}.", capitalise(&built)) } else { format!("Light gate: none fitted, so {}.", built.trim_start_matches("no light gate on the drop tower: ")) };
         ui.label(RichText::new(line).color(if gate > 0 { Color32::WHITE } else { DIM }));
         let entries = &game.save.notebook.entries;
-        let last = entries.iter().rposition(|e| e.source == "stopwatch" || (e.source == "light gate" && e.quantity.dim == physics_core::units::Dim::TIME));
+        let last = entries
+            .iter()
+            .rposition(|e| (e.source == "stopwatch" && e.label == TOWER_TIME) || (e.source == "light gate" && e.quantity.dim == physics_core::units::Dim::TIME));
         match last.map(|i| &entries[i]) {
             Some(time) if time.source == "light gate" => {
                 let number = time.name.trim_start_matches('t');
@@ -490,6 +495,13 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
             }
             Some(time) => ui.label(format!("Stopwatch: {} = {}", time.name, time.quantity.display())),
             None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),
+        };
+    }
+    if game.def(puzzle).kind == PuzzleKind::Chase {
+        // The last time the stopwatch took of the crawler between the posts.
+        match game.save.notebook.entries.iter().rev().find(|e| e.label == CRAWLER_TIME) {
+            Some(time) => ui.label(format!("Stopwatch, post A to post B: {} = {}", time.name, time.quantity.display())),
+            None => ui.label(RichText::new("Stopwatch: no reading yet. Each run of the experiment times the crawler between the posts.").color(DIM)),
         };
     }
 }
@@ -581,6 +593,37 @@ fn result_section(ui: &mut egui::Ui, instance: &Instance, outcome: &Outcome) {
         painter.circle_filled(at(flight.x, flight.y), 4.0, end_colour);
         ui.label(RichText::new("Side view, to scale. Orange: target.").small().color(DIM));
     }
+    if let Playback::Chase { cart_speed, crawler_speed, head_start, t } = outcome.playback {
+        chase_graph(ui, &instance.layout, cart_speed, crawler_speed, head_start, t, outcome.pass);
+    }
+}
+
+/// Position along the haul track against time, for the cart and the crawler: two straight lines,
+/// since both run at steady speeds, that meet where the cart reached the crawler. The marker is a band.
+fn chase_graph(ui: &mut egui::Ui, layout: &Ch1Layout, cart_speed: f64, crawler_speed: f64, head_start: f64, end: f64, pass: bool) {
+    let x_max = Ch1Layout::HAUL_LENGTH as f64 + 1.0;
+    let t_max = end * 1.08 + 0.5;
+    let width = ui.available_width().min(400.0);
+    let height = 170.0;
+    let (response, painter) = ui.allocate_painter(egui::vec2(width, height), egui::Sense::hover());
+    let rect = response.rect.shrink2(egui::vec2(6.0, 6.0));
+    let at = |t: f64, x: f64| egui::pos2(rect.left() + (t / t_max) as f32 * rect.width(), rect.bottom() - (x / x_max) as f32 * rect.height());
+    painter.rect_filled(response.rect, 3.0, Color32::from_rgb(24, 30, 42));
+    let axis = egui::Stroke::new(1.0, Color32::from_rgb(90, 100, 120));
+    painter.line_segment([at(0.0, 0.0), at(t_max, 0.0)], axis);
+    painter.line_segment([at(0.0, 0.0), at(0.0, x_max)], axis);
+    let (m, half) = (layout.transfer_at as f64, Ch1Layout::TRANSFER_HALF);
+    painter.rect_filled(egui::Rect::from_two_pos(at(0.0, m - half), at(t_max, m + half)), 0.0, Color32::from_rgba_unmultiplied(240, 140, 20, 90));
+    let crawler = Color32::from_rgb(235, 200, 56);
+    let cart = Color32::from_rgb(255, 120, 100);
+    painter.line_segment([at(0.0, head_start), at(end, head_start + crawler_speed * end)], egui::Stroke::new(2.0, crawler));
+    painter.line_segment([at(0.0, 0.0), at(end, cart_speed * end)], egui::Stroke::new(2.0, cart));
+    painter.circle_filled(at(end, cart_speed * end), 4.0, if pass { GOOD } else { BAD });
+    ui.label(
+        RichText::new("Distance along the track against time. Red: the cart. Yellow: the crawler. Orange: the marker.")
+            .small()
+            .color(DIM),
+    );
 }
 
 fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {

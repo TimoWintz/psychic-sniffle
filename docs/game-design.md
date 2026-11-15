@@ -119,6 +119,9 @@ exactly. A placement on its own is a small choice (a handful of stacks), which a
 luck, so a built answer comes with a calculated one or a small target: guessing should cost at least
 as many tests as guessing a typed value, and every wrong stack also costs a walk with crates.
 
+How the canyon was built, what to reuse and the specifications of the tutorial's crate, the light
+gate and the catcher are in [handover-carry-and-place.md](handover-carry-and-place.md).
+
 ### What makes guessing a bad strategy
 
 - **Commit before test.** Values cannot be adjusted while the simulation runs.

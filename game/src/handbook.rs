@@ -18,8 +18,8 @@ use physics_core::units::sig;
 /// Earth's gravitational acceleration, for the pictures and the quizzes. The island's is never near
 /// it (see `Ch1Layout::G_EXCLUDED`).
 const EARTH_G: f64 = 9.81;
-/// The size of a picture, in interface points.
-const PICTURE: Vec2 = Vec2::new(470.0, 170.0);
+/// The widest a picture is drawn, in interface points.
+const PICTURE_WIDTH: f32 = 470.0;
 /// How long a finished scene holds still before it plays again, in seconds of the clock on the wall.
 const HOLD: f64 = 1.4;
 
@@ -51,13 +51,21 @@ pub fn timing(scene: Scene) -> Timing {
     }
 }
 
+/// How tall a scene's picture is, in interface points: the tall scenes get more room.
+pub fn picture_height(scene: Scene) -> f32 {
+    match scene {
+        Scene::AppleDrop => 260.0,
+        _ => 170.0,
+    }
+}
+
 /// The part of the scene the picture shows, in metres: left, right, bottom, top.
 pub fn view(scene: Scene) -> [f64; 4] {
     match scene {
         Scene::Tape => [-0.45, 2.6, -0.15, 1.15],
         Scene::Cyclist => [-2.0, 33.0, -1.5, 6.0],
         Scene::Overtake => [-8.0, 116.0, -3.0, 22.0],
-        Scene::AppleDrop => [-14.0, 16.0, -1.5, 23.0],
+        Scene::AppleDrop => [-14.0, 16.0, -1.5, 24.5],
         Scene::TableEdge => [-1.3, 1.6, -0.12, 1.25],
         Scene::KickSplit => [-2.0, 36.0, -1.5, 11.0],
         Scene::TwinKicks => [-2.0, 26.0, -1.0, 11.5],
@@ -221,8 +229,8 @@ fn scene_time(scene: Scene, anim: &Anim, now: f64) -> f64 {
 fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now: f64) {
     let scene = illustration.scene;
     let t = scene_time(scene, anim, now);
-    let width = ui.available_width().min(PICTURE.x);
-    let (response, painter) = ui.allocate_painter(egui::vec2(width, PICTURE.y), egui::Sense::hover());
+    let width = ui.available_width().min(PICTURE_WIDTH);
+    let (response, painter) = ui.allocate_painter(egui::vec2(width, picture_height(scene)), egui::Sense::hover());
     let rect = response.rect;
     let [x0, x1, y0, y1] = view(scene);
     let scale = (rect.width() as f64 / (x1 - x0)).min(rect.height() as f64 / (y1 - y0));
@@ -250,7 +258,11 @@ fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now:
         if timing.slow > 1.0 {
             clock.push_str(&format!("   ·   shown {}× slower", sig(timing.slow, 2)));
         }
-        painter.text(rect.left_top() + egui::vec2(8.0, 6.0), Align2::LEFT_TOP, clock, FontId::proportional(12.0), Color32::from_rgb(20, 30, 50));
+        // On a pale card, so it reads over whatever the scene draws beneath it.
+        let galley = painter.layout_no_wrap(clock, FontId::proportional(12.0), Color32::from_rgb(20, 30, 50));
+        let at = rect.left_top() + egui::vec2(6.0, 5.0);
+        painter.rect_filled(egui::Rect::from_min_size(at, galley.size() + egui::vec2(8.0, 4.0)), 3.0, Color32::from_rgba_unmultiplied(255, 255, 255, 190));
+        painter.galley(at + egui::vec2(4.0, 2.0), galley, Color32::BLACK);
     }
     painter.rect_stroke(rect, 4.0, Stroke::new(1.0, Color32::from_rgb(90, 100, 120)), egui::StrokeKind::Inside);
 
@@ -267,8 +279,9 @@ fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now:
             anim.start = now;
             anim.paused_at = anim.paused_at.map(|_| now);
         }
-        ui.label(RichText::new(&illustration.caption).small().color(DIM));
     });
+    // Under the buttons, so it wraps to the page's width instead of stretching it.
+    ui.label(RichText::new(&illustration.caption).small().color(DIM));
     if anim.paused_at.is_none() {
         ui.ctx().request_repaint();
     }

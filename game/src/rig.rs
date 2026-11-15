@@ -95,12 +95,15 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
     for (x, z) in [(0.07, -0.08), (0.93, -0.08), (0.07, 1.08), (0.93, 1.08)] {
         commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(steel.clone()), Transform::from_translation(frame_foot + Vec3::new(x, tall / 2.0, z))));
     }
-    let cradle = meshes.add(Cuboid::new(1.0, 0.12, 1.0));
-    let back_stop = meshes.add(Cuboid::new(0.1, 0.5, 0.9));
+    // The cradle caps the top crate: a little wider than a block and standing a little proud of its
+    // top, so its faces never share the crate's planes (which made them flicker).
+    let cradle = meshes.add(Cuboid::new(1.0 + 2.0 * CRADLE_LIP, CRADLE_H, 1.0 + 2.0 * CRADLE_LIP));
+    // Behind the load, clear of its back face and wider than it.
+    let back_stop = meshes.add(Cuboid::new(0.08, 0.5, 0.96));
     commands
         .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(dark.clone()), Transform::from_translation(cradle_at(&sites)), Visibility::default()))
         .with_children(|c| {
-            c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.45, 0.3, 0.0)));
+            c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.5, 0.3, 0.0)));
         });
 
     // A speed gauge beside each launcher, on the station's side, rated to the most it accepts and
@@ -139,9 +142,14 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
     }
 }
 
-/// Where the ledge launcher's cradle sits: on top of the jack frame's crates, under the load.
+/// How far the cradle reaches past the top crate's sides, and above its top.
+const CRADLE_LIP: f32 = 0.03;
+const CRADLE_PROUD: f32 = 0.02;
+const CRADLE_H: f32 = 0.14;
+
+/// Where the ledge launcher's cradle sits: capping the jack frame's top crate, under the load.
 fn cradle_at(sites: &Sites) -> Vec3 {
-    sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 - Vec3::Y * 0.06
+    sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + Vec3::Y * (CRADLE_PROUD - CRADLE_H / 2.0)
 }
 
 fn ride_the_stack(sites: Res<Sites>, mut cradle: Single<&mut Transform, With<Cradle>>) {

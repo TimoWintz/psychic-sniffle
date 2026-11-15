@@ -4,7 +4,7 @@
 //!
 //! The notebook, the handbook and Lumen are always on screen. Reduced, they show only their header
 //! (Lumen: its eye); their key, or a click on the header, expands and reduces them. The handbook is
-//! read in its own tall window beside the dock, since the dock's column is too short to read in.
+//! read in its own tall panel docked beside the column, since the dock's column is too short to read in.
 
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
@@ -179,27 +179,22 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
     }
 }
 
-/// The open handbook: a tall window beside the dock, from the top of the screen down to the hints.
-/// It can be moved and resized; its close button reduces it like its header does.
+/// The open handbook: a tall panel docked beside the column, from the top of the screen down to the
+/// hints. Its header reduces it, as the one in the column does.
 fn handbook_window(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
     let screen = ctx.content_rect();
-    let height = (screen.height() - HANDBOOK_BOTTOM_RESERVE).max(200.0);
-    let mut open = true;
-    egui::Window::new("Handbook")
-        .id(egui::Id::new("handbook"))
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(true)
-        .default_pos([screen.left() + 10.0 + DOCK_WIDTH + 10.0, screen.top() + 10.0])
-        .default_size([HANDBOOK_WIDTH, height])
-        .show(ctx, |ui| {
-            // Fill the window: a scroll area alone would size it to egui's default window height.
-            let room = ui.available_height().max(height - 50.0);
+    let left = 10.0 + DOCK_WIDTH + 10.0;
+    egui::Area::new(egui::Id::new("handbook")).anchor(Align2::LEFT_TOP, [left, 10.0]).movable(false).show(ctx, |ui| {
+        egui::Frame::window(ui.style()).show(ui, |ui| {
+            ui.set_width(HANDBOOK_WIDTH);
+            if dock_header(ui, "Handbook", "H", true, None) {
+                ui_state.handbook_open = false;
+            }
+            ui.separator();
+            let room = (screen.bottom() - HANDBOOK_BOTTOM_RESERVE - ui.cursor().top()).max(120.0);
             handbook_body(ui, game, ui_state, room);
         });
-    if !open {
-        ui_state.handbook_open = false;
-    }
+    });
 }
 
 /// A dock panel's header: an arrow, the title, an optional badge, and the key that toggles it. The

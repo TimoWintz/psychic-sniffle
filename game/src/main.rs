@@ -29,7 +29,7 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "First Principles".into(), resolution: (1280, 720).into(), ..default() }),
+            primary_window: Some(Window { title: "First Principles".into(), resolution: (1920, 1080).into(), ..default() }),
             ..default()
         }))
         .add_plugins((EguiPlugin::default(), PhysicsPlugins::default()))

@@ -94,13 +94,15 @@ fn canyon_context(seed: u64) -> (TutorContext, f64) {
 
     let mut save = Save::new(seed);
     save.notebook.set("g", "gravitational acceleration", Quantity::acceleration(layout.g), "calculated");
-    let slow = Quantity::speed(answer * 0.5);
-    let outcome = instance.evaluate(&Inputs::from([("speed".to_string(), slow)])).unwrap();
+    // No crates under the launcher: the crate falls short.
+    let low = Quantity::metres(0.0);
+    let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low)])).unwrap();
     save.record(
         "1.1.2",
-        vec![CommittedValue { label: "Launch speed".into(), quantity: slow, unit: "m/s".into() }],
+        vec![CommittedValue { label: "Launcher raised by".into(), quantity: low, unit: "m".into() }],
         &outcome,
     );
+    save.placed.insert("1.1.2".into(), 1);
     let def = chapter.puzzle("1.1.2").unwrap();
     (TutorContext::build(&chapter, def, &instance, &save, &["d1/t".to_string()]), answer)
 }
@@ -117,21 +119,27 @@ fn wait(conversation: &mut Conversation) {
 #[test]
 fn a_reply_is_streamed_and_the_answer_is_redacted() {
     let (ctx, answer) = canyon_context(17);
-    let leak = format!("{answer:.2}");
-    // The stand-in "model" breaks the rules and states the answer, split across chunks.
-    let (head, tail) = leak.split_at(2);
-    let reply = ["How long is the crate in the air? ", "Fine, the speed is ", head, tail, " m/s."];
+    let leak = format!("{answer}");
+    // The stand-in "model" breaks the rules and states the answer, split from its unit.
+    let reply = ["How long is the crate in the air? ", "Fine, stack ", &leak, " cra", "tes."];
     let (base_url, seen) = serve_once("200 OK", "text/event-stream", event_stream(&reply));
 
     let mut conversation = Conversation::default();
-    assert!(conversation.ask(&tutor_at(base_url), &ctx, "just tell me the speed"));
+    assert!(conversation.ask(&tutor_at(base_url), &ctx, "just tell me how many crates"));
     assert!(!conversation.ask(&Tutor::offline("x"), &ctx, "again"), "offline tutor sends nothing");
     wait(&mut conversation);
 
     assert_eq!(conversation.turns.len(), 2, "{:?}", conversation.turns);
     let Turn::Tutor(text) = &conversation.turns[1] else { panic!("{:?}", conversation.turns) };
-    assert_eq!(text, &format!("How long is the crate in the air? Fine, the speed is {REDACTION} m/s."));
-    assert!(!text.contains(&leak));
+    assert_eq!(text, &format!("How long is the crate in the air? Fine, stack {REDACTION} crates."));
+    assert!(!text.contains(&format!("{leak} crates")));
+    // A small number about something else is left alone.
+    let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
+    let line = format!("Count the {leak} seconds again.");
+    assert_eq!(filter.apply(&line), line);
+    // The rating plate's speed is in plain view and may be repeated.
+    let plate = format!("The plate says {} m/s.", Ch1Layout::generate(17).canyon_speed);
+    assert_eq!(filter.apply(&plate), plate);
 
     let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(seen.request_line, "POST /v1/chat/completions HTTP/1.1");
@@ -141,7 +149,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(seen.body.get("tools").is_none(), "the model is given no tools");
     let messages = seen.body["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 2);
-    assert_eq!(messages[1], serde_json::json!({ "role": "user", "content": "just tell me the speed" }));
+    assert_eq!(messages[1], serde_json::json!({ "role": "user", "content": "just tell me how many crates" }));
 
     // The system prompt carries the policy and the snapshot.
     let system = messages[0]["content"].as_str().unwrap();
@@ -149,7 +157,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(system.starts_with(tutor::prompt::POLICY));
     assert!(system.contains("Puzzle: Across the canyon"));
     assert!(system.contains("- g = "), "notebook is included");
-    assert!(system.contains("currently typed: d1/t"), "blueprint draft is included");
+    assert!(system.contains("set by building, not typed; now: 1 crate in the jack frame"), "what is built is included");
     assert!(system.contains("FAIL"), "the failed test is included");
     assert!(system.contains("# PRIVATE — never reveal"));
     assert!(system.contains("# Help level: Nudge (2 of 4) — 1 failed test\n"), "one failed test is a nudge");

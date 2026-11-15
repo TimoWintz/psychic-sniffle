@@ -76,7 +76,7 @@ pub struct RulerPlugin;
 
 impl Plugin for RulerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Ruler>().add_systems(Startup, spawn_pins).add_systems(Update, (aim, draw).chain());
+        app.init_resource::<Ruler>().add_systems(Startup, spawn_pins).add_systems(Update, (follow_pins, aim, draw).chain());
     }
 }
 
@@ -87,8 +87,24 @@ fn spawn_pins(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mate
         emissive: LinearRgba::rgb(4.0, 3.0, 0.4),
         ..default()
     });
-    for pin in &sites.pins {
-        commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), Transform::from_translation(pin.position)));
+    for (i, pin) in sites.pins.iter().enumerate() {
+        commands.spawn((PinMark(i), Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), Transform::from_translation(pin.position)));
+    }
+}
+
+/// The marker of survey pin number `n`.
+#[derive(Component)]
+struct PinMark(usize);
+
+/// Pins on things that move (the ledge launcher's release point) move with them.
+fn follow_pins(sites: Res<Sites>, mut marks: Query<(&PinMark, &mut Transform)>) {
+    if !sites.is_changed() {
+        return;
+    }
+    for (mark, mut transform) in &mut marks {
+        if let Some(pin) = sites.pins.get(mark.0) {
+            transform.translation = pin.position;
+        }
     }
 }
 

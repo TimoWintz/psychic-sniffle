@@ -8,6 +8,7 @@
 //!
 //! Nothing here moves the avatar: `player` owns its position, and the rig only follows.
 
+use crate::carry::Carry;
 use crate::companion::{Companion, Landmarks};
 use crate::island::Sites;
 use crate::player::{Player, RUN_SPEED, WALK_SPEED};
@@ -140,6 +141,7 @@ pub struct AvatarState {
     w_move: f32,
     w_air: f32,
     w_typing: f32,
+    w_carry: f32,
     w_reaction: f32,
     w_look: f32,
     /// Smoothed aim of the head, relative to the body: yaw and pitch, radians.
@@ -334,6 +336,18 @@ fn typing(t: f32) -> Pose {
     p
 }
 
+/// Carrying a crate: both arms forward and bent, hands either side of it at chest height. Only the
+/// arms and the back; the legs keep whatever they are doing.
+fn carrying(under: &Pose) -> Pose {
+    let mut p = *under;
+    for (_, _, shoulder, elbow, side) in SIDES {
+        p.rot[shoulder] = limb(side, 1.05, 0.22, 0.0);
+        p.rot[elbow] = rx(0.5);
+    }
+    p.rot[SPINE] = rx(0.06) * under.rot[SPINE];
+    p
+}
+
 /// A pass: both arms up, a hop, a wave.
 fn cheer(t: f32) -> Pose {
     let mut p = Pose::default();
@@ -424,6 +438,7 @@ fn animate(
     ui: Res<Ui>,
     sim: Res<Sim>,
     sites: Res<Sites>,
+    carry: Res<Carry>,
     companion: Res<Companion>,
     landmarks: Res<Landmarks>,
     mut avatar: Single<(&Player, &mut Transform, &Rig, &mut AvatarState)>,
@@ -494,6 +509,10 @@ fn animate(
     let gaze = companion.gaze.as_deref().and_then(|name| landmarks.position(name)).filter(|p| p.distance(feet) < GAZE_REACH);
     let target = action.or(console).or(if run < 0.5 { gaze } else { None });
     let typing_now = console.is_some() && action.is_none() && still && state.reaction.is_none();
+    // Hands full: no cheering or slumping, the crate stays held.
+    if carry.holding {
+        state.reaction = None;
+    }
 
     // Turn the whole body to the console, or to anything the head cannot reach while standing.
     if still && player.grounded {
@@ -529,6 +548,7 @@ fn animate(
     ease(&mut state.w_move, move_target, 10.0, dt);
     ease(&mut state.w_air, air_now as u8 as f32, 12.0, dt);
     ease(&mut state.w_typing, typing_now as u8 as f32, 6.0, dt);
+    ease(&mut state.w_carry, carry.holding as u8 as f32, 10.0, dt);
     ease(&mut state.w_reaction, state.reaction.is_some_and(|(_, t)| t < REACTION_SECONDS - 0.3) as u8 as f32, 9.0, dt);
     ease(&mut state.w_look, target.is_some() as u8 as f32, 4.0, dt);
     if let Some(target) = target {
@@ -541,6 +561,7 @@ fn animate(
     let t = state.clock;
     let mut pose = idle(t).blend(&gait(state.phase, run), state.w_move);
     pose = pose.blend(&typing(t), state.w_typing);
+    pose = pose.blend(&carrying(&pose), state.w_carry);
     if let Some((reaction, rt)) = state.reaction {
         let react = if reaction == Reaction::Cheer { cheer(rt) } else { slump(rt) };
         pose = pose.blend(&react, state.w_reaction);

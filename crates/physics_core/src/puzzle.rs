@@ -54,7 +54,7 @@ pub struct Ch1Layout {
     /// Puzzle 1: height of the survey mast's release point, used for the test drop.
     pub mast_h: u32,
 
-    /// Puzzle 2: height of the ledge above the far plateau.
+    /// Puzzle 2: height of the ledge above the far plateau, before any crates raise the launcher.
     pub ledge_h: u32,
     /// Puzzle 2: width of the canyon, from the ledge edge to the far rim.
     pub canyon_width: u32,
@@ -63,6 +63,9 @@ pub struct Ch1Layout {
     /// Puzzle 2: distance from the ledge edge to the centre of the landing platform.
     pub platform_centre: f64,
     pub platform_half: f64,
+    /// Puzzle 2: the ledge launcher's rated speed, m/s. Its governor is jammed: it fires at this speed
+    /// and no other, so the player sets the release height instead, by stacking crates under it.
+    pub canyon_speed: f64,
 
     /// Puzzle 3: distance from the launcher to the centre of the shipyard pad (level ground).
     pub pad_centre: f64,
@@ -83,6 +86,12 @@ impl Ch1Layout {
     pub const RAIL_LENGTH: u32 = 24;
     /// Half the width of the rail marker along the rail (the marker is one block).
     pub const RAIL_MARKER_HALF: f64 = 0.5;
+    /// Puzzle 2: how many crates the jack frame under the ledge launcher holds (and how many lie in
+    /// the salvage pile on the ledge). Each raises the launcher one metre.
+    pub const MAX_STACK: u32 = 8;
+    /// Puzzle 2: a stack one crate higher or lower than the right one must miss the platform by at
+    /// least this much beyond its edge, so trying stacks one by one costs charges.
+    pub const STACK_NEIGHBOUR_MISS: f64 = 0.5;
 
     pub fn generate(seed: u64) -> Self {
         let mut rng = Rng::new(seed ^ 0x1_0001);
@@ -98,9 +107,11 @@ impl Ch1Layout {
         let tower_h = rng.int(12, 24);
         let mast_h = tower_h + rng.int(8, 14);
 
-        let ledge_h = rng.int(6, 12);
+        // The canyon's ledge height and platform distance used to be drawn here. They are drawn anew
+        // below, but these draws are kept so that every other number stays what it was for older saves.
+        rng.int(6, 12);
         let canyon_width = rng.int(12, 20);
-        let platform_centre = (canyon_width + rng.int(4, 8)) as f64 + 0.5;
+        rng.int(4, 8);
 
         let pad_centre = rng.int(40, 56) as f64 + 0.5;
         let ridge_x = (pad_centre * rng.range(0.20, 0.30)).round() as u32;
@@ -118,6 +129,39 @@ impl Ch1Layout {
         // Drawn last, so the numbers above stay what they were for saves made before the tutorial.
         let rail_target = rng.int(9, 17);
 
+        // The canyon, drawn after the rest. One crate moves the landing by about d / (2 H) for a
+        // release height H, so the ledge is low and the platform far: then exactly one stack lands on
+        // the platform, and its neighbours miss it clearly. Draws that fall short of that are redrawn.
+        let (ledge_h, platform_centre, canyon_speed) = loop {
+            let ledge_h = rng.int(3, 5);
+            let stack = rng.int(2, 5);
+            let release = (ledge_h + stack) as f64;
+            let near = (canyon_width + 4).max((4.2 * release).ceil() as u32);
+            let platform_centre = rng.int(near, near + 6) as f64 + 0.5;
+            let speed = (platform_centre / fall_time(release, g) * 10.0).round() / 10.0;
+            let candidate = (ledge_h, platform_centre, speed);
+            let trial = Ch1Layout {
+                g,
+                rail_target,
+                tower_h,
+                mast_h,
+                ledge_h,
+                canyon_width,
+                canyon_depth: 10,
+                platform_centre,
+                platform_half: 1.5,
+                canyon_speed: speed,
+                pad_centre,
+                pad_half: 2.5,
+                ridge_x,
+                ridge_h,
+                v_max,
+            };
+            if trial.canyon_is_fair() {
+                break candidate;
+            }
+        };
+
         Ch1Layout {
             g,
             rail_target,
@@ -128,12 +172,54 @@ impl Ch1Layout {
             canyon_depth: 10,
             platform_centre,
             platform_half: 1.5,
+            canyon_speed,
             pad_centre,
             pad_half: 2.5,
             ridge_x,
             ridge_h,
             v_max,
         }
+    }
+
+    /// Terrain along the canyon's launch line, with the rim at `x = 0` and the far plateau at `y = 0`.
+    pub fn canyon_profile(&self) -> Profile {
+        // Long enough for the furthest shot the jack frame allows, with room to spare.
+        let furthest = self.canyon_speed * fall_time((self.ledge_h + Self::MAX_STACK) as f64, self.g);
+        let length = (furthest.max(self.platform_centre + self.platform_half) + 6.0).ceil() as usize;
+        let mut p = Profile::flat(0.0, length, 0.0);
+        p.set(0.0, self.canyon_width as f64, -(self.canyon_depth as f64));
+        p
+    }
+
+    /// The ledge launcher's shot with `stack` crates under it.
+    pub fn canyon_shot(&self, stack: u32) -> (Projectile, Flight) {
+        let projectile = Projectile::from_angle(0.0, (self.ledge_h + stack) as f64, self.canyon_speed, 0.0, self.g);
+        (projectile, fly(&projectile, &self.canyon_profile()))
+    }
+
+    /// Where the crate lands relative to the platform centre with `stack` crates under the launcher,
+    /// or `None` if it does not come down on the far plateau.
+    pub fn canyon_miss(&self, stack: u32) -> Option<f64> {
+        let (_, flight) = self.canyon_shot(stack);
+        (flight.end == FlightEnd::Landed && flight.surface == 0.0).then_some(flight.x - self.platform_centre)
+    }
+
+    /// The number of crates that puts the crate on the platform, if exactly one stack does.
+    pub fn canyon_answer(&self) -> Option<u32> {
+        let mut passing = (0..=Self::MAX_STACK).filter(|n| self.canyon_miss(*n).is_some_and(|m| m.abs() <= self.platform_half));
+        let answer = passing.next()?;
+        passing.next().is_none().then_some(answer)
+    }
+
+    /// Whether exactly one stack lands on the platform, near its centre, and the stacks either side
+    /// of it miss clearly.
+    fn canyon_is_fair(&self) -> bool {
+        let Some(n) = self.canyon_answer() else { return false };
+        if self.canyon_speed >= LAUNCHER_HARD_LIMIT || self.canyon_miss(n).is_none_or(|m| m.abs() > 0.5) {
+            return false;
+        }
+        let clear = |k: u32| self.canyon_miss(k).is_none_or(|m| m.abs() >= self.platform_half + Self::STACK_NEIGHBOUR_MISS);
+        (n == 0 || clear(n - 1)) && (n == Self::MAX_STACK || clear(n + 1))
     }
 
     /// Fall time from the drop tower as the stopwatch shows it (hundredths of a second).
@@ -162,6 +248,16 @@ pub enum PuzzleKind {
     Ridge,
 }
 
+/// Where a committed value comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputSource {
+    /// Typed into the blueprint: a number with its unit, or an expression over the notebook.
+    Typed,
+    /// Read from the world: what the player has built or placed there (the crates under the ledge
+    /// launcher). Shown in the blueprint, not typed.
+    Placed,
+}
+
 /// One value the player must commit.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputSpec {
@@ -171,6 +267,7 @@ pub struct InputSpec {
     /// Unit the value is shown in and suggested to the player ("m/s", "deg").
     pub unit: &'static str,
     pub example: &'static str,
+    pub source: InputSource,
 }
 
 /// A fact about the world that the player can measure.
@@ -268,6 +365,7 @@ impl Instance {
             dim: Dim::SPEED,
             unit: "m/s",
             example: "14.2 m/s",
+            source: InputSource::Typed,
         };
         match self.kind {
             PuzzleKind::Rail => vec![InputSpec {
@@ -276,6 +374,7 @@ impl Instance {
                 dim: Dim::LENGTH,
                 unit: "m",
                 example: "d1   or   12 m",
+                source: InputSource::Typed,
             }],
             PuzzleKind::Gravity => vec![InputSpec {
                 key: "g",
@@ -283,8 +382,16 @@ impl Instance {
                 dim: Dim::ACCELERATION,
                 unit: "m/s^2",
                 example: "3.7 m/s^2",
+                source: InputSource::Typed,
             }],
-            PuzzleKind::Canyon => vec![speed],
+            PuzzleKind::Canyon => vec![InputSpec {
+                key: "stack",
+                label: "Launcher raised by",
+                dim: Dim::LENGTH,
+                unit: "m",
+                example: "",
+                source: InputSource::Placed,
+            }],
             PuzzleKind::Ridge => vec![
                 InputSpec {
                     key: "angle",
@@ -292,6 +399,7 @@ impl Instance {
                     dim: Dim::NONE,
                     unit: "deg",
                     example: "30 deg",
+                    source: InputSource::Typed,
                 },
                 speed,
             ],
@@ -313,9 +421,11 @@ impl Instance {
                 given("height of the survey mast", Quantity::metres(l.mast_h as f64)),
             ],
             PuzzleKind::Canyon => vec![
-                given("drop from the ledge to the platform", Quantity::metres(l.ledge_h as f64)),
+                given("drop from the ledge to the platform, with no crates under the launcher", Quantity::metres(l.ledge_h as f64)),
                 given("horizontal distance to the platform centre", Quantity::metres(l.platform_centre)),
                 given("length of the platform", Quantity::metres(2.0 * l.platform_half)),
+                given("rated speed of the ledge launcher (fixed)", Quantity::speed(l.canyon_speed)),
+                given("height of one crate", Quantity::metres(1.0)),
             ],
             PuzzleKind::Ridge => vec![
                 given("distance to the pad centre", Quantity::metres(l.pad_centre)),
@@ -332,12 +442,7 @@ impl Instance {
         let l = &self.layout;
         match self.kind {
             PuzzleKind::Rail | PuzzleKind::Gravity => None,
-            PuzzleKind::Canyon => {
-                let length = (l.platform_centre + l.platform_half) as usize + 40;
-                let mut p = Profile::flat(0.0, length, 0.0);
-                p.set(0.0, l.canyon_width as f64, -(l.canyon_depth as f64));
-                Some(p)
-            }
+            PuzzleKind::Canyon => Some(l.canyon_profile()),
             PuzzleKind::Ridge => {
                 let length = (l.pad_centre + l.pad_half) as usize + 40;
                 let mut p = Profile::flat(0.0, length, 0.0);
@@ -347,13 +452,9 @@ impl Instance {
         }
     }
 
-    /// The projectile a set of inputs produces, if the puzzle launches one.
+    /// The tilting launcher's projectile for a speed and an angle.
     fn projectile(&self, speed: f64, angle: f64) -> Projectile {
-        let y0 = match self.kind {
-            PuzzleKind::Canyon => self.layout.ledge_h as f64,
-            _ => 0.0,
-        };
-        Projectile::from_angle(0.0, y0, speed, angle, self.layout.g)
+        Projectile::from_angle(0.0, 0.0, speed, angle, self.layout.g)
     }
 
     /// Check that every input is present, has the right dimension and is physically usable. Passing
@@ -382,6 +483,17 @@ impl Instance {
                             "the rail is {} m long and the cart will not run past its end.",
                             Ch1Layout::RAIL_LENGTH
                         ));
+                    }
+                }
+                "stack" => {
+                    if q.value < -1e-9 {
+                        return out_of_range("the launcher cannot stand lower than the ledge.".into());
+                    }
+                    if (q.value - q.value.round()).abs() > 1e-6 {
+                        return out_of_range("the jack frame holds whole crates, one metre each.".into());
+                    }
+                    if q.value.round() > Ch1Layout::MAX_STACK as f64 {
+                        return out_of_range(format!("the jack frame holds at most {} crates.", Ch1Layout::MAX_STACK));
                     }
                 }
                 "g" if q.value <= 0.0 => {
@@ -503,8 +615,7 @@ impl Instance {
                 }
             }
             PuzzleKind::Canyon => {
-                let projectile = self.projectile(value("speed"), 0.0);
-                let flight = fly(&projectile, &self.profile().expect("canyon has terrain"));
+                let (projectile, flight) = l.canyon_shot(value("stack").round() as u32);
                 let miss = flight.x - l.platform_centre;
                 let on_plateau = flight.end == FlightEnd::Landed && flight.surface == 0.0;
                 let pass = on_plateau && miss.abs() <= l.platform_half;
@@ -663,28 +774,36 @@ impl Instance {
                 }
             }
             PuzzleKind::Canyon => {
-                let (h, d) = (l.ledge_h as f64, l.platform_centre);
-                let t = fall_time(h, l.g);
-                let v = d / t;
+                let (v, d, ledge) = (l.canyon_speed, l.platform_centre, l.ledge_h as f64);
+                let t = d / v;
+                let h = 0.5 * l.g * t * t;
+                let stack = l.canyon_answer().expect("every layout has exactly one stack that lands on the platform");
                 Solution {
                     steps: vec![
-                        "Horizontal and vertical motion are independent. Launched horizontally, the crate starts \
-                         with no vertical speed."
+                        "Horizontal and vertical motion are independent. The launcher fires horizontally at its \
+                         fixed rated speed, so the crate starts with no vertical speed."
                             .into(),
                         format!(
-                            "Vertical: it falls h = {h} m, so h = (1/2) g t^2 and t = sqrt(2 h / g) = {} s.",
+                            "Horizontal: constant speed, so d = v t. To cover d = {d} m at v = {v} m/s the crate must \
+                             stay in the air t = d / v = {} s.",
                             sig(t, 4)
                         ),
                         format!(
-                            "Horizontal: constant speed, so d = v t. To cover d = {d} m: v = d / t = {} m/s.",
-                            sig(v, 4)
+                            "Vertical: in that time it falls h = (1/2) g t^2 = {} m. That is the release height \
+                             needed above the platform.",
+                            sig(h, 4)
+                        ),
+                        format!(
+                            "The ledge stands {ledge} m above the platform, so the launcher must be raised by about \
+                             {} m: {stack} crates of one metre.",
+                            sig(h - ledge, 3)
                         ),
                     ],
-                    answers: vec![answer("speed", "Launch speed", Quantity::speed(v), "m/s")],
+                    answers: vec![answer("stack", "Launcher raised by", Quantity::metres(stack as f64), "m")],
                     note: format!(
-                        "The platform is {} m long, so landing within {} m of the centre passes.",
-                        2.0 * l.platform_half,
-                        l.platform_half
+                        "Only whole crates fit the jack frame; {stack} is the only stack that lands on the {} m \
+                         platform. One crate more or fewer misses it.",
+                        2.0 * l.platform_half
                     ),
                 }
             }
@@ -761,7 +880,69 @@ mod tests {
             assert!(l.v_max < LAUNCHER_HARD_LIMIT);
             assert!((9..=17).contains(&l.rail_target), "rail target {}", l.rail_target);
             assert!(l.rail_target + 4 <= Ch1Layout::RAIL_LENGTH);
+            assert!((3..=5).contains(&l.ledge_h), "seed {seed}: ledge {}", l.ledge_h);
+            assert!(l.canyon_speed > 0.0 && l.canyon_speed < LAUNCHER_HARD_LIMIT, "seed {seed}: {}", l.canyon_speed);
+            assert_eq!(l.canyon_speed, (l.canyon_speed * 10.0).round() / 10.0, "the rating plate reads to 0.1 m/s");
+            // The launch line, out to the furthest shot, fits on the flat ground the island keeps for it.
+            assert!(l.canyon_profile().heights.len() <= 70, "seed {seed}: {} m", l.canyon_profile().heights.len());
+            for stack in 0..=Ch1Layout::MAX_STACK {
+                assert_ne!(l.canyon_shot(stack).1.end, FlightEnd::LeftTerrain, "seed {seed}: {stack} crates");
+            }
         }
+    }
+
+    #[test]
+    fn older_saves_keep_every_number_but_the_canyons() {
+        // Values from before the canyon was reworked: (seed, g, rail, tower, mast, canyon width, pad,
+        // ridge distance, ridge height, rated speed of the tilting launcher).
+        let before = [
+            (0, 8.734, 17, 20, 30, 15, 46.5, 10, 10, 22.7),
+            (7, 10.891, 9, 23, 34, 12, 53.5, 15, 14, 27.3),
+            (42, 8.789, 11, 23, 32, 13, 54.5, 12, 11, 23.9),
+            (999, 7.945, 10, 23, 34, 13, 41.5, 9, 9, 20.4),
+        ];
+        for (seed, g, rail, tower, mast, width, pad, ridge_x, ridge_h, v_max) in before {
+            let l = Ch1Layout::generate(seed);
+            assert_eq!(
+                (l.g, l.rail_target, l.tower_h, l.mast_h, l.canyon_width, l.pad_centre, l.ridge_x, l.ridge_h, l.v_max),
+                (g, rail, tower, mast, width, pad, ridge_x, ridge_h, v_max),
+                "seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn exactly_one_stack_lands_on_the_platform() {
+        for seed in 0..SEEDS {
+            let l = Ch1Layout::generate(seed);
+            let canyon = Instance::new(PuzzleKind::Canyon, &l);
+            let stack = l.canyon_answer().unwrap_or_else(|| panic!("seed {seed}: no single answer"));
+            assert!((2..=5).contains(&stack), "seed {seed}: {stack} crates");
+            let passes: Vec<u32> = (0..=Ch1Layout::MAX_STACK)
+                .filter(|n| canyon.evaluate(&inputs(&[("stack", Quantity::metres(*n as f64))])).unwrap().pass)
+                .collect();
+            assert_eq!(passes, vec![stack], "seed {seed}");
+            // The neighbours miss the platform clearly, not by a hair.
+            for n in [stack - 1, stack + 1] {
+                if let Some(miss) = l.canyon_miss(n) {
+                    assert!(miss.abs() >= l.platform_half + Ch1Layout::STACK_NEIGHBOUR_MISS, "seed {seed}: {n} crates miss by {miss}");
+                }
+            }
+            // The passing shot clears the far rim on its way.
+            let (projectile, _) = l.canyon_shot(stack);
+            assert!(projectile.height_at_x(l.canyon_width as f64).unwrap() > 1.0, "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn the_jack_frame_takes_whole_crates_only() {
+        let canyon = Instance::new(PuzzleKind::Canyon, &Ch1Layout::generate(2));
+        for bad in [-1.0, 2.5, 9.0] {
+            let err = canyon.evaluate(&inputs(&[("stack", Quantity::metres(bad))])).unwrap_err();
+            assert!(matches!(err, InputError::OutOfRange { .. }), "{bad}: {err}");
+        }
+        assert!(canyon.evaluate(&inputs(&[("stack", Quantity::metres(0.0))])).is_ok(), "no crates is a valid try");
+        assert_eq!(canyon.inputs()[0].source, InputSource::Placed);
     }
 
     #[test]
@@ -808,9 +989,12 @@ mod tests {
             let gravity = Instance::new(PuzzleKind::Gravity, &layout);
             assert!(gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_measured))])).unwrap().pass);
 
-            let v = layout.platform_centre / fall_time(layout.ledge_h as f64, g_measured);
+            // The canyon from the player's g, the ruler's readings and the rating plate: the release
+            // height needed, less the ledge, rounded to whole crates.
+            let t = layout.platform_centre / layout.canyon_speed;
+            let rise = (0.5 * g_measured * t * t - layout.ledge_h as f64).round();
             let canyon = Instance::new(PuzzleKind::Canyon, &layout);
-            assert!(canyon.evaluate(&inputs(&[("speed", Quantity::speed(v))])).unwrap().pass, "seed {seed}");
+            assert!(canyon.evaluate(&inputs(&[("stack", Quantity::metres(rise))])).unwrap().pass, "seed {seed}");
 
             let (min, max) = layout.ridge_angle_window();
             let angle = (min + max) / 2.0;
@@ -836,8 +1020,8 @@ mod tests {
 
     #[test]
     fn wrong_dimension_is_refused_with_an_explanation() {
-        let puzzle = Instance::new(PuzzleKind::Canyon, &Ch1Layout::generate(1));
-        let err = puzzle.evaluate(&inputs(&[("speed", Quantity::seconds(3.0))])).unwrap_err();
+        let puzzle = Instance::new(PuzzleKind::Ridge, &Ch1Layout::generate(1));
+        let err = puzzle.evaluate(&inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::seconds(3.0))])).unwrap_err();
         assert_eq!(
             err.to_string(),
             "Launch speed must be a speed (m/s), but what you entered is a time (s)."
@@ -862,16 +1046,20 @@ mod tests {
 
     #[test]
     fn failures_describe_what_happened_without_the_answer() {
-        let layout = Ch1Layout::generate(11);
-        let canyon = Instance::new(PuzzleKind::Canyon, &layout);
-        let right = canyon.solution().answers[0].quantity.value;
-
-        let slow = canyon.evaluate(&inputs(&[("speed", Quantity::speed(right * 0.3))])).unwrap();
-        assert_eq!(slow.headline, "Fell short");
-        let fast = canyon.evaluate(&inputs(&[("speed", Quantity::speed(right * 1.3))])).unwrap();
-        assert!(fast.detail.contains("beyond the platform centre"), "{}", fast.detail);
-        for outcome in [slow, fast] {
-            assert!(!outcome.detail.contains(&sig(right, 3)), "{}", outcome.detail);
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let canyon = Instance::new(PuzzleKind::Canyon, &layout);
+            let stack = |n: u32| canyon.evaluate(&inputs(&[("stack", Quantity::metres(n as f64))])).unwrap();
+            let low = stack(0);
+            assert!(!low.pass);
+            assert!(low.headline == "Fell short" || low.detail.contains("short of the platform centre"), "seed {seed}: {}", low.detail);
+            let high = stack(Ch1Layout::MAX_STACK);
+            assert!(high.detail.contains("beyond the platform centre"), "seed {seed}: {}", high.detail);
+            // Misses are told in metres; the number of crates that would work is never named.
+            let answer = format!("{} crates", layout.canyon_answer().unwrap());
+            for outcome in [low, high] {
+                assert!(!outcome.detail.contains(&answer), "{}", outcome.detail);
+            }
         }
     }
 

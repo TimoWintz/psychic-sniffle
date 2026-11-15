@@ -16,7 +16,7 @@ use physics_core::demo::{DemoPlayback, Shot};
 use physics_core::expr::evaluate;
 use physics_core::materials::Material;
 use physics_core::progress::CommittedValue;
-use physics_core::puzzle::{Inputs, Outcome, Playback, PuzzleKind};
+use physics_core::puzzle::{InputSource, Inputs, Outcome, Playback, PuzzleKind};
 use physics_core::units::Quantity;
 
 /// Something the interface asks the simulation to do.
@@ -163,7 +163,7 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sim>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher).chain());
     }
 }
 
@@ -173,13 +173,14 @@ fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
     match prop {
         Prop::TowerMass => sites.tower_release + half,
         Prop::MastMass | Prop::Ghost => sites.mast_release + half,
-        Prop::Crate => sites.canyon_launch.origin - sites.canyon_launch.direction * 2.5 + half,
+        // On the ledge launcher's cradle, which rides on the crates in the jack frame.
+        Prop::Crate => sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + half,
         Prop::Beam => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
         Prop::Cart => sites.rail_start + half,
     }
 }
 
-fn setup(
+pub(crate) fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -250,11 +251,18 @@ fn setup(
     });
 }
 
-/// Read the blueprint: evaluate each typed expression against the notebook.
+/// Read the blueprint: evaluate each typed expression against the notebook, and read what is built
+/// in the world.
 pub fn read_blueprint(game: &Game, ui: &Ui, puzzle: usize) -> Result<(Inputs, Vec<CommittedValue>), String> {
     let mut inputs = Inputs::new();
     let mut values = Vec::new();
     for (i, spec) in game.instance(puzzle).inputs().iter().enumerate() {
+        if spec.source == InputSource::Placed {
+            let quantity = Quantity::metres(game.placed(puzzle) as f64);
+            inputs.insert(spec.key.to_string(), quantity);
+            values.push(CommittedValue { label: spec.label.to_string(), quantity, unit: spec.unit.to_string() });
+            continue;
+        }
         let text = ui.drafts[puzzle].get(i).map_or("", String::as_str);
         if text.trim().is_empty() {
             return Err(format!("{} has not been entered.", spec.label));
@@ -302,7 +310,7 @@ fn handle_requests(
                 return;
             }
             let instance = game.instance(puzzle);
-            let Some(playback) = instance.demo() else { return };
+            let Some(playback) = instance.demo_raised(game.placed(puzzle)) else { return };
             // The guess counts only before the first run.
             let guess = if game.save.demo_watched(&game.def(puzzle).id) { None } else { ui.guess[puzzle] };
             let ground = GROUND as f32;
@@ -687,6 +695,18 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
                 *transform = Transform::from_translation(rest_pose(restores, &sites));
                 *visibility = Visibility::Visible;
             }
+        }
+    }
+}
+
+/// Keep the ledge launcher's load on its cradle when crates go into or out of the jack frame.
+fn follow_launcher(sim: Res<Sim>, sites: Res<Sites>, mut props: Query<(&Prop, &mut Transform, &Visibility)>) {
+    if !sites.is_changed() || sim.busy() {
+        return;
+    }
+    for (prop, mut transform, visibility) in &mut props {
+        if *prop == Prop::Crate && *visibility != Visibility::Hidden {
+            transform.translation = rest_pose(Prop::Crate, &sites);
         }
     }
 }

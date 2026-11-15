@@ -8,6 +8,7 @@
 //! unsolved puzzle, at a running test. Nothing about a solved puzzle draws the beam.
 //! The scripted lines never contain a number, so they cannot give an answer away.
 
+use crate::carry::Carry;
 use crate::island::Sites;
 use crate::ruler::Ruler;
 use crate::sim::Sim;
@@ -37,6 +38,9 @@ impl Landmarks {
             // The station's screen, under its column of light.
             places.push((station_name(game, i), console.as_vec3() + Vec3::new(0.5, 1.3, 0.5)));
         }
+        let pile = sites.crate_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.crate_pile.len().max(1) as f32;
+        places.push((SALVAGE_CRATES.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
+        places.push((JACK_FRAME.into(), sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
         places.push(("The shipyard floor".into(), sites.shipyard + Vec3::Y * 1.0));
         Landmarks(places)
@@ -50,6 +54,10 @@ impl Landmarks {
         self.0.iter().find(|(n, _)| n == name).map(|(_, p)| *p)
     }
 }
+
+/// The crates on the canyon ledge, and the frame at the rim they go into.
+const SALVAGE_CRATES: &str = "Salvage crates on the ledge";
+const JACK_FRAME: &str = "Jack frame under the ledge launcher";
 
 pub fn station_name(game: &Game, puzzle: usize) -> String {
     format!("Station: {}", game.def(puzzle).title)
@@ -189,6 +197,10 @@ struct Facts {
     at_finished_station: bool,
     /// A place that outranks the rest for now.
     held: Option<String>,
+    /// The avatar is carrying a crate.
+    carrying: bool,
+    /// No crates are in the ledge launcher's jack frame.
+    frame_empty: bool,
 }
 
 /// Where Lumen should look, in priority order.
@@ -216,6 +228,10 @@ fn choose_gaze(f: &Facts) -> Option<String> {
             Some(first) => if first == b { a } else { b }.into(),
         });
     }
+    // A crate in hand at the canyon goes into the jack frame.
+    if f.carrying && unsolved == Some(PuzzleKind::Canyon) {
+        return Some(JACK_FRAME.into());
+    }
     if f.station_open
         && let Some(kind) = unsolved
     {
@@ -223,6 +239,9 @@ fn choose_gaze(f: &Facts) -> Option<String> {
             && let Some(place) = guide(kind).demo
         {
             return Some(place.into());
+        }
+        if kind == PuzzleKind::Canyon && f.frame_empty {
+            return Some(SALVAGE_CRATES.into());
         }
         return Some(guide(kind).study.into());
     }
@@ -271,6 +290,7 @@ fn direct(
     ui: Res<Ui>,
     sim: Res<Sim>,
     ruler: Res<Ruler>,
+    carry: Res<Carry>,
     landmarks: Res<Landmarks>,
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
@@ -347,6 +367,15 @@ fn direct(
             {
                 companion.nudged[p] = true;
                 companion.say("Before any numbers, try the experiment. Make your guess first.");
+            } else if now.station != before.station
+                && let Some(p) = now.station
+                && game.def(p).kind == PuzzleKind::Canyon
+                && !game.solved(p)
+                && carry.stack == 0
+                && !companion.nudged[p]
+            {
+                companion.nudged[p] = true;
+                companion.say("This launcher's speed is stuck. Its height is not: the crates on the ledge fit the frame at the rim.");
             }
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;
@@ -408,6 +437,8 @@ fn direct(
         beckon: companion.beckon_left > 0.0,
         at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
         held: companion.held.as_ref().map(|(place, _, _)| place.clone()),
+        carrying: carry.holding,
+        frame_empty: carry.stack == 0,
     };
     companion.gaze = choose_gaze(&facts).filter(|place| landmarks.position(place).is_some());
 }
@@ -819,6 +850,19 @@ mod tests {
     /// Just after the station `next` opened: Lumen is pointing the way.
     fn walking_to(next: usize) -> Facts {
         Facts { focus_kind: Some(PuzzleKind::Rail), next: Some(next), next_station: Some(format!("Station {next}")), beckon: true, ..Facts::default() }
+    }
+
+    #[test]
+    fn at_the_canyon_the_beam_shows_the_crates_and_then_the_frame() {
+        let open = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, frame_empty: true, beckon: false, ..walking_to(2) };
+        assert_eq!(choose_gaze(&open).as_deref(), Some(SALVAGE_CRATES));
+        let built = Facts { frame_empty: false, ..open.clone() };
+        assert_eq!(choose_gaze(&built).as_deref(), Some("Platform: centre"));
+        let carrying = Facts { station_open: false, carrying: true, ..open.clone() };
+        assert_eq!(choose_gaze(&carrying).as_deref(), Some(JACK_FRAME));
+        // The experiment comes first, before any crates.
+        let fresh = Facts { demo_pending: true, ..open };
+        assert_eq!(choose_gaze(&fresh).as_deref(), Some("Ledge launcher: release point"));
     }
 
     #[test]

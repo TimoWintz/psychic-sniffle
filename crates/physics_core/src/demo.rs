@@ -3,7 +3,7 @@
 //! A demonstration shows the principle a puzzle rests on, in the world, before any calculation. Like a
 //! test, what happens is decided here, in closed form; the game only plays it back. Unlike a test it
 //! costs nothing, judges nothing, and is built so that it gives nothing away: the canyon crates fall
-//! further than the ledge's drop to the platform, and the ridge slugs land well short of the ridge.
+//! further than the launcher's drop to the platform, and the ridge slugs land well short of the ridge.
 //!
 //! The question, the choices and what the player should notice are words, kept with the chapter in
 //! `assets/curriculum`.
@@ -70,6 +70,12 @@ impl DemoPlayback {
 impl Instance {
     /// The station's demonstration, if it has one. The tutorial needs none.
     pub fn demo(&self) -> Option<DemoPlayback> {
+        self.demo_raised(0)
+    }
+
+    /// The demonstration with the launcher raised on `stack` crates: the canyon's test crates leave
+    /// from wherever the launcher stands. The other stations ignore it.
+    pub fn demo_raised(&self, stack: u32) -> Option<DemoPlayback> {
         let l = &self.layout;
         match self.kind {
             PuzzleKind::Rail => None,
@@ -80,7 +86,7 @@ impl Instance {
             }
             PuzzleKind::Canyon => {
                 let profile = self.profile().expect("the canyon has terrain");
-                let y0 = l.ledge_h as f64;
+                let y0 = (l.ledge_h + stack) as f64;
                 let floor_drop = y0 + l.canyon_depth as f64;
                 let reach = CANYON_DEMO_REACH * l.canyon_width as f64;
                 let speed = (reach - CANYON_DEMO_LIP) / fall_time(floor_drop, l.g);
@@ -142,9 +148,9 @@ mod tests {
 
     #[test]
     fn the_dropped_and_the_fired_crate_reach_the_floor_together() {
-        for seed in 0..SEEDS {
+        for (seed, stack) in (0..SEEDS).flat_map(|seed| (0..=Ch1Layout::MAX_STACK).map(move |stack| (seed, stack))) {
             let layout = Ch1Layout::generate(seed);
-            let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Canyon, &layout).demo() else {
+            let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Canyon, &layout).demo_raised(stack) else {
                 panic!("the canyon drops and fires")
             };
             let floor = -(layout.canyon_depth as f64);
@@ -155,9 +161,9 @@ mod tests {
             assert!((dropped.flight.t - fired.flight.t).abs() < 1e-9, "seed {seed}");
             assert!(fired.flight.x > dropped.flight.x + 3.0, "seed {seed}: the fired crate must visibly travel");
             assert!(fired.flight.x < layout.canyon_width as f64 - 1.0, "seed {seed}: it must stay inside the canyon");
-            // It falls further than the ledge's drop to the platform, so its time is not the puzzle's.
-            let to_platform = fall_time(layout.ledge_h as f64, layout.g);
-            assert!(fired.flight.t > to_platform * 1.1, "seed {seed}");
+            // It falls further than the launcher's drop to the platform, so its time is not the puzzle's.
+            let to_platform = fall_time((layout.ledge_h + stack) as f64, layout.g);
+            assert!(fired.flight.t > to_platform * 1.1, "seed {seed}, {stack} crates");
         }
     }
 

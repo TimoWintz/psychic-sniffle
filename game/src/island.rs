@@ -58,7 +58,18 @@ pub struct Sites {
     pub tower_plate: Vec3,
     pub mast_release: Vec3,
     pub mast_plate: Vec3,
+    /// The ledge launcher. Its origin rises with the crates stacked under it (see `carry`); the
+    /// island is built with none.
     pub canyon_launch: LaunchSite,
+    /// Lowest cell of the jack frame under the ledge launcher, at the rim; crates stack up from it.
+    pub canyon_well: IVec3,
+    /// Cells of the salvage pile on the ledge: where the movable crates lie at the start.
+    pub crate_pile: Vec<IVec3>,
+    /// Corners (inclusive) of the space where crates may be put down: the ledge north of the
+    /// launcher's rail, up to three crates high. Off the launch lines, clear of the station.
+    pub crate_yard: [IVec3; 2],
+    /// Index in `pins` of the ledge launcher's release point, which moves with the launcher.
+    pub canyon_release_pin: usize,
     pub ridge_launch: LaunchSite,
     /// Console block of each station, in puzzle order.
     pub stations: [IVec3; PUZZLES],
@@ -255,9 +266,18 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         Material::Marker,
     );
     stakes.extend(corners(platform_mid - 1, platform_mid + 1, CANYON_ROW - 1, CANYON_ROW + 1, ground));
+    let canyon_release_pin = pins.len();
     pins.push(Pin { position: canyon_launch.origin, label: "Ledge launcher: release point" });
     pins.push(Pin { position: canyon_launch.at(layout.platform_centre, 0.0, ground), label: "Platform: centre" });
     let station2 = IVec3::new(CANYON_X - 6, ledge_top, CANYON_ROW + 3);
+    // The jack frame stands on the last block of the launcher's rail, at the rim. The salvage pile
+    // lies on the ledge north of the rail, two crates high: the crates themselves are put there when
+    // the game starts (see `carry`), since they move.
+    let canyon_well = IVec3::new(CANYON_X - 1, ledge_top, CANYON_ROW);
+    let crate_pile: Vec<IVec3> = (0..Ch1Layout::MAX_STACK as i32)
+        .map(|i| IVec3::new(CANYON_X - 4 + (i / 2) % 2, ledge_top + i % 2, CANYON_ROW - 3 + i / 4))
+        .collect();
+    let crate_yard = [IVec3::new(LEDGE_X + 1, ledge_top, CANYON_ROW - 4), IVec3::new(CANYON_X - 2, ledge_top + 2, CANYON_ROW - 1)];
 
     // --- Puzzle 3: tilting launcher, ridge, pad -----------------------------------------------
     let ridge_x = RIDGE_LAUNCH_X + layout.ridge_x as i32;
@@ -349,6 +369,10 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         mast_release,
         mast_plate,
         canyon_launch,
+        canyon_well,
+        crate_pile,
+        crate_yard,
+        canyon_release_pin,
         ridge_launch,
         stations,
         pins,
@@ -878,6 +902,37 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn the_crates_have_room_on_the_ledge() {
+        for seed in 0..200 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            let ledge_top = GROUND + layout.ledge_h as i32;
+            // The jack frame's column is clear all the way up, and stands on the ledge at the rim.
+            assert!(world.is_solid(sites.canyon_well - IVec3::Y), "seed {seed}");
+            assert!(!world.is_solid(sites.canyon_well + IVec3::X - IVec3::Y), "seed {seed}: the rim must be the next block out");
+            for k in 0..=Ch1Layout::MAX_STACK as i32 + 2 {
+                assert!(!world.is_solid(sites.canyon_well + IVec3::Y * k), "seed {seed}: the frame's column is blocked at {k}");
+            }
+            // The pile lies on the ledge's flat top, every cell free, inside the yard.
+            assert_eq!(sites.crate_pile.len(), Ch1Layout::MAX_STACK as usize);
+            let [low, high] = sites.crate_yard;
+            for x in low.x..=high.x {
+                for z in low.z..=high.z {
+                    assert!(world.is_solid(IVec3::new(x, low.y - 1, z)), "seed {seed}: the yard has a hole at ({x}, {z})");
+                    for y in low.y..=high.y + 2 {
+                        assert!(!world.is_solid(IVec3::new(x, y, z)), "seed {seed}: the yard is blocked at ({x}, {y}, {z})");
+                    }
+                }
+            }
+            for cell in &sites.crate_pile {
+                assert!(cell.cmpge(low).all() && cell.cmple(high).all(), "seed {seed}: {cell} is outside the yard");
+                let bottom = IVec3::new(cell.x, ledge_top, cell.z);
+                assert!(world.is_solid(bottom - IVec3::Y), "seed {seed}: the pile at {cell} is not on the ledge");
             }
         }
     }

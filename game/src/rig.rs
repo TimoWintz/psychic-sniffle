@@ -1,15 +1,17 @@
 //! Launcher rigs: the launchers show what the blueprint says before anything is committed.
 //!
-//! The tilting launcher's guide arm swings to the angle typed in, and a gauge beside each launcher
-//! fills to the speed typed in, measured against the launcher's rating. This is the player's own
-//! number made visible; nothing here previews a path or judges anything.
+//! The tilting launcher's guide arm swings to the angle typed in, and its gauge fills to the speed
+//! typed in, measured against the launcher's rating. This is the player's own number made visible;
+//! nothing here previews a path or judges anything. The ledge launcher's governor is jammed: its
+//! gauge stands full at its rated speed, and the launcher rides on a cradle in a jack frame, on top
+//! of however many crates the player has slid in (see `carry`).
 
 use crate::island::{LaunchSite, Sites};
 use crate::sim::Sim;
 use crate::state::{Game, Ui};
 use bevy::prelude::*;
 use physics_core::expr::evaluate;
-use physics_core::puzzle::{LAUNCHER_HARD_LIMIT, PuzzleKind};
+use physics_core::puzzle::{Ch1Layout, PuzzleKind};
 use physics_core::units::{Dim, Quantity};
 
 /// Length of the tilting launcher's guide arm, from its hinge at the release point.
@@ -30,9 +32,15 @@ struct Arm {
     axis: Vec3,
 }
 
+/// The ledge launcher's cradle, on top of the crates in the jack frame.
+#[derive(Component)]
+struct Cradle;
+
 #[derive(Component)]
 struct GaugeFill {
     puzzle: usize,
+    /// A launcher that fires at one speed only shows that speed, whatever is typed.
+    fixed: Option<f64>,
     /// Speed at the top of the scale, m/s: the launcher's rating.
     limit: f64,
     /// Current fill, as a fraction of the scale; eases toward the blueprint's.
@@ -45,7 +53,7 @@ pub struct RigPlugin;
 
 impl Plugin for RigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(Update, follow_blueprint);
+        app.add_systems(Startup, spawn).add_systems(Update, (follow_blueprint, ride_the_stack));
     }
 }
 
@@ -53,7 +61,7 @@ fn puzzle_of(game: &Game, kind: PuzzleKind) -> usize {
     game.chapter.puzzles.iter().position(|p| p.kind == kind).expect("the chapter has this kind of puzzle")
 }
 
-fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, game: Res<Game>) {
+pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, game: Res<Game>) {
     let steel = materials.add(StandardMaterial { base_color: Color::srgb(0.55, 0.57, 0.62), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.10, 0.11, 0.14), perceptual_roughness: 0.7, ..default() });
     let mark = materials.add(StandardMaterial { base_color: Color::srgb(0.92, 0.95, 1.0), unlit: true, ..default() });
@@ -79,16 +87,34 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             }
         });
 
-    // A speed gauge beside each launcher, on the station's side, rated to what the launcher accepts.
+    // The jack frame at the rim: two uprights either side of the column the crates stack in, as
+    // tall as the frame holds, and the launcher's cradle riding on the stack.
+    let frame_foot = sites.canyon_well.as_vec3();
+    let tall = Ch1Layout::MAX_STACK as f32 + 0.6;
+    let upright = meshes.add(Cuboid::new(0.14, tall, 0.14));
+    for (x, z) in [(0.07, -0.08), (0.93, -0.08), (0.07, 1.08), (0.93, 1.08)] {
+        commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(steel.clone()), Transform::from_translation(frame_foot + Vec3::new(x, tall / 2.0, z))));
+    }
+    let cradle = meshes.add(Cuboid::new(1.0, 0.12, 1.0));
+    let back_stop = meshes.add(Cuboid::new(0.1, 0.5, 0.9));
+    commands
+        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(dark.clone()), Transform::from_translation(cradle_at(&sites)), Visibility::default()))
+        .with_children(|c| {
+            c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.45, 0.3, 0.0)));
+        });
+
+    // A speed gauge beside each launcher, on the station's side. The tilting launcher's is rated to
+    // what it accepts and follows the blueprint; the ledge launcher's stands full at its one speed.
+    let canyon = puzzle_of(&game, PuzzleKind::Canyon);
     let gauges = [
-        (puzzle_of(&game, PuzzleKind::Canyon), sites.canyon_launch, LAUNCHER_HARD_LIMIT),
-        (ridge, sites.ridge_launch, game.layout.v_max),
+        (canyon, sites.canyon_launch, game.layout.canyon_speed, Some(game.layout.canyon_speed)),
+        (ridge, sites.ridge_launch, game.layout.v_max, None),
     ];
     let post = meshes.add(Cuboid::new(0.12, GAUGE_HEIGHT + 0.7, 0.12));
     let panel = meshes.add(Cuboid::new(0.42, GAUGE_HEIGHT + 0.16, 0.06));
     let fill = meshes.add(Cuboid::new(0.28, 1.0, 0.09));
     let line = meshes.add(Cuboid::new(0.56, 0.05, 0.1));
-    for (puzzle, site, limit) in gauges {
+    for (puzzle, site, limit, fixed) in gauges {
         let foot = gauge_foot(&site);
         let frame = Transform::from_translation(foot).with_rotation(Quat::from_rotation_arc(Vec3::X, site.direction));
         let bottom = Vec3::new(0.0, 0.6, 0.02);
@@ -99,12 +125,23 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             // The rating: the top of the scale.
             gauge.spawn((Mesh3d(line.clone()), MeshMaterial3d(mark.clone()), Transform::from_translation(bottom + Vec3::new(0.0, GAUGE_HEIGHT, 0.02))));
             gauge.spawn((
-                GaugeFill { puzzle, limit, level: 0.0, bottom },
+                GaugeFill { puzzle, fixed, limit, level: 0.0, bottom },
                 Mesh3d(fill.clone()),
                 MeshMaterial3d(material),
                 Transform::from_translation(bottom).with_scale(Vec3::new(1.0, 0.001, 1.0)),
             ));
         });
+    }
+}
+
+/// Where the ledge launcher's cradle sits: on top of the jack frame's crates, under the load.
+fn cradle_at(sites: &Sites) -> Vec3 {
+    sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 - Vec3::Y * 0.06
+}
+
+fn ride_the_stack(sites: Res<Sites>, mut cradle: Single<&mut Transform, With<Cradle>>) {
+    if sites.is_changed() {
+        cradle.translation = cradle_at(&sites);
     }
 }
 
@@ -148,7 +185,7 @@ fn follow_blueprint(
         transform.rotation = Quat::from_axis_angle(arm.axis, arm.angle) * arm.base;
     }
     for (mut gauge, mut transform, material) in &mut fills {
-        let speed = typed(&game, &ui, gauge.puzzle, "speed", Dim::SPEED).map_or(0.0, |q| q.value.max(0.0));
+        let speed = gauge.fixed.unwrap_or_else(|| typed(&game, &ui, gauge.puzzle, "speed", Dim::SPEED).map_or(0.0, |q| q.value.max(0.0)));
         let over = speed > gauge.limit;
         let target = (speed / gauge.limit).min(1.0) as f32;
         gauge.level += (target - gauge.level) * ease;

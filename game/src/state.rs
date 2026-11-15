@@ -82,6 +82,11 @@ impl Game {
     }
 
     /// Whether a handbook page can be read.
+    /// What is built at a puzzle's station: the number of crates under the ledge launcher.
+    pub fn placed(&self, puzzle: usize) -> u32 {
+        self.save.placed.get(&self.def(puzzle).id).copied().unwrap_or(0)
+    }
+
     pub fn page_found(&self, concept_id: &str) -> bool {
         self.save.is_found(&self.chapter, concept_id)
     }

@@ -121,7 +121,13 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
 
     let _ = writeln!(w, "\nThe player must enter:");
     for asked in &ctx.asked {
-        let draft = if asked.draft.trim().is_empty() { "nothing typed yet".to_string() } else { format!("currently typed: {}", asked.draft) };
+        let draft = if let Some(built) = &asked.built {
+            format!("set by building, not typed; now: {built}")
+        } else if asked.draft.trim().is_empty() {
+            "nothing typed yet".to_string()
+        } else {
+            format!("currently typed: {}", asked.draft)
+        };
         let _ = writeln!(w, "- {} — {} ({draft})", asked.label, asked.dimension);
     }
 

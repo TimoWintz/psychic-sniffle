@@ -5,7 +5,7 @@
 
 use physics_core::content::{Chapter, PuzzleDef};
 use physics_core::progress::Save;
-use physics_core::puzzle::{Instance, PuzzleKind};
+use physics_core::puzzle::{InputSource, Instance, PuzzleKind};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -37,6 +37,9 @@ pub struct AskedValue {
     pub dimension: String,
     /// What the player has typed in the blueprint so far, if anything.
     pub draft: String,
+    /// For a value the player sets by building in the world rather than typing: what stands there
+    /// now ("2 crates in the jack frame").
+    pub built: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -120,6 +123,25 @@ impl TutorContext {
                 secrets.push(Secret { low: a.min(b), high: a.max(b), only_before: Vec::new() });
             }
         }
+        if instance.kind == PuzzleKind::Canyon {
+            // The answer is a small whole number, too common to redact on its own: guard it where it
+            // counts crates, and guard the release height it gives, in metres.
+            secrets.clear();
+            let stack = instance.layout.canyon_answer().unwrap_or(0) as f64;
+            secrets.push(Secret {
+                low: stack - 0.01,
+                high: stack + 0.01,
+                only_before: ["crate", "crates", "more crate", "boxes", "blocks"].map(String::from).to_vec(),
+            });
+            let release = instance.layout.ledge_h as f64 + stack;
+            for height in [stack, release] {
+                secrets.push(Secret {
+                    low: height * (1.0 - SECRET_MARGIN) - 0.15,
+                    high: height * (1.0 + SECRET_MARGIN) + 0.15,
+                    only_before: ["m ", "m.", "m,", "metre", "meter"].map(String::from).to_vec(),
+                });
+            }
+        }
         if instance.kind == PuzzleKind::Ridge {
             // Many angle and speed pairs work here, so guard the whole working window.
             let layout = &instance.layout;
@@ -140,6 +162,10 @@ impl TutorContext {
         let mut known_numbers: Vec<f64> = save.notebook.entries.iter().map(|e| e.quantity.value).collect();
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
+        }
+        if instance.kind == PuzzleKind::Canyon {
+            // On the launcher's rating plate, in plain view.
+            known_numbers.push(instance.layout.canyon_speed);
         }
         // The experiment's question and choices are on the player's screen (the ridge's names its
         // two angles, which may fall inside the working window).
@@ -184,6 +210,10 @@ impl TutorContext {
                         spec.dim.describe()
                     },
                     draft: drafts.get(i).cloned().unwrap_or_default(),
+                    built: (spec.source == InputSource::Placed).then(|| {
+                        let crates = save.placed.get(&def.id).copied().unwrap_or(0);
+                        format!("{crates} crate{} in the jack frame", if crates == 1 { "" } else { "s" })
+                    }),
                 })
                 .collect(),
             notebook: save

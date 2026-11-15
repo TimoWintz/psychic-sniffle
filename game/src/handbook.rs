@@ -111,7 +111,7 @@ pub fn tracks(scene: Scene, t: f64) -> Vec<Track> {
     };
     match scene {
         // The tape's end, unrolling along the sofa.
-        Scene::Tape => vec![track(&|t| ((t / 1.6).min(1.0) * 2.0, 0.55))],
+        Scene::Tape => vec![track(&|t| ((t / 1.2).min(1.0) * 2.0, 0.55))],
         Scene::Cyclist => vec![track(&|t| (CYCLIST * t, 0.0))],
         // The car's front and the bus's back.
         Scene::Overtake => vec![track(&|t| (OVERTAKE_CAR * t, 0.0)), track(&|t| (OVERTAKE_GAP + OVERTAKE_BUS * t, 0.0))],
@@ -392,17 +392,17 @@ fn tape(pen: &Pen, tracks: &[Track], t: f64) {
         let x = i as f64 / 10.0;
         let long = i % 10 == 0;
         pen.line((x, y + 0.035), (x, y + if long { -0.03 } else { 0.005 }), Stroke::new(1.0, INK));
-        if long {
+        if long && i > 0 {
             pen.text((x, y - 0.06), Align2::CENTER_TOP, format!("{i_m} m", i_m = i / 10), 11.0, INK);
         }
     }
     pen.rect((-0.18, y + 0.09), (0.0, y - 0.09), 4.0, Color32::from_rgb(220, 60, 50));
     // What was measured, said two ways.
-    if t > 1.9 {
+    if t > 1.4 {
         pen.text((0.4, 1.02), Align2::CENTER_CENTER, "2", 22.0, BAD);
         pen.text((0.4, 0.92), Align2::CENTER_TOP, "✖ two what?", 12.0, BAD);
     }
-    if t > 2.6 {
+    if t > 2.0 {
         pen.text((1.6, 1.02), Align2::CENTER_CENTER, "2 m", 22.0, Color32::from_rgb(40, 140, 70));
         pen.text((1.6, 0.92), Align2::CENTER_TOP, "✔ a length", 12.0, Color32::from_rgb(40, 140, 70));
     }
@@ -642,7 +642,7 @@ fn table_edge(pen: &Pen, tracks: &[Track]) {
     ball(pen, rolled.now, 5.0, blue, false);
     ball(pen, dropped.now, 5.0, green, false);
     pen.text((0.95, 1.12), Align2::CENTER_CENTER, "rolled off", 11.0, blue);
-    pen.text((-0.55, 1.12), Align2::CENTER_CENTER, "dropped", 11.0, green);
+    pen.text((-0.12, 0.55), Align2::RIGHT_CENTER, "dropped", 11.0, green);
 }
 
 fn kick_split(pen: &Pen, tracks: &[Track], t: f64) {

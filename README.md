@@ -14,6 +14,13 @@ writes the matching page of your handbook (H), and the stations point you to the
 
 ![The canyon's experiment: guess, then watch](docs/screenshots/experiment.png)
 
+Each handbook page shows its idea in a short looping picture set on Earth: a cyclist past distance
+posts, an apple dropped from a balcony, two kicks landing on one flag. Pause and replay are under it.
+An optional quiz checks the page has sunk in. Answer every question right and the page gets a tick.
+The quizzes change nothing in the world.
+
+![The Free fall page: its relation, an apple dropped on Earth, and the quiz under it](docs/screenshots/handbook.png)
+
 ## Run
 
 Needs Rust 1.97.1 or newer. The first build takes a while (the engine is large).
@@ -80,7 +87,8 @@ GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 
 `tour` plays the chapter with the expressions a player would type, loads the rail cart, times the
 crawler and catches it (once too soon, once on the marker), times drops
-with the light gate at two notches, carries the canyon's crates into the jack frame, and writes
+with the light gate at two notches, photographs each handbook page as it is found and answers the
+Free fall page's quiz (once wrong, then right), carries the canyon's crates into the jack frame, and writes
 screenshots to `shots/`;
 `walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,
 presses Start and checks that the game takes over; `pose` films the avatar's animations up close

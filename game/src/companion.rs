@@ -403,6 +403,8 @@ struct Seen {
     /// Experiments watched at least once, per puzzle.
     watched: [bool; PUZZLES],
     found: BTreeSet<String>,
+    /// Handbook pages whose quiz has been answered in full.
+    quizzes: BTreeSet<String>,
     station: Option<usize>,
     recharging: [bool; PUZZLES],
 }
@@ -460,6 +462,7 @@ fn direct(
         asking,
         watched: std::array::from_fn(|i| game.save.demo_watched(&game.def(i).id)),
         found: game.save.found.clone(),
+        quizzes: game.chapter.concepts.iter().filter(|c| game.save.quiz_done(&game.chapter, &c.id)).map(|c| c.id.clone()).collect(),
         station: ui.station,
         recharging: std::array::from_fn(|i| ui.recharging[i].is_some()),
     };
@@ -504,6 +507,12 @@ fn direct(
                 if let Some(page) = game.chapter.concept(id) {
                     companion.feel(Mood::Pleased, 4.0);
                     companion.say(format!("New handbook page: {}. H opens it.", page.title));
+                }
+            }
+            for id in now.quizzes.difference(&before.quizzes) {
+                if let Some(page) = game.chapter.concept(id) {
+                    companion.feel(Mood::Pleased, 4.0);
+                    companion.say(format!("{}: every question answered right. Nicely done.", page.title));
                 }
             }
             if now.station != before.station

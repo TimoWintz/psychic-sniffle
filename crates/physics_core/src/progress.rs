@@ -68,6 +68,10 @@ pub struct Save {
     /// looks as it was left.
     #[serde(default)]
     pub placed: BTreeMap<String, u32>,
+    /// Handbook quizzes: for each page id, the questions answered right at least once. Optional
+    /// practice; it changes nothing in the world.
+    #[serde(default)]
+    pub quizzes: BTreeMap<String, BTreeSet<usize>>,
 }
 
 impl Save {
@@ -84,6 +88,7 @@ impl Save {
             found: BTreeSet::new(),
             demos: BTreeMap::new(),
             placed: BTreeMap::new(),
+            quizzes: BTreeMap::new(),
         }
     }
 
@@ -144,6 +149,22 @@ impl Save {
     /// Note that a demonstration ran. Only the guess before the first run is kept.
     pub fn record_demo(&mut self, puzzle_id: &str, guess: Option<usize>) {
         self.demos.entry(puzzle_id.to_string()).or_insert(guess);
+    }
+
+    /// Note a right answer to a page's quiz question. Returns `true` if it finished the page's quiz
+    /// just now.
+    pub fn answer_quiz(&mut self, chapter: &Chapter, concept_id: &str, question: usize) -> bool {
+        let was_done = self.quiz_done(chapter, concept_id);
+        self.quizzes.entry(concept_id.to_string()).or_default().insert(question);
+        !was_done && self.quiz_done(chapter, concept_id)
+    }
+
+    /// Whether every question of a page's quiz has been answered right. A page without a quiz is
+    /// never done.
+    pub fn quiz_done(&self, chapter: &Chapter, concept_id: &str) -> bool {
+        let Some(concept) = chapter.concept(concept_id).filter(|c| !c.quiz.is_empty()) else { return false };
+        let right = self.quizzes.get(concept_id);
+        (0..concept.quiz.len()).all(|q| right.is_some_and(|r| r.contains(&q)))
     }
 
     pub fn recharge(&mut self, puzzle_id: &str) {
@@ -236,6 +257,7 @@ mod tests {
         save.placed.insert("1.1.3".into(), 4);
         save.placed.insert("1.1.2".into(), 9);
         save.placed.insert("1.1.0".into(), 1);
+        save.answer_quiz(&chapter_1_1(), "velocity", 1);
         attempt(&mut save, "1.1.2", PuzzleKind::Gravity, 1.0);
         let text = save.to_ron();
         assert_eq!(Save::from_ron(&text).unwrap(), save);
@@ -246,7 +268,7 @@ mod tests {
     fn saves_from_before_pages_and_demonstrations_still_load() {
         let old = r#"(version: 2, seed: 5, notebook: (entries: []), puzzles: {"1.1.0": (attempts: [], charges_used: 1, solved: true)})"#;
         let save = Save::from_ron(old).unwrap();
-        assert!(save.found.is_empty() && save.demos.is_empty() && save.placed.is_empty());
+        assert!(save.found.is_empty() && save.demos.is_empty() && save.placed.is_empty() && save.quizzes.is_empty());
         // The tutorial is done, so its page is there; the drop tower's is not yet.
         let chapter = chapter_1_1();
         assert!(save.is_found(&chapter, "units"));
@@ -278,6 +300,26 @@ mod tests {
         assert!(save.demo_watched("1.1.4"));
         assert_eq!(save.first_guess("1.1.4"), None);
 
+        assert_eq!(Save::from_ron(&save.to_ron()).unwrap(), save);
+    }
+
+    #[test]
+    fn a_quiz_is_done_once_every_question_is_answered_right() {
+        let chapter = chapter_1_1();
+        let questions = chapter.concept("free_fall").unwrap().quiz.len();
+        let mut save = Save::new(4);
+        assert!(!save.quiz_done(&chapter, "free_fall"));
+        for q in 0..questions - 1 {
+            assert!(!save.answer_quiz(&chapter, "free_fall", q));
+        }
+        // Answering the same question again finishes nothing.
+        assert!(!save.answer_quiz(&chapter, "free_fall", 0));
+        assert!(!save.quiz_done(&chapter, "free_fall"));
+        assert!(save.answer_quiz(&chapter, "free_fall", questions - 1), "the last question finishes the quiz");
+        assert!(save.quiz_done(&chapter, "free_fall"));
+        assert!(!save.answer_quiz(&chapter, "free_fall", 0), "a quiz is finished once");
+        assert!(!save.quiz_done(&chapter, "velocity"));
+        assert!(!save.quiz_done(&chapter, "no_such_page"));
         assert_eq!(Save::from_ron(&save.to_ron()).unwrap(), save);
     }
 }

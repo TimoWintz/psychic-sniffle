@@ -1,5 +1,5 @@
 //! Interface panels: the dock at the top left (heads-up display, notebook and calculator), the
-//! handbook beside it,
+//! handbook beside it (its pages are drawn by `handbook`),
 //! the station, the ruler's reading, and the body of the conversation with Lumen (drawn by the
 //! companion, attached to Lumen's eye).
 //!
@@ -20,16 +20,15 @@ use egui::{Align2, Color32, RichText};
 use physics_core::ballistics::FlightEnd;
 use physics_core::expr::evaluate;
 use physics_core::content::{DemoDef, PuzzleDef};
-use physics_core::materials::Material;
 use physics_core::progress::Quality;
 use physics_core::puzzle::{Ch1Layout, InputSource, Instance, Outcome, Playback, PuzzleKind};
 use physics_core::units::{Quantity, lookup_unit, sig};
 use tutor::Turn;
 
-const GOOD: Color32 = Color32::from_rgb(110, 220, 130);
-const WARN: Color32 = Color32::from_rgb(240, 190, 80);
-const BAD: Color32 = Color32::from_rgb(240, 110, 100);
-const DIM: Color32 = Color32::from_rgb(160, 165, 175);
+pub(crate) const GOOD: Color32 = Color32::from_rgb(110, 220, 130);
+pub(crate) const WARN: Color32 = Color32::from_rgb(240, 190, 80);
+pub(crate) const BAD: Color32 = Color32::from_rgb(240, 110, 100);
+pub(crate) const DIM: Color32 = Color32::from_rgb(160, 165, 175);
 /// Lumen's colour, the cyan of its eye, for its words in the panels.
 const LUMEN: Color32 = Color32::from_rgb(110, 205, 240);
 
@@ -178,7 +177,7 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
 
 /// The handbook, at its place beside the dock's column. Reduced, it is only its header; expanded, it
 /// runs down from there to the hints.
-fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
+fn handbook_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui) {
     let screen = ctx.content_rect();
     let left = HANDBOOK_LEFT;
     egui::Area::new(egui::Id::new("handbook")).anchor(Align2::LEFT_TOP, [left, 10.0]).movable(false).show(ctx, |ui| {
@@ -197,7 +196,7 @@ fn handbook_panel(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
                 let room = (screen.bottom() - HANDBOOK_BOTTOM_RESERVE - ui.cursor().top()).max(120.0);
                 // An area's contents are capped at its size the frame before, which was only the
                 // header when the handbook was just opened; give the body the room it has.
-                ui.allocate_ui(egui::vec2(ui.available_width(), room), |ui| handbook_body(ui, game, ui_state, room));
+                ui.allocate_ui(egui::vec2(ui.available_width(), room), |ui| crate::handbook::body(ui, game, ui_state, room));
             }
         });
     });
@@ -757,66 +756,6 @@ fn valid_name(name: &str) -> bool {
     let starts_well = chars.next().is_some_and(|c| c.is_ascii_alphabetic());
     let reserved = ["sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "ln", "exp", "abs"];
     starts_well && chars.all(|c| c.is_ascii_alphanumeric() || c == '_') && !reserved.contains(&name) && (name == "g" || lookup_unit(name).is_none())
-}
-
-fn handbook_body(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, room: f32) {
-    egui::ScrollArea::vertical().id_salt("handbook").max_height(room).show(ui, |ui| {
-        ui.label(RichText::new("Pages").strong());
-        ui.label(RichText::new("A page is written when you see what it describes happen in the world.").small().color(DIM));
-        let focus = ui_state.handbook_focus.take();
-        // A page is listed once a puzzle that uses it is open; it can be read once found.
-        let mut shown: Vec<&str> = Vec::new();
-        for (i, puzzle) in game.chapter.puzzles.iter().enumerate() {
-            if !game.unlocked(i) {
-                continue;
-            }
-            for id in &puzzle.concepts {
-                if shown.contains(&id.as_str()) {
-                    continue;
-                }
-                shown.push(id);
-                let Some(concept) = game.chapter.concept(id) else { continue };
-                if !game.page_found(id) {
-                    ui.label(RichText::new(format!("{} — not found yet", concept.title)).color(DIM));
-                    ui.label(RichText::new(format!("    {}", concept.hint)).small().italics().color(DIM));
-                    continue;
-                }
-                let new = ui_state.unread_pages.contains(&concept.id);
-                let title = if new { RichText::new(format!("{}   · new", concept.title)).color(GOOD) } else { RichText::new(&concept.title) };
-                let focused = focus.as_deref() == Some(id.as_str());
-                let mut header = egui::CollapsingHeader::new(title).id_salt(("page", id));
-                if focused {
-                    header = header.open(Some(true));
-                }
-                let shown_page = header.show(ui, |ui| {
-                    ui.label(RichText::new(&concept.card).monospace());
-                    if let Some(at) = game.chapter.puzzle(concept.found.puzzle()) {
-                        ui.label(RichText::new(format!("Found at: {}", at.title)).small().color(DIM));
-                    }
-                });
-                if focused {
-                    shown_page.header_response.scroll_to_me(Some(egui::Align::TOP));
-                }
-            }
-        }
-        ui.separator();
-        ui.label(RichText::new("Materials (one block is one cubic metre)").strong());
-        egui::Grid::new("materials").num_columns(5).striped(true).show(ui, |ui| {
-            for heading in ["", "density\nkg/m³", "specific heat\nJ/(kg K)", "conductivity\nW/(m K)", "resistivity\nohm m"] {
-                ui.label(RichText::new(heading).small().color(DIM));
-            }
-            ui.end_row();
-            for material in Material::ALL {
-                let p = material.properties();
-                ui.label(p.name);
-                ui.label(sig(p.density, 3));
-                ui.label(sig(p.specific_heat, 3));
-                ui.label(sig(p.thermal_conductivity, 2));
-                ui.label(if p.resistivity.is_finite() { format!("{:.1e}", p.resistivity) } else { "insulator".into() });
-                ui.end_row();
-            }
-        });
-    });
 }
 
 /// The conversation with Lumen: drawn by the companion inside the panel that grows out of its eye.

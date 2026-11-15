@@ -24,9 +24,9 @@ Nothing depends on `game`.
 | `materials` | the materials table (density, specific heat, conductivity, resistivity, colour) |
 | `puzzle` | chapter and puzzle definitions, seeded instance generation, evaluation of committed inputs, worked solutions |
 | `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired crates, the two-angle shots |
-| `content` | chapter words as data: briefs, concept pages and where each is found, experiment questions |
+| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions |
 | `notebook` | named readings; the calculator's variables |
-| `save` | progress record (seed, attempts, completed puzzles, notebook) |
+| `save` | progress record (seed, attempts, completed puzzles, notebook, pages found, quiz questions answered right) |
 
 A puzzle is a **kind** (Rust code: how to generate numbers from a seed, how to judge an attempt, how to
 write the worked solution) plus **content** (data: title, brief, concept cards, number ranges). Adding a
@@ -56,7 +56,8 @@ it had. What the engine does afterwards cannot change the result.
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
 | `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's cargo, the light gate's notch on the drop tower, the canyon's jack frame, which raises the launcher) |
-| `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, handbook, chat |
+| `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
+| `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
 | `shipyard` | ship parts that appear as chapters complete |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |

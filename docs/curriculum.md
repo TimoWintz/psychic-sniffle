@@ -210,6 +210,22 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Relations.** `x = v cosθ · t`, `y = v sinθ · t − ½ g t²`; on level ground `R = v² sin 2θ / g`.
 - **Reward.** The skiff's frame appears on the shipyard pad.
 
+### Handbook pages: Earth pictures and quizzes
+
+Each page of the chapter shows a looping picture of its idea set on Earth, never on the island, and
+has an optional quiz (two or three multiple-choice questions; Earth's numbers only). A right answer
+explains itself; every question right ticks the page. Nothing in the world depends on it.
+
+| Page | Picture | Quiz |
+|---|---|---|
+| *Measurements carry units* | a tape measure along a sofa: "2" against "2 m" | which value is a time; a bare number refused; km to m |
+| *Velocity* | a cyclist past distance posts, strobed each second: equal steps | distance over time; evenly spaced photos; `x = x0 + v t` |
+| *Relative velocity* | a car catching a bus, with the gap at each second shrinking by equal steps | same way: the difference; towards: the sum; time to close a gap |
+| *Free fall* | an apple from a balcony, strobed (gaps grow); a feather and a hammer in a tube with no air | strobe spacing; mass does not matter; `h` after 2 s with Earth's g |
+| *Horizontal and vertical motion are independent* | a marble rolled off a table and one dropped, level at every flash (shown slowed) | which lands first; horizontal speed in flight; `x = vx t` |
+| *Splitting a launch into components* | a football kick with its `vx`, `vy` and `v` arrows; `vy` shrinks and turns, `vx` stays | steeper means more `vy`; `vx` at 90°; `vy` at 30° |
+| *Range on level ground* | two kicks at 30° and 60° landing on one flag | the best angle; the partner angle; which stays up longer |
+
 ## Planned: 1.3 The Haul, place the catcher
 
 Direction only; chapter 1.3 has no puzzles in code yet. It is the third "doing it with your hands"

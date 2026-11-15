@@ -39,6 +39,49 @@ pub struct Concept {
     pub found: Found,
     /// Where to find the page, shown while it is locked.
     pub hint: String,
+    /// A moving picture of the idea, in a scene from Earth: never one of the island's own setups.
+    #[serde(default)]
+    pub illustration: Option<Illustration>,
+    /// Optional questions to check the page has sunk in. They change nothing in the world.
+    #[serde(default)]
+    pub quiz: Vec<QuizQuestion>,
+}
+
+/// The scenes a handbook page can show, all from Earth. What each one draws lives in the game.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Scene {
+    /// A tape measure along a sofa: a bare number beside a number with its unit.
+    Tape,
+    /// A cyclist at a steady pace past distance posts.
+    Cyclist,
+    /// A car catching up with a bus on a road, the gap between them marked.
+    Overtake,
+    /// An apple dropped from a balcony, beside a feather and a hammer in a vacuum tube.
+    AppleDrop,
+    /// One marble rolled off a table and one dropped from its edge.
+    TableEdge,
+    /// A football kick with its velocity split into its sideways and upward parts.
+    KickSplit,
+    /// Two kicks at the same speed and complementary angles.
+    TwinKicks,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Illustration {
+    pub scene: Scene,
+    /// One or two lines under the picture.
+    pub caption: String,
+}
+
+/// A handbook page's question. Shown, never spoken, so it may hold numbers (Earth's, never the island's).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct QuizQuestion {
+    pub question: String,
+    pub choices: Vec<String>,
+    /// Index of the right choice.
+    pub answer: usize,
+    /// Why, shown once a choice is made.
+    pub explain: String,
 }
 
 /// A station's demonstration: a question the player answers by choosing, before watching.
@@ -159,6 +202,14 @@ impl Chapter {
             if has_digit(&concept.title) {
                 problems.push(format!("page {}: the title is spoken and must hold no digits", concept.id));
             }
+            for (n, question) in concept.quiz.iter().enumerate() {
+                if question.choices.len() < 2 || question.answer >= question.choices.len() {
+                    problems.push(format!("page {}: quiz question {} needs choices and an answer among them", concept.id, n + 1));
+                }
+                if question.explain.trim().is_empty() {
+                    problems.push(format!("page {}: quiz question {} needs an explanation", concept.id, n + 1));
+                }
+            }
         }
         problems
     }
@@ -218,10 +269,28 @@ mod tests {
         chapter.concepts[1].found = Found::Demo("1.1.4".into());
         chapter.concepts[2].title = "Range at 45 degrees".into();
         chapter.puzzles[2].demo.as_mut().unwrap().answer = 7;
+        chapter.concepts[3].quiz[0].answer = 9;
+        chapter.concepts[4].quiz[1].explain = " ".into();
         let problems = chapter.problems();
         assert!(problems.iter().any(|p| p.contains("found only later")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("must hold no digits")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("an answer among them")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("quiz question 1 needs choices")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("quiz question 2 needs an explanation")), "{problems:?}");
+    }
+
+    #[test]
+    fn every_page_has_a_picture_and_a_short_quiz() {
+        let chapter = chapter_1_1();
+        for concept in &chapter.concepts {
+            assert!(concept.illustration.is_some(), "{} has an illustration", concept.id);
+            assert!((2..=3).contains(&concept.quiz.len()), "{} has two or three questions", concept.id);
+        }
+        // Each scene is drawn once: a page's picture is its own.
+        let scenes: Vec<Scene> = chapter.concepts.iter().filter_map(|c| c.illustration.as_ref().map(|i| i.scene)).collect();
+        for (i, scene) in scenes.iter().enumerate() {
+            assert!(!scenes[..i].contains(scene), "{scene:?} is drawn on two pages");
+        }
     }
 
     #[test]

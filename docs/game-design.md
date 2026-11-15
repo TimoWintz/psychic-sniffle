@@ -172,6 +172,15 @@ Unlocked as the curriculum needs them.
   experiment, or for the first page, the tutorial's first commit. Until then it is listed as locked,
   with where to find it. Lumen announces new pages, each station has buttons for the pages its job
   uses, and after a miss Lumen names the page worth rereading.
+  Each page reads as words with its relations set apart in boxes, and shows a short looping
+  picture of the idea in a scene from Earth (a cyclist past distance posts, an apple dropped from a
+  balcony, two kicks landing on one spot), strobed like the stations' experiments, with pause and
+  replay. The pictures are Earth's on purpose: the castaway's home, never the island's setups, so
+  they explain without answering a puzzle. Under each page, an optional quiz of two or three
+  multiple-choice questions, some on ideas and some small sums with Earth's numbers (Earth's g may
+  appear; the island's never comes near it). A right answer shows why; a wrong one sends the player
+  back to the page. Answering every question right ticks the page, and Lumen says so. The quizzes
+  change nothing in the world.
 - **Launchers show the blueprint.** As a value is typed, the tilting launcher's arm swings to the
   angle and its gauge fills to the speed, against the launcher's rating. The ledge launcher's gauge
   marks the bottom of its band too and turns red outside it, and the launcher itself rides up its jack

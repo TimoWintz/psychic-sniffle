@@ -5,6 +5,7 @@ mod carry;
 mod cinematic;
 mod companion;
 mod devscript;
+mod handbook;
 mod intro;
 mod island;
 mod player;

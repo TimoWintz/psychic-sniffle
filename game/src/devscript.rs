@@ -57,6 +57,10 @@ enum Step {
     ExpectFound { page: &'static str, within: f32 },
     /// Open the handbook at a page, as its button at the station would.
     OpenPage(&'static str),
+    /// Answer a question of a handbook page's quiz, rightly or not, as a click on a choice would.
+    Quiz { page: &'static str, question: usize, right: bool },
+    /// Fail unless every question of the page's quiz has been answered right.
+    ExpectQuizDone(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
     /// Stand at `feet` facing along `facing`, with the pointer marking `aim` on the drop tower, and
@@ -317,6 +321,20 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         ExpectFound { page: "free_fall", within: 2.0 },
         Wait(0.6),
         Shot("08b_strobe_seen"),
+        // The page the experiment wrote: its picture of an apple falling on Earth, then its quiz.
+        OpenPage("free_fall"),
+        Wait(1.1),
+        Shot("08f_handbook_free_fall"),
+        Step::Quiz { page: "free_fall", question: 0, right: false },
+        Wait(0.4),
+        Shot("08g_quiz_wrong"),
+        Step::Quiz { page: "free_fall", question: 0, right: true },
+        Step::Quiz { page: "free_fall", question: 1, right: true },
+        Step::Quiz { page: "free_fall", question: 2, right: true },
+        ExpectQuizDone("free_fall"),
+        Wait(0.6),
+        Shot("08h_quiz_done"),
+        closed_step(),
         // Then the light gate: a short drop, then a long one, each timed by a run of the experiment.
         expect_gaze("Light gate on its stand"),
         Station(None),
@@ -718,6 +736,15 @@ fn run(
             }
         }
         Step::OpenPage(page) => ui.open_page(page),
+        Step::Quiz { page, question, right } => {
+            let concept = game.chapter.concept(page).unwrap_or_else(|| panic!("no page '{page}'"));
+            let asked = &concept.quiz[question];
+            let choice = if right { asked.answer } else { (asked.answer + 1) % asked.choices.len() };
+            ui.open_page(page);
+            ui.quiz_focus = Some(page.to_string());
+            crate::handbook::pick(&mut game, &mut ui, page, question, choice);
+        }
+        Step::ExpectQuizDone(page) => assert!(game.save.quiz_done(&game.chapter, page), "the quiz on '{page}' is not done: {:?}", game.save.quizzes.get(page)),
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
         Step::CarryAt { feet, facing, expect, aim } => {

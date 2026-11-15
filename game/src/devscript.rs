@@ -195,9 +195,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(1.2),
         Shot("01b_lumen_points_off_screen"),
         // The whole route, from the wreck on the south coast to the shipyard on the north shore.
-        // Looked at from high over its middle, so no hill comes between the camera and it.
-        Watch(Some(sites.wreck.lerp(sites.shipyard, 0.5).with_y(crate::island::GROUND as f32 + 25.0))),
-        Look { yaw: 0.3, pitch: 0.85, distance: 150.0 },
+        // The route's northern half, from the canyon to the shipyard on the north shore, looked at from
+        // high over it so no hill comes between the camera and it (the camera keeps within 80 m).
+        Watch(Some(sites.tower_plate.lerp(sites.shipyard, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
+        Look { yaw: 0.25, pitch: 1.0, distance: 80.0 },
         Wait(1.5),
         Shot("02_island"),
         Watch(None),

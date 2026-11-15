@@ -140,7 +140,7 @@ const PAD_Z: i32 = 60;
 /// ridge stays off the canyon shot's level run, near enough that the beam lands beside the launcher.
 const CANYON_OFFSET: i32 = 9;
 /// The canyon's length, across its launch line: it closes at the west end and climbs out at the east.
-const CANYON_ENDS: (i32, i32) = (-24, 22);
+const CANYON_ENDS: (i32, i32) = (-28, 28);
 /// Depth of the ledge's flat top, back from the rim.
 const LEDGE_DEPTH: i32 = 14;
 /// How far south of the rim the railway runs.

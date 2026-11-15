@@ -8,6 +8,7 @@
 use crate::carry::{Carry, Slot};
 use crate::island::{GROUND, LaunchSite, Sites};
 use crate::player::OrbitCamera;
+use crate::props::{self, Finishes, Vehicle};
 use crate::state::{Game, PageEvent, RECHARGE_SECONDS, Ui};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
@@ -176,8 +177,11 @@ struct PropAssets {
     pair: [Handle<StandardMaterial>; 2],
     afterimage: Handle<StandardMaterial>,
     mass: Handle<Mesh>,
+    /// What the ledge launcher and the tilting launcher throw: a crate and the frame beam.
+    crate_mesh: Handle<Mesh>,
+    beam: Handle<Mesh>,
     /// The haul cart's and the crawler's shapes, for their afterimages.
-    haul: [Handle<Mesh>; 2],
+    haul: [Vehicle; 2],
 }
 
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
@@ -218,7 +222,7 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sim>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, ride_the_cart).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, ride_the_cart, props::spin_wheels).chain());
     }
 }
 
@@ -254,6 +258,13 @@ pub(crate) fn setup(
     let timber_cargo = timber.clone();
     let alloy = solid(&mut materials, Material::HullAlloy.properties().colour);
     let crawler = solid(&mut materials, [0.92, 0.78, 0.22]);
+    let finishes = Finishes::new(&mut materials);
+    // The carts roll on spoked wheels; the crawler on treads, running west along the haul track.
+    let rail_cart = props::cart(&mut meshes, CART_SIZE, false);
+    let haul_cart = props::cart(&mut meshes, HAUL_CART_SIZE, true);
+    let crawler_shape = props::crawler(&mut meshes, CRAWLER_SIZE, sites.haul_direction.x.signum());
+    let crate_mesh = meshes.add(Cuboid::from_size(CRATE_SIZE));
+    let beam = meshes.add(props::i_beam(BEAM_SIZE));
     let ghost = materials.add(StandardMaterial {
         base_color: Color::srgba(0.4, 0.8, 1.0, 0.35),
         alpha_mode: AlphaMode::Blend,
@@ -271,13 +282,27 @@ pub(crate) fn setup(
         (Prop::HaulCart, steel.clone(), true),
         (Prop::Crawler, crawler, true),
     ] {
+        let vehicle = match prop {
+            Prop::Cart => Some(&rail_cart),
+            Prop::HaulCart => Some(&haul_cart),
+            Prop::Crawler => Some(&crawler_shape),
+            _ => None,
+        };
+        let mesh = match prop {
+            Prop::Crate => crate_mesh.clone(),
+            Prop::Beam => beam.clone(),
+            _ => vehicle.map_or_else(|| meshes.add(Cuboid::from_size(prop_size(prop))), |v| v.body.clone()),
+        };
         let mut body = commands.spawn((
             prop,
-            Mesh3d(meshes.add(Cuboid::from_size(prop_size(prop)))),
-            MeshMaterial3d(material),
+            Mesh3d(mesh),
+            MeshMaterial3d(material.clone()),
             Transform::from_translation(rest_pose(prop, &sites)),
             if visible { Visibility::Visible } else { Visibility::Hidden },
         ));
+        if let Some(vehicle) = vehicle {
+            body.with_children(|parts| vehicle.spawn_parts(parts, |paint| finishes.paint(&material, paint), true));
+        }
         if prop == Prop::Cargo {
             // The orange handle of salvage that can be carried: it comes off the cart again with F.
             let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
@@ -298,17 +323,25 @@ pub(crate) fn setup(
     commands.insert_resource(Gravity(Vec3::NEG_Y * game.layout.g as f32));
     commands.spawn((RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
 
-    // Loose wreckage, left to the engine: it falls and settles where it will.
+    // Loose wreckage, left to the engine: it falls and settles where it will. Bent hull plating,
+    // conduit, girder, a thruster bell and a console, thrown clear in the crash.
     for i in 0..10 {
-        let size = 0.5 + 0.25 * (i % 3) as f32;
         let offset = Vec3::new((i as f32 * 1.7) % 6.0 - 3.0, 3.0 + i as f32 * 0.9, (i as f32 * 2.3) % 5.0 - 6.5);
-        commands.spawn((
-            RigidBody::Dynamic,
-            Collider::cuboid(size, size, size),
-            Mesh3d(meshes.add(Cuboid::from_size(Vec3::splat(size)))),
-            MeshMaterial3d(alloy.clone()),
-            Transform::from_translation(sites.wreck + offset).with_rotation(Quat::from_rotation_z(i as f32 * 0.7)),
-        ));
+        let piece = props::debris(&mut meshes, &finishes, i);
+        let turned = Quat::from_rotation_y(i as f32 * 1.3) * Quat::from_rotation_z(i as f32 * 0.7);
+        commands
+            .spawn((
+                RigidBody::Dynamic,
+                piece.collider,
+                Mesh3d(piece.mesh),
+                MeshMaterial3d(piece.material),
+                Transform::from_translation(sites.wreck + offset).with_rotation(turned),
+            ))
+            .with_children(|trim| {
+                for (mesh, material, transform) in piece.trim {
+                    trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
+                }
+            });
     }
     let unlit = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), unlit: true, ..default() })
@@ -325,7 +358,9 @@ pub(crate) fn setup(
         pair,
         afterimage,
         mass: meshes.add(Cuboid::from_size(MASS_SIZE)),
-        haul: [meshes.add(Cuboid::from_size(HAUL_CART_SIZE)), meshes.add(Cuboid::from_size(CRAWLER_SIZE))],
+        crate_mesh,
+        beam,
+        haul: [haul_cart, crawler_shape],
     });
 }
 
@@ -577,7 +612,8 @@ fn finish_demo(game: &mut Game, ui: &mut Ui, puzzle: usize, guess: Option<usize>
 }
 
 /// Give a body to the physics engine with the velocity it has at the judged moment.
-fn hand_over(commands: &mut Commands, meshes: &mut Assets<Mesh>, size: Vec3, centre: Vec3, velocity: Vec3, material: Handle<StandardMaterial>, after: AfterSettling) {
+/// Hand a body over to the physics engine: `mesh` inside a box of `size`, moving at `velocity`.
+fn hand_over(commands: &mut Commands, mesh: Handle<Mesh>, size: Vec3, centre: Vec3, velocity: Vec3, material: Handle<StandardMaterial>, after: AfterSettling) {
     commands.spawn((
         RigidBody::Dynamic,
         Collider::cuboid(size.x, size.y, size.z),
@@ -585,7 +621,7 @@ fn hand_over(commands: &mut Commands, meshes: &mut Assets<Mesh>, size: Vec3, cen
         AngularVelocity(Vec3::new(0.3, 0.2, -1.2)),
         Restitution::new(0.25),
         Friction::new(0.8),
-        Mesh3d(meshes.add(Cuboid::from_size(size))),
+        Mesh3d(mesh),
         MeshMaterial3d(material),
         Transform::from_translation(centre),
         Settling { left: 6.0, after },
@@ -601,7 +637,6 @@ fn fallen(g: f32, t: f32, limit: f32) -> f32 {
 fn advance(
     time: Res<Time>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
     assets: Res<PropAssets>,
     mut sim: ResMut<Sim>,
     mut game: ResMut<Game>,
@@ -652,7 +687,7 @@ fn advance(
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
-                    hand_over(&mut commands, &mut meshes, MASS_SIZE, transform.translation, Vec3::NEG_Y * g * fall_time, material.0.clone(), AfterSettling::Restore(Prop::TowerMass));
+                    hand_over(&mut commands, assets.mass.clone(), MASS_SIZE, transform.translation, Vec3::NEG_Y * g * fall_time, material.0.clone(), AfterSettling::Restore(Prop::TowerMass));
                 }
             }
             if *t >= fall_time {
@@ -670,7 +705,11 @@ fn advance(
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let (cart, crawler) = run.at(flashes[*shown] as f32);
                 for (mesh, centre) in [(0, haul_cart_centre(&sites, cart)), (1, crawler_centre(&sites, crawler))] {
-                    commands.spawn((StrobeMark, Mesh3d(assets.haul[mesh].clone()), MeshMaterial3d(assets.afterimage.clone()), Transform::from_translation(centre)));
+                    let shape = &assets.haul[mesh];
+                    let ghost = assets.afterimage.clone();
+                    commands
+                        .spawn((StrobeMark, Mesh3d(shape.body.clone()), MeshMaterial3d(ghost.clone()), Transform::from_translation(centre)))
+                        .with_children(|parts| shape.spawn_parts(parts, |_| ghost.clone(), false));
                 }
                 *shown += 1;
             }
@@ -752,7 +791,7 @@ fn advance(
                         sim.action = Some(transform.translation);
                         if *t >= *actual && *visibility != Visibility::Hidden {
                             *visibility = Visibility::Hidden;
-                            hand_over(&mut commands, &mut meshes, MASS_SIZE, transform.translation, Vec3::NEG_Y * g * *actual, material.0.clone(), AfterSettling::Restore(Prop::MastMass));
+                            hand_over(&mut commands, assets.mass.clone(), MASS_SIZE, transform.translation, Vec3::NEG_Y * g * *actual, material.0.clone(), AfterSettling::Restore(Prop::MastMass));
                         }
                     }
                     Prop::Ghost => {
@@ -798,7 +837,8 @@ fn advance(
                     // A beam that lands on the pad stays down; anything else is returned to its launcher.
                     let after = if verdict.outcome.pass && prop == Prop::Beam { AfterSettling::Stay } else { AfterSettling::Restore(prop) };
                     let material = if prop == Prop::Beam { assets.alloy.clone() } else { material.0.clone() };
-                    hand_over(&mut commands, &mut meshes, prop_size(prop), centre, velocity, material, after);
+                    let mesh = if prop == Prop::Beam { assets.beam.clone() } else { assets.crate_mesh.clone() };
+                    hand_over(&mut commands, mesh, prop_size(prop), centre, velocity, material, after);
                 }
             }
             if *t - RUN_UP >= flight.t as f32 {

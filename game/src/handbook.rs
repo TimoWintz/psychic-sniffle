@@ -44,6 +44,7 @@ pub fn timing(scene: Scene) -> Timing {
         Scene::Tape => Timing { duration: 3.2, slow: 1.0, strobe: f64::INFINITY },
         Scene::Cyclist => Timing { duration: 6.0, slow: 1.0, strobe: 1.0 },
         Scene::Overtake => Timing { duration: OVERTAKE_GAP / (OVERTAKE_CAR - OVERTAKE_BUS), slow: 1.0, strobe: 1.0 },
+        Scene::GreenLight => Timing { duration: GREEN_TIME, slow: 1.0, strobe: 1.0 },
         Scene::AppleDrop => Timing { duration: (2.0 * BALCONY / EARTH_G).sqrt(), slow: 1.3, strobe: 0.25 },
         Scene::TableEdge => Timing { duration: (2.0 * TABLE / EARTH_G).sqrt(), slow: 4.0, strobe: 0.05 },
         Scene::KickSplit => Timing { duration: kick().1, slow: 1.0, strobe: 0.25 },
@@ -65,6 +66,7 @@ pub fn view(scene: Scene) -> [f64; 4] {
         Scene::Tape => [-0.45, 2.6, -0.15, 1.15],
         Scene::Cyclist => [-2.0, 33.0, -1.5, 6.0],
         Scene::Overtake => [-8.0, 116.0, -3.0, 22.0],
+        Scene::GreenLight => [-6.0, 42.0, -2.0, 15.0],
         Scene::AppleDrop => [-14.0, 16.0, -1.5, 24.5],
         Scene::TableEdge => [-1.3, 1.6, -0.12, 1.25],
         Scene::KickSplit => [-2.0, 36.0, -1.5, 11.0],
@@ -79,6 +81,9 @@ const OVERTAKE_BUS: f64 = 14.0;
 const OVERTAKE_GAP: f64 = 30.0;
 const CAR_LENGTH: f64 = 4.5;
 const BUS_LENGTH: f64 = 12.0;
+/// The car pulling away from the lights: its steady acceleration, in m/s², and how long it is shown.
+const GREEN_ACCEL: f64 = 3.0;
+const GREEN_TIME: f64 = 5.0;
 const BALCONY: f64 = 20.0;
 const TABLE: f64 = 1.0;
 const ROLL: f64 = 1.5;
@@ -110,6 +115,8 @@ pub fn tracks(scene: Scene, t: f64) -> Vec<Track> {
         Scene::Cyclist => vec![track(&|t| (CYCLIST * t, 0.0))],
         // The car's front and the bus's back.
         Scene::Overtake => vec![track(&|t| (OVERTAKE_CAR * t, 0.0)), track(&|t| (OVERTAKE_GAP + OVERTAKE_BUS * t, 0.0))],
+        // The car's front, speeding up from rest at the stop line.
+        Scene::GreenLight => vec![track(&|t| (0.5 * GREEN_ACCEL * t * t, 0.0))],
         // The apple, then the hammer and the feather in the tube beside it.
         Scene::AppleDrop => {
             let fall = |x: f64| move |t: f64| (x, BALCONY - 0.5 * EARTH_G * t * t);
@@ -246,6 +253,7 @@ fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now:
         Scene::Tape => tape(&pen, &tracks, t),
         Scene::Cyclist => cyclist(&pen, &tracks, t),
         Scene::Overtake => overtake(&pen, &tracks, t),
+        Scene::GreenLight => green_light(&pen, &tracks, t),
         Scene::AppleDrop => apple_drop(&pen, &tracks),
         Scene::TableEdge => table_edge(&pen, &tracks),
         Scene::KickSplit => kick_split(&pen, &tracks, t),
@@ -504,6 +512,49 @@ fn overtake(pen: &Pen, tracks: &[Track], t: f64) {
     }
 }
 
+fn green_light(pen: &Pen, tracks: &[Track], t: f64) {
+    let [x0, x1, ..] = view(Scene::GreenLight);
+    ground(pen, x0, x1, 0.0, 2.0);
+    pen.rect((x0, 0.0), (x1, -1.2), 0.0, ASPHALT);
+    let mut x = 3.0;
+    while x < x1 {
+        pen.rect((x, -0.5), (x + 3.0, -0.7), 0.0, Color32::from_rgb(230, 230, 220));
+        x += 7.0;
+    }
+    // The stop line, and the lights just turned green.
+    pen.rect((0.2, 0.0), (0.6, -1.2), 0.0, Color32::from_rgb(240, 240, 235));
+    pen.rect((-3.1, 4.4), (-2.9, 0.0), 0.0, INK);
+    pen.rect((-3.6, 6.4), (-2.4, 4.2), 2.0, Color32::from_rgb(40, 44, 52));
+    let lamp = 0.4 * pen.scale;
+    pen.painter.circle_filled(pen.at((-3.0, 5.85)), lamp, Color32::from_rgb(90, 40, 40));
+    pen.painter.circle_filled(pen.at((-3.0, 4.75)), lamp, Color32::from_rgb(70, 230, 110));
+    let red = Color32::from_rgb(210, 50, 50);
+    let track = &tracks[0];
+    // Where the car was at each flash: a faded body and a tick above it. The gaps grow.
+    for ghost in &track.ghosts {
+        pen.rect((ghost.0 - CAR_LENGTH, 1.2), (ghost.0, 0.4), 3.0, faded(red, 60));
+        pen.line((ghost.0, 3.1), (ghost.0, 2.5), Stroke::new(2.0, faded(INK, 200)));
+    }
+    if track.ghosts.len() > 1 {
+        let last = track.ghosts.last().map_or(0.0, |g| g.0);
+        pen.line((0.0, 2.8), (last, 2.8), Stroke::new(1.0, faded(INK, 160)));
+    }
+    let front = track.now.0;
+    vehicle(pen, front, CAR_LENGTH, 1.2, red, 0);
+    pen.text((front - CAR_LENGTH / 2.0, 3.6), Align2::CENTER_BOTTOM, format!("v = {} m/s", sig_fixed(GREEN_ACCEL * t, 1)), 11.0, INK);
+    // Its speed at each second, side by side: it rises by the same step every time.
+    let (left, base, width, tall) = (17.0, 8.5, 2.2, 4.5);
+    let top = GREEN_ACCEL * GREEN_TIME;
+    pen.text((left, base + tall + 0.6), Align2::LEFT_BOTTOM, "speed each second, m/s", 10.0, INK);
+    for (k, _) in track.ghosts.iter().enumerate() {
+        let v = GREEN_ACCEL * k as f64 * timing(Scene::GreenLight).strobe;
+        let x = left + k as f64 * (width + 0.8);
+        pen.rect((x, base + v / top * tall), (x + width, base), 1.0, faded(Color32::from_rgb(60, 80, 140), 220));
+        pen.text((x + width / 2.0, base - 0.2), Align2::CENTER_TOP, sig_fixed(v, 0), 9.0, INK);
+    }
+    pen.line((left - 0.5, base), (left + 6.0 * (width + 0.8), base), Stroke::new(1.0, INK));
+}
+
 fn apple(pen: &Pen, at: (f64, f64), ghost: bool) {
     ball(pen, at, 5.0, Color32::from_rgb(214, 40, 40), ghost);
     if !ghost {
@@ -714,7 +765,7 @@ fn materials(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
-    const ALL: [Scene; 7] = [Scene::Tape, Scene::Cyclist, Scene::Overtake, Scene::AppleDrop, Scene::TableEdge, Scene::KickSplit, Scene::TwinKicks];
+    const ALL: [Scene; 8] = [Scene::Tape, Scene::Cyclist, Scene::Overtake, Scene::GreenLight, Scene::AppleDrop, Scene::TableEdge, Scene::KickSplit, Scene::TwinKicks];
 
     fn samples(scene: Scene) -> impl Iterator<Item = f64> {
         let duration = timing(scene).duration;
@@ -754,6 +805,18 @@ mod tests {
         assert!(end.iter().all(|t| t.now.1.abs() < 1e-9));
         // The steep one stays up longer.
         assert!(twin(1).1 > twin(0).1);
+    }
+
+    #[test]
+    fn the_car_gains_the_same_speed_every_second() {
+        let end = tracks(Scene::GreenLight, timing(Scene::GreenLight).duration);
+        let strobe = timing(Scene::GreenLight).strobe;
+        let gaps: Vec<f64> = end[0].ghosts.windows(2).map(|w| w[1].0 - w[0].0).collect();
+        assert!(gaps.len() >= 4, "{gaps:?}");
+        // Each gap is longer than the last by the same step: a steady acceleration.
+        let steps: Vec<f64> = gaps.windows(2).map(|w| w[1] - w[0]).collect();
+        assert!(steps.iter().all(|s| (s - GREEN_ACCEL * strobe * strobe).abs() < 1e-9), "{steps:?}");
+        assert!(end[0].ghosts[0] == (0.0, 0.0), "it starts from rest at the stop line");
     }
 
     #[test]

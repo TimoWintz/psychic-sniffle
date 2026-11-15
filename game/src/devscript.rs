@@ -328,10 +328,15 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(1.6),
         Shot("08_strobe_drop"),
         WaitIdle,
+        ExpectFound { page: "acceleration", within: 2.0 },
         ExpectFound { page: "free_fall", within: 2.0 },
         Wait(0.6),
         Shot("08b_strobe_seen"),
-        // The page the experiment wrote: its picture of an apple falling on Earth, then its quiz.
+        // The pages the experiment wrote: a car pulling away from traffic lights, then an apple falling
+        // on Earth and its quiz.
+        OpenPage("acceleration"),
+        Wait(5.5),
+        Shot("08e_handbook_acceleration"),
         OpenPage("free_fall"),
         Wait(1.1),
         Shot("08f_handbook_free_fall"),

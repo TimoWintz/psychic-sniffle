@@ -151,7 +151,7 @@ value never works. All lengths are whole metres so they can be checked by counti
   well. A plot of `h` against `t²` belongs to the grapher (tier 2), not here.
 - **Try it first.** "How will flashes at equal moments be spaced?" Evenly / further apart lower down /
   closer together. The release is the experiment: the flashes leave afterimages and ticks whose
-  gaps grow. Writes the page *Free fall*.
+  gaps grow. Writes the pages *Acceleration* and *Free fall*.
 - **Predict.** Enter `g`.
 - **Test.** A second mass is released from the taller survey mast. The station shows the fall time
   predicted from the player's `g` beside the measured one.
@@ -221,6 +221,7 @@ explains itself; every question right ticks the page. Nothing in the world depen
 | *Measurements carry units* | a tape measure along a sofa: "2" against "2 m" | which value is a time; a bare number refused; km to m |
 | *Velocity* | a cyclist past distance posts, strobed each second: equal steps | distance over time; evenly spaced photos; `x = x0 + v t` |
 | *Relative velocity* | a car catching a bus, with the gap at each second shrinking by equal steps | same way: the difference; towards: the sum; time to close a gap |
+| *Acceleration* | a car pulling away from traffic lights, strobed each second: the gaps grow, and its speed at each second rises by equal steps | speed readings to `a`; change in `v` over time; `x = ½ a t²` from rest |
 | *Free fall* | an apple from a balcony, strobed (gaps grow); a feather and a hammer in a tube with no air | strobe spacing; mass does not matter; `h` after 2 s with Earth's g |
 | *Horizontal and vertical motion are independent* | a marble rolled off a table and one dropped, level at every flash (shown slowed) | which lands first; horizontal speed in flight; `x = vx t` |
 | *Splitting a launch into components* | a football kick with its `vx`, `vy` and `v` arrows; `vy` shrinks and turns, `vx` stays | steeper means more `vy`; `vx` at 90°; `vy` at 30° |

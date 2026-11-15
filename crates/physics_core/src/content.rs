@@ -56,6 +56,8 @@ pub enum Scene {
     Cyclist,
     /// A car catching up with a bus on a road, the gap between them marked.
     Overtake,
+    /// A car pulling away from traffic lights, speeding up steadily.
+    GreenLight,
     /// An apple dropped from a balcony, beside a feather and a hammer in a vacuum tube.
     AppleDrop,
     /// One marble rolled off a table and one dropped from its edge.
@@ -259,6 +261,9 @@ mod tests {
         }
         let chase: Vec<&str> = chapter.pages_found_at("1.1.1").iter().map(|c| c.id.as_str()).collect();
         assert_eq!(chase, ["velocity", "relative_velocity"]);
+        // Acceleration is defined before free fall uses it; the drop tower writes both.
+        let gravity: Vec<&str> = chapter.pages_found_at("1.1.2").iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(gravity, ["acceleration", "free_fall"]);
         let ridge: Vec<&str> = chapter.pages_found_at("1.1.4").iter().map(|c| c.id.as_str()).collect();
         assert_eq!(ridge, ["components", "range"]);
     }

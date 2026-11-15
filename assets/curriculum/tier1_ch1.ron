@@ -101,11 +101,42 @@ Chapter(
             ],
         ),
         Concept(
+            id: "acceleration",
+            title: "Acceleration",
+            found: Demo("1.1.2"),
+            hint: "Watch the test mass fall from the drop tower: try the experiment at the Local gravity station.",
+            card: "Acceleration says how fast a velocity changes. For something speeding up steadily, it is the change in velocity divided by the time taken:\n\n    a = (change in v) / (change in t)\n\nIts unit is a velocity over a time: (m/s)/s, written m/s². An acceleration of 3 m/s² adds 3 m/s to the speed every second.\n\nStarting from rest with a steady acceleration a, after a time t the velocity and the distance covered are\n\n    v = a t\n    x = (1/2) a t^2\n\nThe speed grows by the same step every second, so the distance covered in each second grows too: photos taken at equal moments show the gaps getting longer.",
+            illustration: Some(Illustration(
+                scene: GreenLight,
+                caption: "On Earth: a car pulling away from traffic lights, flashed once a second. Its speed grows by the same step every second, so each gap is longer than the last.",
+            )),
+            quiz: [
+                QuizQuestion(
+                    question: "A car pulls away from traffic lights. Read once a second, its speed is 0, 3, 6, then 9 m/s. Its acceleration is…",
+                    choices: ["3 m/s²", "9 m/s²", "18 m/s²"],
+                    answer: 0,
+                    explain: "The speed rises by 3 m/s in every second: a = 3 m/s / 1 s = 3 m/s². 9 m/s is how fast it ends up going, not how fast its speed changes.",
+                ),
+                QuizQuestion(
+                    question: "A cyclist speeds up steadily from 2 m/s to 8 m/s in 3 s. Their acceleration is…",
+                    choices: ["2 m/s²", "6 m/s²", "18 m/s²"],
+                    answer: 0,
+                    explain: "a = (change in v) / (change in t) = (8 m/s − 2 m/s) / 3 s = 6 m/s / 3 s = 2 m/s².",
+                ),
+                QuizQuestion(
+                    question: "A car starts from rest with a steady acceleration of 2 m/s². How far has it gone after 5 s?",
+                    choices: ["10 m", "25 m", "50 m"],
+                    answer: 1,
+                    explain: "x = (1/2) a t² = 0.5 × 2 m/s² × (5 s)² = 25 m. Its speed is then a t = 10 m/s, but it started from rest, so it did not go that fast the whole time.",
+                ),
+            ],
+        ),
+        Concept(
             id: "free_fall",
             title: "Free fall",
             found: Demo("1.1.2"),
             hint: "Watch the test mass fall from the drop tower: try the experiment at the Local gravity station.",
-            card: "An object let go from rest, with only gravity pulling on it, gains speed at a steady rate g: the gravitational acceleration, in m/s². After a time t it has fallen\n\n    h = (1/2) g t^2\n\nThe object's mass does not appear: heavy and light things fall together. (Air can hold back light, spread-out things such as feathers, but hardly a crate or an apple.)\n\ng belongs to the planet. This is not the planet you learned its value on: measure it here.",
+            card: "An object let go from rest, with only gravity pulling on it, falls with a steady acceleration g: the gravitational acceleration, in m/s². After a time t it has fallen\n\n    h = (1/2) g t^2\n\nThe object's mass does not appear: heavy and light things fall together. (Air can hold back light, spread-out things such as feathers, but hardly a crate or an apple.)\n\ng belongs to the planet. This is not the planet you learned its value on: measure it here.",
             illustration: Some(Illustration(
                 scene: AppleDrop,
                 caption: "On Earth: an apple dropped from a balcony, flashed at equal moments, falls further in each one. In a tube with the air pumped out, a feather keeps up with a hammer.",
@@ -265,7 +296,7 @@ Chapter(
             task: "Measure this planet's gravitational acceleration.",
             brief: "The launcher's computer was calibrated for another world. Before it can aim, it needs the gravitational acceleration here.\n\nThe drop tower beside this station holds a test mass. Measure how far it falls and how long that takes. When you commit a value, a second mass is released from the taller survey mast and timed against your prediction.",
             investigate: "Ruler (R): click the release point at the top of the drop tower, then the landing plate below it. Stopwatch: every run of the experiment below times the fall and notes it.\n\nLight gate: the gate on the stand by this station can be carried (F) and clamped on the drop tower at any whole-metre notch, from a metre below the release down to the plate: point at the height on the tower and press F. With a gate fitted, each run times the fall from the release to the gate and notes the drop and the time as a pair with one number (such as h2 and t2). The stopwatch reads to hundredths of a second, so a short drop gives a rough value: the longer the drop, the better the reading.",
-            concepts: ["free_fall"],
+            concepts: ["acceleration", "free_fall"],
             requires: ["1.1.1"],
             charges: 3,
             demo: Some(DemoDef(

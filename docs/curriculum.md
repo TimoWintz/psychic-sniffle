@@ -107,8 +107,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Purpose.** Velocity and relative velocity, before any acceleration: textbooks start here, and the
   drop tower's strobe ("evenly, or further apart?") then has a steady motion to be compared with.
 - **Brief.** A survey crawler from the wreck runs along the haul track at the one speed its drive
-  has, from the moment it starts, and cannot be stopped. The haul cart stands behind it on the same
-  track and runs at whatever speed is set. When the cart reaches the crawler the two couple; the load
+  has, from the moment it starts, and cannot be stopped. The haul track is the railway's stretch past
+  the depot gate, and the haul cart is the tutorial's cart, gone on up the line: it stands behind the
+  crawler on the same track and runs at whatever speed is set. When the cart reaches the crawler the two couple; the load
   can only be lifted off at the transfer marker. Set the cart's speed so it reaches the crawler there.
 - **Investigate.** Ruler: the cart's front coupler to the crawler's rear coupler (the head start
   `D`), the cart's front coupler to the transfer marker's centre (`M`), and timing post A to timing
@@ -172,9 +173,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 3 — Across the canyon
 
-- **Story.** The frame beam needs a cradle to land in at the shipyard, and the cradle, packed in a
-  salvage crate, crosses the canyon first: the first real shot with the player's g. Pass: the cradle
-  appears on the shipyard floor.
+- **Story.** The frame beam itself, packed in a salvage crate, crosses the canyon: the first real
+  shot with the player's g. The platform is beside the tilting launcher. Pass: the crate stays on the
+  platform and the beam waits on the tilting launcher.
 - **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
   horizontally, but its damaged dial turns only within a band (`vmin` to `vmax`), and from the bare
   ledge no speed in the band reaches the strip. The launcher rides in a jack frame at the rim; every
@@ -209,7 +210,8 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 4 — Over the ridge (capstone)
 
-- **Story.** The one that matters: the frame beam itself, over the ridge to the shipyard.
+- **Story.** The one that matters: the frame beam, come across the canyon, over the ridge to the
+  shipyard on the north shore.
 - **Brief.** Launch the frame beam over the ridge onto the shipyard pad. The launcher has a maximum
   speed.
 - **Investigate.** Ruler: distance to the pad, distance to the ridge, height of the ridge.
@@ -223,7 +225,7 @@ value never works. All lengths are whole metres so they can be checked by counti
   rules out very steep shots, leaving a window of roughly ten degrees. The player must reason about
   both constraints before computing the speed.
 - **Relations.** `x = v cosθ · t`, `y = v sinθ · t − ½ g t²`; on level ground `R = v² sin 2θ / g`.
-- **Reward.** The skiff's frame appears on the shipyard pad.
+- **Reward.** The skiff's frame rises on the shipyard floor, at the top of the slipway.
 
 ### Handbook pages: Earth pictures and quizzes
 

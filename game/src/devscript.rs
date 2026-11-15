@@ -163,8 +163,16 @@ impl Plugin for DevScriptPlugin {
 /// Index of the haul track's first pin (the cart's front coupler; then the crawler, the marker and the
 /// two posts): its pins are added after every other.
 const HAUL_PINS: usize = 13;
-/// The camera's yaw at the haul track: from the beach, south-east of the station, looking along it.
-const HAUL_YAW: f32 = 2.5;
+/// The camera's yaw at the haul track: from the beach, south-west of the station, looking along it.
+const HAUL_YAW: f32 = -0.65;
+/// The launchers fire north: a view of one is turned this far from the view it would have firing east.
+const TURN: f32 = std::f32::consts::FRAC_PI_2;
+
+/// Where to stand at the jack frame's foot, on the ledge launcher's rail, facing it.
+fn at_the_frame(sites: &Sites) -> (Vec3, Vec3) {
+    let out = sites.canyon_launch.direction;
+    (sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4, out)
+}
 
 fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
@@ -186,8 +194,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: -0.8, pitch: 0.15, distance: 3.0 },
         Wait(1.2),
         Shot("01b_lumen_points_off_screen"),
-        Watch(Some(Vec3::new(80.0, 20.0, 66.0) + crate::island::LAYOUT_ORIGIN.as_vec3())),
-        Look { yaw: -0.5, pitch: 0.75, distance: 80.0 },
+        // The whole route, from the wreck on the south coast to the shipyard on the north shore.
+        // Looked at from high over its middle, so no hill comes between the camera and it.
+        Watch(Some(sites.wreck.lerp(sites.shipyard, 0.5).with_y(crate::island::GROUND as f32 + 25.0))),
+        Look { yaw: 0.3, pitch: 0.85, distance: 150.0 },
         Wait(1.5),
         Shot("02_island"),
         Watch(None),
@@ -318,7 +328,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Station(None),
         Watch(Some(sites.crane_foot)),
         // From above, so the crane's mast does not stand between the camera and the unit.
-        Look { yaw: HAUL_YAW, pitch: 1.1, distance: 9.0 },
+        Look { yaw: 2.6, pitch: 1.1, distance: 9.0 },
         Wait(1.0),
         Shot("06k_guidance_unit_at_the_crane"),
         Watch(None),
@@ -403,7 +413,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("11_gravity_result"),
         // Puzzle 3: a refused entry, a miss, then the calculated shot.
         GoToStation(3),
-        Look { yaw: -1.05, pitch: 0.45, distance: 30.0 },
+        Look { yaw: -1.05 + TURN, pitch: 0.45, distance: 30.0 },
         Wait(1.0),
         Station(Some(3)),
         // A wrong guess, on purpose: the dropped crate first.
@@ -447,20 +457,20 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
     let ledge = sites.canyon_well.y as f32;
     let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
-    let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
+    let (at_frame, to_frame) = at_the_frame(sites);
     for k in 0..stack {
         steps.push(carry_at(at_pile, Vec3::X, Expect::Take));
         if k == 0 {
-            steps.extend([Look { yaw: 2.3, pitch: 0.35, distance: 7.0 }, Wait(0.8), Shot("14a_carrying")]);
+            steps.extend([Look { yaw: 2.3 + TURN, pitch: 0.35, distance: 7.0 }, Wait(0.8), Shot("14a_carrying")]);
         }
-        steps.push(carry_at(at_frame, Vec3::X, Expect::PutIn(Slot::Frame)));
+        steps.push(carry_at(at_frame, to_frame, Expect::PutIn(Slot::Frame)));
     }
     steps.extend([
-        Look { yaw: 2.5, pitch: 0.12, distance: 17.0 },
+        Look { yaw: 2.5 + TURN, pitch: 0.12, distance: 17.0 },
         Wait(1.0),
         Shot("14b_launcher_raised"),
         GoToStation(3),
-        Look { yaw: -1.4, pitch: 0.45, distance: 30.0 },
+        Look { yaw: -1.4 + TURN, pitch: 0.45, distance: 30.0 },
         Station(Some(3)),
         Draft(3, vec![String::new(), format!("d5/sqrt(2*(h2 + {stack} m)/g)")]),
         Wait(0.5),
@@ -472,16 +482,16 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.5),
         ExpectSolved(3),
         Shot("16_canyon_result"),
-        // The cradle the crate carried waits on the shipyard floor for the beam.
+        // The crated beam is down on the platform, and the beam waits on the tilting launcher beside it.
         Station(None),
-        Watch(Some(sites.shipyard)),
-        Look { yaw: -0.6, pitch: 0.55, distance: 22.0 },
+        Watch(Some(sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5)),
+        Look { yaw: -0.6 + TURN, pitch: 0.55, distance: 18.0 },
         Wait(3.0),
-        Shot("16c_cradle_on_the_shipyard_floor"),
+        Shot("16c_beam_on_the_tilting_launcher"),
         Watch(None),
         // Puzzle 4: 45 degrees strikes the ridge; an angle inside the window clears it.
         GoToStation(4),
-        Look { yaw: -1.15, pitch: 0.4, distance: 34.0 },
+        Look { yaw: -1.15 + TURN, pitch: 0.4, distance: 34.0 },
         Wait(1.0),
         Station(Some(4)),
         Guess(4, 2),
@@ -512,11 +522,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Draft(4, vec![format!("{angle} deg"), format!("sqrt(g*d6/sin(2*{angle} deg))")]),
         // The launcher shows the blueprint before anything is committed: the arm tilts, the gauge fills.
         Watch(Some(sites.ridge_launch.origin + sites.ridge_launch.direction * 1.5 + Vec3::Y * 1.2)),
-        Look { yaw: -0.75, pitch: 0.2, distance: 9.5 },
+        Look { yaw: -0.75 + TURN, pitch: 0.2, distance: 9.5 },
         Wait(1.5),
         Shot("17b_launcher_shows_the_blueprint"),
         Watch(None),
-        Look { yaw: -1.15, pitch: 0.4, distance: 34.0 },
+        Look { yaw: -1.15 + TURN, pitch: 0.4, distance: 34.0 },
         Wait(0.5),
         Commit(4),
         Wait(1.8),
@@ -526,8 +536,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("19_ridge_result"),
         Station(None),
         expect_gaze("The shipyard floor"),
-        GoTo(sites.shipyard + Vec3::new(-11.0, 0.0, 9.0)),
-        Look { yaw: -0.8, pitch: 0.3, distance: 16.0 },
+        GoTo(sites.shipyard + Vec3::new(9.0, 0.0, 11.0)),
+        Look { yaw: -0.8 + TURN, pitch: 0.3, distance: 16.0 },
         Wait(3.5),
         Shot("20_frame_installed"),
         Windows { notebook: true, handbook: true, tutor: true },
@@ -544,14 +554,14 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let ground = crate::island::GROUND as f32;
     let ledge = sites.canyon_launch.origin;
-    let east = -std::f32::consts::FRAC_PI_2;
-    let south = std::f32::consts::PI;
+    let back = -sites.canyon_launch.direction;
+    let (north, east) = (0.0, -std::f32::consts::FRAC_PI_2);
     vec![
         Start,
         UntilPlaying { within: 10.0 },
-        // Start on the grass west of the steps and walk east: up the steps onto the outcrop.
-        GoTo(Vec3::new(ledge.x - 20.0 - game.layout.ledge_h as f32, ground, ledge.z)),
-        Look { yaw: east, pitch: 0.5, distance: 16.0 },
+        // Start on the grass south of the steps and walk north: up the steps onto the outcrop.
+        GoTo((ledge + back * (20.0 + game.layout.ledge_h as f32)).with_y(ground)),
+        Look { yaw: north, pitch: 0.5, distance: 16.0 },
         Wait(0.5),
         Key(KeyCode::KeyW, true),
         expect_activity(Activity::Walk),
@@ -561,8 +571,8 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         UntilStandingAt { height: ground - game.layout.canyon_depth as f32, within: 12.0, what: "fall to the canyon floor" },
         Key(KeyCode::KeyW, false),
         Shot("walk_02_in_the_canyon"),
-        // Turn south and walk out up the stepped end of the canyon.
-        Look { yaw: south, pitch: 0.5, distance: 16.0 },
+        // Turn east and walk out up the stepped end of the canyon.
+        Look { yaw: east, pitch: 0.5, distance: 16.0 },
         Wait(0.3),
         Key(KeyCode::KeyW, true),
         UntilStandingAt { height: ground, within: 20.0, what: "walk out of the canyon" },
@@ -614,7 +624,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
     let at_pile = Vec3::new(pile_west - 0.6, sites.canyon_well.y as f32, pile_row + 0.5);
-    let at_frame = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
+    let (at_frame, to_frame) = at_the_frame(sites);
     let (cargo_at, cart_at) = by_the_rail(sites);
     let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };
     let at_console = || Look { yaw: 0.9, pitch: 0.2, distance: 4.5 };
@@ -646,7 +656,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         expect_activity(Activity::Idle),
         // A crate from the ledge's pile, carried.
         carry_at(at_pile, Vec3::X, Expect::Take),
-        Look { yaw: 2.3, pitch: 0.25, distance: 4.5 },
+        Look { yaw: 2.3 + TURN, pitch: 0.25, distance: 4.5 },
         Wait(0.8),
         Shot("pose_09_carrying"),
         Key(KeyCode::KeyS, true),
@@ -654,7 +664,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("pose_10_carrying_walk"),
         Key(KeyCode::KeyS, false),
         // Hands free again before the console: the crate goes into the jack frame.
-        carry_at(at_frame, Vec3::X, Expect::PutIn(Slot::Frame)),
+        carry_at(at_frame, to_frame, Expect::PutIn(Slot::Frame)),
         Wait(0.5),
         // The cart will not run empty.
         carry_at(cargo_at, Vec3::X, Expect::Take),

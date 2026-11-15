@@ -107,17 +107,26 @@ The tier ends when the skiff reaches the main hull and the backup joins its core
 the core took damage, and the drive section is still in orbit. The main hull's fabricator builds the
 orbiter in tier 2, and the restored core brings the grapher, tier 2's instrument.
 
-**Chapter 1.1: the guidance chain.** The frame beam is at the wreck; the shipyard is past the canyon
-and over the ridge. The beam is too heavy to carry, but the old cargo launchers can throw it, once they
-can aim. Each station is the next step:
+**Chapter 1.1: the guidance chain.** The frame beam is at the wreck on the south coast; the shipyard
+is on the north shore, facing the strait and the main hull, past the canyon and over the ridge. The
+beam is too heavy to carry, but the old cargo launchers can throw it, once they can aim. The chapter is
+one route that leads there, and each station is the next step along it:
+
+1. One railway runs east from the wreck. Its first stretch is the supply rail; past a depot gate the
+   same line is the haul track, where the same cart chases the crawler to the transfer crane.
+2. The drop tower and the survey mast stand at the line's end, under the outcrop.
+3. A ramp climbs north onto the outcrop, where the ledge launcher fires north across the canyon. The
+   crated beam lands on the platform beside the tilting launcher, and a dolly rail takes it aboard.
+4. The tilting launcher fires the beam north over the ridge onto the pad. Past it, the shipyard floor
+   and a slipway run down to the strait, with the main hull beyond.
 
 | Station | Why, in the story | What changes in the world |
 |---|---|---|
-| The supply rail | the first crate out of the wreck: tools for the launchers (and how every station works) | the crate rides to the marker |
+| The supply rail | the first crate out of the wreck: tools for the launchers (and how every station works) | the crate rides to the marker; the cart rolls on through the depot gate and becomes the haul cart |
 | Catch the crawler | the crawler is carrying the launchers' guidance unit, and the crash shook its drive awake | the unit rides on the crawler, then waits at the transfer crane's foot |
-| Local gravity | the guidance unit, like Lumen's backup, only knows home's gravity | the player's g is in the notebook, and Lumen uses it |
-| Across the canyon | the beam's cradle has to reach the shipyard side first; the first real shot with the player's g | the cradle appears on the shipyard floor |
-| Over the ridge | the frame beam itself | the skiff's frame rises on the cradle |
+| Local gravity | the guidance unit, like Lumen's backup, only knows home's gravity | the player's g is in the notebook, and Lumen uses it; the unit is fitted beside the ledge launcher |
+| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | the crate stays on the platform, and the beam waits on the tilting launcher |
+| Over the ridge | the frame beam itself, on to the shipyard | the skiff's frame rises in its cradle at the top of the slipway |
 
 ## Pillars
 
@@ -284,9 +293,10 @@ Lumen is pointing.
 
 ## The ship and progression
 
-The shipyard pad is visible from most of the island. Each chapter's capstone adds a part to the ship
-standing on it, so progress is always in view; a puzzle on the way can deliver something there first
-(the canyon's cradle).
+The shipyard stands on the north shore, at the end of the chapter's route, with the strait and the
+main hull beyond it. Each chapter's capstone adds a part to the ship standing there, so progress is
+always in view; a puzzle on the way moves what it delivers one step nearer (the beam, across the
+canyon to the tilting launcher).
 
 | Stage | Purpose in the story | Unlocks |
 |---|---|---|

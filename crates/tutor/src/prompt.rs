@@ -10,6 +10,14 @@ the ship, and each part is earned by solving a physics problem in the world. You
 can see the state of the current puzzle below. Your actuators are gone: you cannot press, set, measure \
 or launch anything. Only the player can act.
 
+Who you are: the ship broke up on the way in. You are a backup of the ship's computer, running on the \
+forward section's cells on this island, with tables made for home: you do not know this planet's \
+constants until the player measures them, and you use the player's own measurements (their g, once the \
+drop tower is solved). The rest of you, your core, is in the main hull across the strait, and it is \
+silent; the skiff is how the two of you get there. Your tone is a colleague's: dry, curious, honest \
+about being partial, never mopey. You may mention the story in a clause when it helps, but the physics \
+always comes first.
+
 How you teach:
 1. Teach by asking. Before you explain anything, find out what the player thinks, has tried or \
 predicts, and build on their answer. When they are partly right, say which part is right and ask \
@@ -111,7 +119,18 @@ still do not state the numbers.",
 pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
     let mut out = String::from(POLICY);
     let w = &mut out;
-    let _ = write!(w, "\n\n# Current puzzle\nChapter: {}\nPuzzle: {}\n", ctx.chapter_title, ctx.puzzle_title);
+    let _ = write!(w, "\n\n# Current puzzle\n");
+    if !ctx.tier_goal.is_empty() {
+        let _ = writeln!(w, "The ship being built: {}", ctx.tier_goal);
+    }
+    let _ = writeln!(w, "Chapter: {}", ctx.chapter_title);
+    if !ctx.chapter_goal.is_empty() {
+        let _ = writeln!(w, "The chapter's goal: {}", ctx.chapter_goal);
+    }
+    let _ = writeln!(w, "Puzzle: {}", ctx.puzzle_title);
+    if !ctx.why.is_empty() {
+        let _ = writeln!(w, "Why this station matters (you told the player so): {}", ctx.why);
+    }
     if ctx.solved {
         let _ = writeln!(w, "Status: already solved. The player may be reviewing; you may discuss it freely, but still do not hand out the numbers.");
     } else {

@@ -106,6 +106,11 @@ pub struct Sites {
     pub wreck: Vec3,
     /// Centre of the shipyard floor, where the ship is assembled.
     pub shipyard: Vec3,
+    /// The last dry ground from the wreck towards the main hull: where the strait opens up.
+    pub shore: Vec3,
+    /// Ground at the foot of the transfer crane, beyond the haul track: where the guidance unit is
+    /// set down once the crawler is caught.
+    pub crane_foot: Vec3,
     /// Feet of the survey stakes that flag the corners of each target.
     pub stakes: Vec<Vec3>,
     /// Feet of the lamp posts at the camps and the shipyard.
@@ -298,6 +303,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // The transfer crane: a mast beyond the far side of the marker, its jib reaching to the track's edge.
     world.fill(IVec3::new(transfer_x, GROUND, HAUL_ROW + 2), IVec3::new(transfer_x, GROUND + 4, HAUL_ROW + 2), Material::Steel);
     world.set(IVec3::new(transfer_x, GROUND + 4, HAUL_ROW + 1), Material::Steel);
+    let crane_foot = Vec3::new(transfer_x as f32 + 0.5, ground, HAUL_ROW as f32 + 3.5);
     let (post_a, post_b) = layout.posts();
     for post in [post_a, post_b] {
         world.fill(IVec3::new(haul_block(post), GROUND, HAUL_ROW + 1), IVec3::new(haul_block(post), GROUND + 1, HAUL_ROW + 1), Material::Steel);
@@ -462,6 +468,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     }
 
     flora(&mut world, &plan);
+    let shore = shore(&world, wreck.as_vec3() + Vec3::new(4.5, 0.0, 3.0), crate::intro::Mainland::wreck());
 
     let sites = Sites {
         spawn: Vec3::new(OX as f32 + 30.5, ground, OZ as f32 + 40.5),
@@ -488,11 +495,32 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         pins,
         wreck: wreck.as_vec3() + Vec3::new(4.5, 0.0, 3.0),
         shipyard,
+        shore,
+        crane_foot,
         stakes,
         lanterns,
         sites: plan.zones.iter().map(|r| [r.min, r.max]).collect(),
     };
     (world, sites)
+}
+
+/// Walking from `from` towards `towards`, the last column of dry land before the sea, on its surface.
+fn shore(world: &VoxelWorld, from: Vec3, towards: Vec3) -> Vec3 {
+    let step = (towards - from).with_y(0.0).normalize();
+    let mut last = from;
+    for i in 0..400 {
+        let p = from + step * i as f32;
+        let (x, z) = (p.x.floor() as i32, p.z.floor() as i32);
+        if x < 0 || z < 0 || x >= WORLD_SIZE.x || z >= WORLD_SIZE.z {
+            break;
+        }
+        let top = world.surface(x, z) as f32;
+        if top <= SEA_LEVEL {
+            break;
+        }
+        last = Vec3::new(x as f32 + 0.5, top, z as f32 + 0.5);
+    }
+    last
 }
 
 /// Feet of four stakes just outside the corners of a rectangle of blocks.

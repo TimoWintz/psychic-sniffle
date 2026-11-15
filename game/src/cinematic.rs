@@ -438,7 +438,7 @@ mod tests {
         let (world, sites) = build(&Ch1Layout::generate(seed));
         let mainland = Mainland::new(sites.wreck);
         let focus = sites.spawn + Vec3::Y * 1.5;
-        let sets = Sets::new(&world, sites.wreck, sites.spawn, mainland.wreck(), (OrbitCamera::default().eye(focus), focus));
+        let sets = Sets::new(&world, sites.wreck, sites.spawn, Mainland::wreck(), (OrbitCamera::default().eye(focus), focus));
         (world, mainland, sets)
     }
 

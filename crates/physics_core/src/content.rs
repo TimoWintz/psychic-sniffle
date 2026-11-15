@@ -71,6 +71,63 @@ pub struct PuzzleDef {
     /// The free experiment to try before any calculation, if the station has one.
     #[serde(default)]
     pub demo: Option<DemoDef>,
+    /// Why this job matters to the story, in Lumen's voice: said when the station first opens and
+    /// shown at the top of its panel. Spoken, so it holds no digits.
+    #[serde(default)]
+    pub why: String,
+    /// Lumen's line when the puzzle is passed: what it got us, and what it leads to. Spoken.
+    #[serde(default)]
+    pub done: String,
+}
+
+/// A line Lumen says, with a place its eye holds while it says it (a landmark's name).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Spoken {
+    pub text: String,
+    #[serde(default)]
+    pub look: Option<String>,
+}
+
+/// When a remark may be made, by the state of a puzzle.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RemarkWhen {
+    Always,
+    /// While this puzzle is not solved.
+    Before(String),
+    /// Once this puzzle is solved.
+    After(String),
+}
+
+/// Something Lumen says once, unprompted, when the player comes near a place and nothing else is
+/// going on.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Remark {
+    /// Name of the landmark the player comes near.
+    pub near: String,
+    /// How near, in metres.
+    pub radius: f32,
+    pub when: RemarkWhen,
+    pub line: Spoken,
+}
+
+impl Remark {
+    /// Ids of the puzzles named by the remark's condition.
+    fn puzzle(&self) -> Option<&str> {
+        match &self.when {
+            RemarkWhen::Always => None,
+            RemarkWhen::Before(id) | RemarkWhen::After(id) => Some(id),
+        }
+    }
+}
+
+/// A tier: the ship it builds and why.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Tier {
+    pub number: u8,
+    /// The ship this tier builds.
+    pub ship: String,
+    /// One line: what the tier is for in the story.
+    pub goal: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -82,6 +139,18 @@ pub struct Chapter {
     /// The ship part this chapter's capstone installs.
     pub part: String,
     pub intro: String,
+    /// One line for the dock: what the chapter is for in the story.
+    #[serde(default)]
+    pub goal: String,
+    /// Lumen's first lines in a fresh game.
+    #[serde(default)]
+    pub opening: Vec<Spoken>,
+    /// Lumen's lines when the chapter's last puzzle is passed.
+    #[serde(default)]
+    pub closing: Vec<Spoken>,
+    /// Lumen's remarks about places, each said once.
+    #[serde(default)]
+    pub remarks: Vec<Remark>,
     pub concepts: Vec<Concept>,
     pub puzzles: Vec<PuzzleDef>,
 }
@@ -136,6 +205,12 @@ impl Chapter {
                     problems.push(format!("puzzle {} needs page {id}, which is found only later", puzzle.id));
                 }
             }
+            if puzzle.why.trim().is_empty() || puzzle.done.trim().is_empty() {
+                problems.push(format!("puzzle {}: Lumen needs a why and a done line", puzzle.id));
+            }
+            if has_digit(&puzzle.why) || has_digit(&puzzle.done) {
+                problems.push(format!("puzzle {}: the why and done lines are spoken and must hold no digits", puzzle.id));
+            }
             if let Some(demo) = &puzzle.demo {
                 if demo.choices.len() < 2 || demo.answer >= demo.choices.len() {
                     problems.push(format!("puzzle {}: the demonstration needs choices and an answer among them", puzzle.id));
@@ -160,13 +235,37 @@ impl Chapter {
                 problems.push(format!("page {}: the title is spoken and must hold no digits", concept.id));
             }
         }
+        let spoken = self.opening.iter().chain(&self.closing).chain(self.remarks.iter().map(|r| &r.line));
+        for line in spoken {
+            if has_digit(&line.text) {
+                problems.push(format!("Lumen's line \"{}\" must hold no digits", line.text));
+            }
+        }
+        for remark in &self.remarks {
+            if let Some(id) = remark.puzzle()
+                && self.puzzle(id).is_none()
+            {
+                problems.push(format!("a remark at {} names unknown puzzle {id}", remark.near));
+            }
+        }
         problems
+    }
+
+    /// Every landmark the chapter's lines name, for the game to check against its places.
+    pub fn places_named(&self) -> Vec<&str> {
+        let looks = self.opening.iter().chain(&self.closing).chain(self.remarks.iter().map(|r| &r.line)).filter_map(|l| l.look.as_deref());
+        looks.chain(self.remarks.iter().map(|r| r.near.as_str())).collect()
     }
 }
 
 /// Lumen's scripted lines never contain a number, so they cannot give an answer away.
 fn has_digit(text: &str) -> bool {
     text.chars().any(|c| c.is_ascii_digit())
+}
+
+/// Tier 1: the skiff.
+pub fn tier_1() -> Tier {
+    ron::from_str(include_str!("../../../assets/curriculum/tier1.ron")).expect("assets/curriculum/tier1.ron is valid")
 }
 
 /// Tier 1, chapter 1: The Salvage Launcher.
@@ -194,6 +293,16 @@ mod tests {
         assert_eq!(chapter.puzzles[1].requires, ["1.1.0"]);
         // Velocity comes before acceleration: the drop tower waits for the haul track.
         assert_eq!(chapter.puzzles[2].requires, ["1.1.1"]);
+        // The story: a goal, an opening and a closing, and something to say about places.
+        assert!(!chapter.goal.is_empty() && !chapter.opening.is_empty() && !chapter.closing.is_empty());
+        assert!(!chapter.remarks.is_empty());
+    }
+
+    #[test]
+    fn tier_1_loads() {
+        let tier = tier_1();
+        assert_eq!(tier.number, chapter_1_1().tier);
+        assert!(!tier.goal.is_empty() && !has_digit(&tier.goal));
     }
 
     #[test]
@@ -218,10 +327,18 @@ mod tests {
         chapter.concepts[1].found = Found::Demo("1.1.4".into());
         chapter.concepts[2].title = "Range at 45 degrees".into();
         chapter.puzzles[2].demo.as_mut().unwrap().answer = 7;
+        chapter.puzzles[3].done = String::new();
+        chapter.puzzles[4].why = "Clear the ridge at 45 degrees.".into();
+        chapter.remarks[0].line.text = "Only 3 more.".into();
+        chapter.remarks[1].when = RemarkWhen::After("1.1.9".into());
         let problems = chapter.problems();
         assert!(problems.iter().any(|p| p.contains("found only later")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("must hold no digits")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("an answer among them")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.3: Lumen needs a why and a done line")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.4: the why and done lines")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("Only 3 more.")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("unknown puzzle 1.1.9")), "{problems:?}");
     }
 
     #[test]

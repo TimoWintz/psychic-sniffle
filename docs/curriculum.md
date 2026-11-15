@@ -11,6 +11,9 @@ prerequisite chapters.
 
 ## Tier 1 — Skiff (secondary school; algebra)
 
+The skiff crosses the strait to the main hull, where the rest of Lumen is; each chapter adds the part
+the crossing needs (see "The story" in the game design).
+
 | # | Chapter | Concepts | Maths | Needs | Ship part | Example puzzles |
 |---|---|---|---|---|---|---|
 | 1.1 | M — The Salvage Launcher | position, velocity, relative velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff frame | time a crawler and catch it on a marker; measure local gravity from a timed drop; launch a crate across a canyon; clear a ridge and hit the pad |
@@ -72,6 +75,8 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 0 — The supply rail (tutorial)
 
+- **Story.** The first crate out of the wreck holds tools for the launchers; nothing hard, this is how
+  every station works. Pass: "Tools are out. Now the launchers need something to aim with."
 - **Purpose.** Teach the station loop before any physics: brief, ruler, notebook, blueprint, units,
   commit, result, charges. It needs no mathematics; the answer is the measurement itself.
 - **Brief.** A powered cart on a straight, level rail beside the wreck drives exactly as far as it is
@@ -96,6 +101,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 1 — Catch the crawler
 
+- **Story.** The crawler carries the launchers' guidance unit (a box on its back), and the crash shook
+  its drive awake; without the unit nothing can aim. Pass: the unit sits at the transfer crane's foot,
+  and it can aim once it knows how hard the planet pulls.
 - **Purpose.** Velocity and relative velocity, before any acceleration: textbooks start here, and the
   drop tower's strobe ("evenly, or further apart?") then has a steady motion to be compared with.
 - **Brief.** A survey crawler from the wreck runs along the haul track at the one speed its drive
@@ -133,6 +141,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 2 — Local gravity
 
+- **Story.** The guidance unit only knows home's gravity, and so does Lumen's backup: Lumen would
+  rather have the player's number than its guess. Pass: the player's g is in the guidance unit and in
+  Lumen, and every later shot is worked out with it.
 - **Brief.** The launcher needs this planet's gravitational acceleration.
 - **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
   fall with the stopwatch (free, repeatable).
@@ -161,6 +172,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 3 — Across the canyon
 
+- **Story.** The frame beam needs a cradle to land in at the shipyard, and the cradle, packed in a
+  salvage crate, crosses the canyon first: the first real shot with the player's g. Pass: the cradle
+  appears on the shipyard floor.
 - **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
   horizontally, but its damaged dial turns only within a band (`vmin` to `vmax`), and from the bare
   ledge no speed in the band reaches the strip. The launcher rides in a jack frame at the rim; every
@@ -195,6 +209,7 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 4 — Over the ridge (capstone)
 
+- **Story.** The one that matters: the frame beam itself, over the ridge to the shipyard.
 - **Brief.** Launch the frame beam over the ridge onto the shipyard pad. The launcher has a maximum
   speed.
 - **Investigate.** Ruler: distance to the pad, distance to the ridge, height of the ridge.

@@ -70,7 +70,13 @@ pub struct Secret {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TutorContext {
+    /// What the tier's ship is for in the story. Filled in by the game, which knows the tier.
+    pub tier_goal: String,
     pub chapter_title: String,
+    /// What the chapter is for in the story.
+    pub chapter_goal: String,
+    /// Why this station matters to the story, as Lumen says it.
+    pub why: String,
     pub puzzle_title: String,
     pub brief: String,
     pub how_to_measure: String,
@@ -201,7 +207,10 @@ impl TutorContext {
         }
 
         TutorContext {
+            tier_goal: String::new(),
             chapter_title: chapter.title.clone(),
+            chapter_goal: chapter.goal.clone(),
+            why: def.why.clone(),
             puzzle_title: def.title.clone(),
             brief: def.brief.clone(),
             how_to_measure: def.investigate.clone(),

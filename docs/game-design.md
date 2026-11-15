@@ -11,7 +11,8 @@ mechanics, electromagnetism and thermodynamics to first-year university level.
 
 The ship's computer, **Lumen**, survived the crash with its sensors intact and its actuators gone. It
 can see what you are doing and explain anything, but it cannot press a single button. Doing is the
-player's job.
+player's job. What survived on the island is only a backup of it; the rest is across the strait (see
+"The story").
 
 Lumen is on screen as a holographic eye in the lower left corner. It points with a beam of light only
 where that helps: the way to the next station for a while after it opens (and again when you stand at
@@ -24,6 +25,28 @@ a station refuses an entry, a new station opens) and its eye shows a mood: pleas
 thinking. Talking to it (`T` or a click on the eye) opens the conversation where the bubble appears,
 attached to the eye. None of this needs a language model; with one connected, Lumen can also turn its
 eye to a place it is talking about.
+
+Lumen also carries the story, in a few short lines and never in the way of the physics. The words are
+in the chapter's file; all of them are spoken, so none holds a digit.
+
+- **Opening.** In a fresh game: who Lumen is, the main hull across the strait (its eye turns to it),
+  and what the chapter has to do. The opening is not cut short: what happens meanwhile waits its turn.
+- **Why.** When a station first opens, one line on why this job matters now. It also heads the
+  station's panel ("Lumen: ...").
+- **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
+- **Closing.** When the chapter's part is installed.
+- **Remarks.** A handful of lines about places (the wreck, the shore facing the strait, the canyon
+  rim, the ridge, the shipyard), each said once a session when the player comes near. Lumen makes a
+  remark only when nothing is going on: no station open, no test or experiment running, the ruler
+  away, nothing carried, its conversation closed, and nothing said for 40 seconds.
+- **Help.** Once per station a session: after a first miss at the canyon or the ridge, that the
+  player's g held up at the drop tower; after two misses, if the player has not talked to it and a
+  model is connected, that it can help without giving the number; when a station runs out of
+  charges, that it is a good moment to check the readings.
+
+A line can name a place; the eye holds it while the line is said, unless there is work to point at
+(a running test, an open station's job, something carried). The dock shows the tier's goal and the
+chapter's goal above the next task.
 
 ### The look of the world
 
@@ -54,6 +77,47 @@ seen from above.
 Played backwards, the levels are the way the castaway arrived: out of orbit, over the mainland,
 onto the island. The game then plays them forwards, island first. Start hands over at once: the
 camera glides down to the player's view and Lumen says its first line. The placeholder sets are swapped for the real levels as they are built.
+
+## The story
+
+**Premise.** The ship broke up on the way in. Its drive section is still in orbit; the main hull came
+down on the mainland across the strait; the forward section, with the castaway in it, came down on the
+island. The main hull stays in view from the island's northern shore.
+
+**Lumen.** What survived in the forward section is a backup of Lumen, a sliver of it running on that
+section's cells: sensors, no hands, and tables made for home. It does not know this planet, and it
+relearns it with the player, one constant at a time, always the player's own measurement. Its core is
+in the main hull: its memory, its full instruments and the fabricator's controls. The core is silent.
+Lumen looks across at it now and then. Its tone is a colleague's: dry, curious, honest about being
+partial, never mopey.
+
+**Tier 1, the Skiff: cross the strait.** Each chapter adds one part, and one thing Lumen learns about
+this world.
+
+| Chapter | Part | Why the crossing needs it | What Lumen learns |
+|---|---|---|---|
+| 1.1 The Salvage Launcher | frame | a boat starts with a frame, and the beam has to reach the shipyard | local g |
+| 1.2 First Light | lighting and power loop | the backup's cells are fading, and the crossing runs into the night | what the salvaged cells can deliver |
+| 1.3 The Haul | winch, hull plates | the plates lie on the shore and the shipyard is uphill | how these grounds grip |
+| 1.4 The Forge | hull alloy | the plates are torn and must be reforged | how the alloy takes heat |
+| 1.5 The Lift | drive | something has to push the boat across | what the drive can lift and hold |
+| 1.6 Skiff Trial | skiff complete | the crossing itself is the test flight | — |
+
+The tier ends when the skiff reaches the main hull and the backup joins its core. Lumen is whole, but
+the core took damage, and the drive section is still in orbit. The main hull's fabricator builds the
+orbiter in tier 2, and the restored core brings the grapher, tier 2's instrument.
+
+**Chapter 1.1: the guidance chain.** The frame beam is at the wreck; the shipyard is past the canyon
+and over the ridge. The beam is too heavy to carry, but the old cargo launchers can throw it, once they
+can aim. Each station is the next step:
+
+| Station | Why, in the story | What changes in the world |
+|---|---|---|
+| The supply rail | the first crate out of the wreck: tools for the launchers (and how every station works) | the crate rides to the marker |
+| Catch the crawler | the crawler is carrying the launchers' guidance unit, and the crash shook its drive awake | the unit rides on the crawler, then waits at the transfer crane's foot |
+| Local gravity | the guidance unit, like Lumen's backup, only knows home's gravity | the player's g is in the notebook, and Lumen uses it |
+| Across the canyon | the beam's cradle has to reach the shipyard side first; the first real shot with the player's g | the cradle appears on the shipyard floor |
+| Over the ridge | the frame beam itself | the skiff's frame rises on the cradle |
 
 ## Pillars
 
@@ -212,11 +276,12 @@ Lumen is pointing.
 ## The ship and progression
 
 The shipyard pad is visible from most of the island. Each chapter's capstone adds a part to the ship
-standing on it, so progress is always in view.
+standing on it, so progress is always in view; a puzzle on the way can deliver something there first
+(the canyon's cradle).
 
 | Stage | Purpose in the story | Unlocks |
 |---|---|---|
-| Skiff | cross the island and the strait to the main wreck | tier 2 stations and salvage |
+| Skiff | cross the strait to the main hull, where Lumen's core is | tier 2 stations and salvage |
 | Orbiter | reach orbit, recover the drifting drive section | tier 3 stations |
 | Starship | leave the system | ending |
 

@@ -284,6 +284,14 @@ pub(crate) fn setup(
             let handle = meshes.add(Cuboid::new(0.5, 0.06, 0.12));
             body.with_child((Mesh3d(handle), MeshMaterial3d(glow), Transform::from_xyz(0.0, CARGO_SIZE.y / 2.0 + 0.03, 0.0)));
         }
+        if prop == Prop::Crawler {
+            // The launchers' guidance unit rides on top until the crawler is caught.
+            let [unit, lens] = crate::shipyard::guidance_parts(&mut meshes, &mut materials);
+            let on_top = Transform::from_xyz(0.0, (CRAWLER_SIZE.y + crate::shipyard::GUIDANCE_SIZE.y) / 2.0, 0.0);
+            body.with_children(|crawler| {
+                crawler.spawn((crate::shipyard::GuidanceUnit { riding: true }, unit.0, unit.1, on_top, Visibility::Inherited)).with_child(lens);
+            });
+        }
     }
 
     // The physics engine's view of the island: every block anything could touch.

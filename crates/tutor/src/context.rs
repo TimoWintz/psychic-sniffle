@@ -177,6 +177,10 @@ impl TutorContext {
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
         }
+        if instance.kind == PuzzleKind::Chase {
+            // The haul cart's rating, printed on the station.
+            known_numbers.push(physics_core::puzzle::Ch1Layout::CART_TOP_SPEED);
+        }
         if instance.kind == PuzzleKind::Gravity
             && let Some(&notch) = save.placed.get(&def.id)
             && notch > 0

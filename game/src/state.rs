@@ -16,7 +16,7 @@ pub enum Mode {
 }
 
 /// Number of puzzles (and stations) in the chapter.
-pub const PUZZLES: usize = 4;
+pub const PUZZLES: usize = 5;
 
 #[derive(Resource)]
 pub struct Game {

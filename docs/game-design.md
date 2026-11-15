@@ -91,7 +91,8 @@ Every puzzle runs through the same five steps at a **station** (a workbench in t
 1. **Brief.** What the ship part must do, as a specification with tolerances.
 2. **Investigate.** Measure the world. Readings go to the notebook under a short name (`h1`, `t1`).
    Each physics station also has an experiment to **try first**. It shows the idea the puzzle rests
-   on: a strobe on the falling test mass, a crate dropped beside one fired off the ledge, two shots
+   on: a strobe on the crawler and the haul cart pulling apart at steady speeds, a strobe on the falling
+   test mass, a crate dropped beside one fired off the ledge, two shots
    at complementary angles. The player picks what they expect from a few choices (no numbers), then
    watches. Experiments are free and repeatable and give no answer away. Watching one writes its
    pages into the handbook.
@@ -135,7 +136,8 @@ worked into the typed answer.
   plays such a guesser against it across many seeds: it must need well over a station's charges on
   average, and rarely pass within them. At the canyon the same guesser needed 3.9 tests (31 % within three) with the
   old typed speed, 2.8 (75 %) with crates alone at a fixed speed, and 7.6 (32 %) now that the stack is
-  built and the speed is calculated for it.
+  built and the speed is calculated for it. The haul track's typed speed has one too: a marker one block
+  wide, a coupling point that moves fast with the speed, 6.4 tests (6 % within three).
 - **Commit before test.** Values cannot be adjusted while the simulation runs.
 - **Prototype charges.** Each test consumes one charge; a puzzle starts with three. At zero the station
   needs recharging (a short wait in the slice; a resource errand later). Never a hard lock.

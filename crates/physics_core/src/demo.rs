@@ -2,7 +2,8 @@
 //!
 //! A demonstration shows the principle a puzzle rests on, in the world, before any calculation. Like a
 //! test, what happens is decided here, in closed form; the game only plays it back. Unlike a test it
-//! costs nothing, judges nothing, and is built so that it gives nothing away: the canyon crates fall
+//! costs nothing, judges nothing, and is built so that it gives nothing away: the haul cart runs slower
+//! than the crawler instead of chasing it, the canyon crates fall
 //! further than the launcher's drop to the platform, and the ridge slugs land well short of the ridge.
 //!
 //! The question, the choices and what the player should notice are words, kept with the chapter in
@@ -13,6 +14,12 @@ use crate::puzzle::{Instance, PuzzleKind};
 
 /// Number of equal intervals the strobe divides the tower drop into.
 pub const STROBE_INTERVALS: u32 = 7;
+/// Number of equal intervals the strobe divides the haul track's demonstration into.
+pub const PACE_INTERVALS: u32 = 8;
+/// The haul cart's speed in the demonstration, as a fraction of the crawler's: it falls behind.
+pub const PACE_CART: f64 = 0.5;
+/// The haul track's demonstration runs until the crawler is this far past the second timing post.
+pub const PACE_OVERRUN: f64 = 1.0;
 /// Where the canyon's test crates start: this far out over the lip, clear of the wall.
 pub const CANYON_DEMO_LIP: f64 = 0.5;
 /// The fired test crate lands this far across the canyon floor, as a fraction of the canyon's width.
@@ -38,6 +45,10 @@ impl Shot {
 /// What the world shows for a demonstration.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DemoPlayback {
+    /// The haul cart and the crawler leave their marks together, each at a steady speed, the cart
+    /// slower; a flash marks both every `interval` seconds until `duration`. Positions are along the
+    /// track from the cart's start.
+    Pace { cart_speed: f64, crawler_speed: f64, head_start: f64, interval: f64, duration: f64 },
     /// The test mass falls `height` from the drop tower; a flash marks it every `interval` seconds.
     Strobe { height: f64, g: f64, interval: f64, fall_time: f64 },
     /// Two test crates leave the ledge together: one dropped, one fired sideways.
@@ -50,8 +61,8 @@ impl DemoPlayback {
     /// Moments at which the strobe flashes, from the release to the landing. Empty for the others.
     pub fn flash_times(&self) -> Vec<f64> {
         match self {
-            DemoPlayback::Strobe { interval, fall_time, .. } => {
-                (0..).map(|k| k as f64 * interval).take_while(|t| *t <= fall_time + 1e-9).collect()
+            DemoPlayback::Strobe { interval, fall_time: end, .. } | DemoPlayback::Pace { interval, duration: end, .. } => {
+                (0..).map(|k| k as f64 * interval).take_while(|t| *t <= end + 1e-9).collect()
             }
             _ => Vec::new(),
         }
@@ -61,6 +72,7 @@ impl DemoPlayback {
     pub fn duration(&self) -> f64 {
         match self {
             DemoPlayback::Strobe { fall_time, .. } => *fall_time,
+            DemoPlayback::Pace { duration, .. } => *duration,
             DemoPlayback::DropAndFire { dropped, fired } => dropped.flight.t.max(fired.flight.t),
             DemoPlayback::TwoAngles { flat, steep } => flat.flight.t.max(steep.flight.t),
         }
@@ -79,6 +91,18 @@ impl Instance {
         let l = &self.layout;
         match self.kind {
             PuzzleKind::Rail => None,
+            PuzzleKind::Chase => {
+                let (_, post_b) = l.posts();
+                let head_start = l.head_start as f64;
+                let duration = (post_b as f64 + PACE_OVERRUN - head_start) / l.crawler_speed;
+                Some(DemoPlayback::Pace {
+                    cart_speed: PACE_CART * l.crawler_speed,
+                    crawler_speed: l.crawler_speed,
+                    head_start,
+                    interval: duration / PACE_INTERVALS as f64,
+                    duration,
+                })
+            }
             PuzzleKind::Gravity => {
                 let height = l.tower_h as f64;
                 let fall_time = fall_time(height, l.g);
@@ -126,8 +150,33 @@ mod tests {
     fn the_tutorial_has_no_demonstration_and_the_others_do() {
         let layout = Ch1Layout::generate(3);
         assert!(Instance::new(PuzzleKind::Rail, &layout).demo().is_none());
-        for kind in [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+        for kind in [PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
             assert!(Instance::new(kind, &layout).demo().is_some(), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn the_crawler_and_the_cart_step_evenly_and_the_gap_grows_evenly() {
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let demo = Instance::new(PuzzleKind::Chase, &layout).demo().unwrap();
+            let DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } = demo else { panic!("the haul track paces") };
+            let times = demo.flash_times();
+            assert_eq!(times.len(), PACE_INTERVALS as usize + 1, "seed {seed}");
+            let cart: Vec<f64> = times.iter().map(|t| cart_speed * t).collect();
+            let crawler: Vec<f64> = times.iter().map(|t| head_start + crawler_speed * t).collect();
+            let steps = |xs: &[f64]| xs.windows(2).map(|w| w[1] - w[0]).collect::<Vec<f64>>();
+            let even = |xs: Vec<f64>| xs.windows(2).all(|w| (w[1] - w[0]).abs() < 1e-9);
+            assert!(even(steps(&cart)) && even(steps(&crawler)), "seed {seed}: steady speeds step evenly");
+            let gaps: Vec<f64> = crawler.iter().zip(&cart).map(|(a, b)| a - b).collect();
+            assert!(even(steps(&gaps)), "seed {seed}: the gap grows by the same amount each moment");
+            assert!(gaps.last().unwrap() > &(gaps[0] + 3.0), "seed {seed}: the gap must visibly grow");
+            // The crawler passes both timing posts, so the stopwatch can time it, and stays on the track.
+            let (_, post_b) = layout.posts();
+            let end = head_start + crawler_speed * duration;
+            assert!(end > post_b as f64 && end < Ch1Layout::HAUL_LENGTH as f64, "seed {seed}: crawler ends at {end} m");
+            // The cart runs away from the answer: it never gets near the crawler.
+            assert!(cart_speed < crawler_speed, "seed {seed}");
         }
     }
 

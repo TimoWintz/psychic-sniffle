@@ -98,15 +98,15 @@ fn canyon_context(seed: u64) -> (TutorContext, f64) {
     let (low, fast) = (Quantity::metres(0.0), Quantity::speed(layout.canyon_speed_max));
     let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low), ("speed".to_string(), fast)])).unwrap();
     save.record(
-        "1.1.2",
+        "1.1.3",
         vec![
             CommittedValue { label: "Launcher raised by".into(), quantity: low, unit: "m".into() },
             CommittedValue { label: "Launch speed".into(), quantity: fast, unit: "m/s".into() },
         ],
         &outcome,
     );
-    save.placed.insert("1.1.2".into(), 1);
-    let def = chapter.puzzle("1.1.2").unwrap();
+    save.placed.insert("1.1.3".into(), 1);
+    let def = chapter.puzzle("1.1.3").unwrap();
     (TutorContext::build(&chapter, def, &instance, &save, &[String::new(), "d1/t".to_string()]), answer)
 }
 
@@ -219,7 +219,7 @@ fn the_ridge_guards_every_working_angle() {
     let chapter = chapter_1_1();
     let layout = Ch1Layout::generate(8);
     let instance = Instance::new(PuzzleKind::Ridge, &layout);
-    let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.3").unwrap(), &instance, &Save::new(8), &[]);
+    let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.4").unwrap(), &instance, &Save::new(8), &[]);
     let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
     let (min, max) = layout.ridge_angle_window();
     let inside = ((min + max) / 2.0).to_degrees().round();
@@ -232,14 +232,29 @@ fn the_ridge_guards_every_working_angle() {
 }
 
 #[test]
+fn the_haul_track_guards_the_cart_speed_but_not_its_rating() {
+    let chapter = chapter_1_1();
+    for seed in 0..50 {
+        let layout = Ch1Layout::generate(seed);
+        let instance = Instance::new(PuzzleKind::Chase, &layout);
+        let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.1").unwrap(), &instance, &Save::new(seed), &[]);
+        let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
+        let answer = format!("{:.2}", layout.chase_speed_needed());
+        assert_eq!(filter.apply(&format!("send it at {answer} m/s")), format!("send it at {REDACTION} m/s"), "seed {seed}");
+        let rating = "the cart is rated to 8 m/s";
+        assert_eq!(filter.apply(rating), rating, "seed {seed}");
+    }
+}
+
+#[test]
 fn the_experiment_is_in_the_snapshot_and_its_angles_may_be_repeated() {
     let chapter = chapter_1_1();
-    let def = chapter.puzzle("1.1.3").unwrap();
+    let def = chapter.puzzle("1.1.4").unwrap();
     for seed in 0..50 {
         let layout = Ch1Layout::generate(seed);
         let instance = Instance::new(PuzzleKind::Ridge, &layout);
         let mut save = Save::new(seed);
-        save.record_demo("1.1.3", Some(1));
+        save.record_demo("1.1.4", Some(1));
         save.find("range");
         let ctx = TutorContext::build(&chapter, def, &instance, &save, &[]);
         // The experiment names its two angles on the player's screen, even when one is a working angle.
@@ -343,12 +358,12 @@ fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
     // it is close to g.
     let notch = layout.g.round() as u32;
     let line = format!("Your gate is {notch} m below the release.");
-    let unplaced = tutor::filter::LeakFilter::for_context(&at(PuzzleKind::Gravity, "1.1.1", &save), "");
+    let unplaced = tutor::filter::LeakFilter::for_context(&at(PuzzleKind::Gravity, "1.1.2", &save), "");
     assert_ne!(unplaced.apply(&line), line, "seed {seed}: without the gate, {notch} reads as g");
-    save.placed.insert("1.1.1".into(), notch);
-    let gravity = at(PuzzleKind::Gravity, "1.1.1", &save);
+    save.placed.insert("1.1.2".into(), notch);
+    let gravity = at(PuzzleKind::Gravity, "1.1.2", &save);
     assert_eq!(gravity.placed, Some(format!("the light gate is clamped {notch} m below the release point")));
     let filter = tutor::filter::LeakFilter::for_context(&gravity, "");
     assert_eq!(filter.apply(&line), line);
-    assert_eq!(at(PuzzleKind::Ridge, "1.1.3", &save).placed, None);
+    assert_eq!(at(PuzzleKind::Ridge, "1.1.4", &save).placed, None);
 }

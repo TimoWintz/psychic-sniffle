@@ -183,15 +183,17 @@ mod tests {
     fn chapter_1_1_loads_and_is_consistent() {
         let chapter = chapter_1_1();
         assert_eq!(chapter.problems(), Vec::<String>::new());
-        assert_eq!(chapter.puzzles.len(), 4);
+        assert_eq!(chapter.puzzles.len(), 5);
         assert_eq!(
             chapter.puzzles.iter().map(|p| p.kind).collect::<Vec<_>>(),
-            [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge]
+            [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge]
         );
         // The tutorial comes first and everything else waits for it.
         assert_eq!(chapter.puzzles[0].id, "1.1.0");
         assert!(chapter.puzzles[0].requires.is_empty());
         assert_eq!(chapter.puzzles[1].requires, ["1.1.0"]);
+        // Velocity comes before acceleration: the drop tower waits for the haul track.
+        assert_eq!(chapter.puzzles[2].requires, ["1.1.1"]);
     }
 
     #[test]
@@ -204,14 +206,16 @@ mod tests {
             assert!(puzzle.demo.is_some(), "{} has a demonstration", puzzle.id);
             assert!(!chapter.pages_found_at(&puzzle.id).is_empty(), "{} writes a page", puzzle.id);
         }
-        let ridge: Vec<&str> = chapter.pages_found_at("1.1.3").iter().map(|c| c.id.as_str()).collect();
+        let chase: Vec<&str> = chapter.pages_found_at("1.1.1").iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(chase, ["velocity", "relative_velocity"]);
+        let ridge: Vec<&str> = chapter.pages_found_at("1.1.4").iter().map(|c| c.id.as_str()).collect();
         assert_eq!(ridge, ["components", "range"]);
     }
 
     #[test]
     fn problems_are_caught() {
         let mut chapter = chapter_1_1();
-        chapter.concepts[1].found = Found::Demo("1.1.3".into());
+        chapter.concepts[1].found = Found::Demo("1.1.4".into());
         chapter.concepts[2].title = "Range at 45 degrees".into();
         chapter.puzzles[2].demo.as_mut().unwrap().answer = 7;
         let problems = chapter.problems();

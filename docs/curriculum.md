@@ -4,7 +4,7 @@ Ordered by difficulty, not by domain. Three tiers; each tier visits mechanics (M
 and thermodynamics (T) at a deeper level. A chapter unlocks when its prerequisites are complete.
 
 Each chapter has 4 to 6 puzzles and ends in a capstone that installs a ship part. Only tier 1,
-chapter 1 is built in the slice; its tutorial and three puzzles are specified at the end of this document.
+chapter 1 is built in the slice; its tutorial and four puzzles are specified at the end of this document.
 
 Reading the tables: **Maths** is the hardest mathematics the chapter needs. **Needs** lists
 prerequisite chapters.
@@ -13,7 +13,7 @@ prerequisite chapters.
 
 | # | Chapter | Concepts | Maths | Needs | Ship part | Example puzzles |
 |---|---|---|---|---|---|---|
-| 1.1 | M — The Salvage Launcher | position, velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff frame | measure local gravity from a timed drop; launch a crate across a canyon; clear a ridge and hit the pad |
+| 1.1 | M — The Salvage Launcher | position, velocity, relative velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff frame | time a crawler and catch it on a marker; measure local gravity from a timed drop; launch a crate across a canyon; clear a ridge and hit the pad |
 | 1.2 | E — First Light | charge, current, voltage, resistance; Ohm's law; series and parallel; electrical power | linear equations | — | lighting and power loop | size a resistor so a lamp runs at its rating; voltage drop along a long block wire; three lamps, one supply: series or parallel?; choose a fuse |
 | 1.3 | M — The Haul | Newton's three laws; weight; normal force; static and kinetic friction; inclines | vectors in components | 1.1 | haul winch, hull plates delivered | mass of a block stack from density; friction coefficient from the tilt angle at which a sled slips; winch tension up a ramp; pull needed to cover a distance in a set time |
 | 1.4 | T — The Forge | temperature; heat; specific heat; mixing; latent heat | linear equations | 1.2 | hull alloy | energy to bring an ingot to forging temperature; final temperature of a quench bath; energy to melt a charge; heating time with an electric element |
@@ -89,11 +89,49 @@ value never works. All lengths are whole metres so they can be checked by counti
   number is refused with the reason and costs no charge, which is the lesson about units.
 - **Pass.** The cart stops on the marker (one block, so centre ± 0.5 m). Too short or too far is
   reported in metres. The rail is 24 m long; longer runs are refused.
-- **Gates.** Puzzle 1 requires it.
+- **Gates.** Puzzle 1 requires it. (Puzzle ids are `1.1.0` to `1.1.4` in this order; saves made before
+  the haul track was added used other ids and are not read.)
 - **First page.** The first value committed here with the cart loaded, tested or refused, writes
   *Measurements carry units*: the handbook is met in the tutorial.
 
-### Puzzle 1 — Local gravity
+### Puzzle 1 — Catch the crawler
+
+- **Purpose.** Velocity and relative velocity, before any acceleration: textbooks start here, and the
+  drop tower's strobe ("evenly, or further apart?") then has a steady motion to be compared with.
+- **Brief.** A survey crawler from the wreck runs along the haul track at the one speed its drive
+  has, from the moment it starts, and cannot be stopped. The haul cart stands behind it on the same
+  track and runs at whatever speed is set. When the cart reaches the crawler the two couple; the load
+  can only be lifted off at the transfer marker. Set the cart's speed so it reaches the crawler there.
+- **Investigate.** Ruler: the cart's front coupler to the crawler's rear coupler (the head start
+  `D`), the cart's front coupler to the transfer marker's centre (`M`), and timing post A to timing
+  post B (`s`). Pins for the couplers and the marker sit on the near side of the track; the posts'
+  pins are on top of them. All are whole metres. Stopwatch: every run of the experiment times the
+  crawler from post A to post B and notes it (`t1`, ...), to 0.01 s. The crawler's speed is written
+  nowhere; it is worked out from `s / t`.
+- **Try it first.** "The crawler and the haul cart leave their marks together, the cart at a lower
+  steady speed. A flash marks both at equal moments. How does the gap between them change?" Grows by
+  the same amount every moment / grows faster and faster / stays the same. The cart runs at half the
+  crawler's speed, away from the answer. Both leave evenly spaced afterimages. Writes *Velocity* and
+  *Relative velocity*.
+- **Predict.** Enter the cart's speed. The cart is rated to 8 m/s (on the station); faster, or zero,
+  is refused for free.
+- **Test.** Both set off from their marks together and keep their speeds. The cart reaches the crawler
+  at `t = D / (v − u)`, `x = v D / (v − u)`; the crawler stops at the buffer at 40 m.
+- **Pass.** The cart reaches the crawler on the marker (one block, so centre ± 0.5 m). A miss says
+  where, in metres before or past the marker centre, or that the crawler reached the buffer still
+  ahead of the cart. The result panel draws both runs as distance against time: two straight lines
+  that cross where the cart reached the crawler.
+- **Relations.** `u = s / t`; the gap closes at `v − u`; `v = u M / (M − D)`.
+- **Design of the numbers.** The crawler runs at 1.2 to 2.4 m/s, the posts are 10 to 14 m apart (so
+  the stopwatch reads 4 s or more, good to about 0.12 %), the head start is 5 to 10 m and the marker
+  22 to 32 m out. Draws are kept only where the speeds that pass reach at least 0.6 % either side of
+  the one needed, five times the stopwatch's error, so the player's own `u` always does. These numbers
+  are drawn after all the others, so the rest of the island stays as it was for a seed.
+- **Guessing.** A guesser who halves the cart's range on the side each miss points to needs 6.4 tests
+  on average and is done within three in 6 % of saves. A test in `puzzle.rs` keeps it so.
+- **Gates.** Puzzle 2 requires it.
+
+### Puzzle 2 — Local gravity
 
 - **Brief.** The launcher needs this planet's gravitational acceleration.
 - **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
@@ -121,7 +159,7 @@ value never works. All lengths are whole metres so they can be checked by counti
   the later puzzles — their own measurement, not the game's number.
 - **Relation.** `h = ½ g t²`.
 
-### Puzzle 2 — Across the canyon
+### Puzzle 3 — Across the canyon
 
 - **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
   horizontally, but its damaged dial turns only within a band (`vmin` to `vmax`), and from the bare
@@ -155,7 +193,7 @@ value never works. All lengths are whole metres so they can be checked by counti
   in about a third of saves. The old typed-speed canyon took 3.9 (a third within three); the first crate
   version, with a fixed speed, 2.8 (three quarters within three). A test in `puzzle.rs` keeps it so.
 
-### Puzzle 3 — Over the ridge (capstone)
+### Puzzle 4 — Over the ridge (capstone)
 
 - **Brief.** Launch the frame beam over the ridge onto the shipyard pad. The launcher has a maximum
   speed.

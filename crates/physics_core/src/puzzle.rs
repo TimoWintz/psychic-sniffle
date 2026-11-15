@@ -49,34 +49,43 @@ pub struct Ch1Layout {
     /// centre of the marker.
     pub rail_target: u32,
 
-    /// Puzzle 1: height of the drop tower's release point above the ground.
+    /// Puzzle 1: the survey crawler's one speed along the haul track, m/s.
+    pub crawler_speed: f64,
+    /// Puzzle 1: how far ahead of the haul cart the crawler starts, along the track.
+    pub head_start: u32,
+    /// Puzzle 1: distance along the track from the haul cart's start to the transfer marker's centre.
+    pub transfer_at: u32,
+    /// Puzzle 1: distance between the two timing posts the stopwatch times the crawler between.
+    pub post_gap: u32,
+
+    /// Puzzle 2: height of the drop tower's release point above the ground.
     pub tower_h: u32,
-    /// Puzzle 1: height of the survey mast's release point, used for the test drop.
+    /// Puzzle 2: height of the survey mast's release point, used for the test drop.
     pub mast_h: u32,
 
-    /// Puzzle 2: height of the ledge above the far plateau, before any crates raise the launcher.
+    /// Puzzle 3: height of the ledge above the far plateau, before any crates raise the launcher.
     pub ledge_h: u32,
-    /// Puzzle 2: width of the canyon, from the ledge edge to the far rim.
+    /// Puzzle 3: width of the canyon, from the ledge edge to the far rim.
     pub canyon_width: u32,
-    /// Puzzle 2: depth of the canyon floor below the far plateau.
+    /// Puzzle 3: depth of the canyon floor below the far plateau.
     pub canyon_depth: u32,
-    /// Puzzle 2: distance from the ledge edge to the centre of the landing platform.
+    /// Puzzle 3: distance from the ledge edge to the centre of the landing platform.
     pub platform_centre: f64,
     pub platform_half: f64,
-    /// Puzzle 2: the speeds the ledge launcher's damaged dial turns between, m/s. From the bare ledge
+    /// Puzzle 3: the speeds the ledge launcher's damaged dial turns between, m/s. From the bare ledge
     /// the crate would need more than the top of the band, so the launcher has to be raised on crates
     /// before a speed inside it will do.
     pub canyon_speed_min: f64,
     pub canyon_speed_max: f64,
 
-    /// Puzzle 3: distance from the launcher to the centre of the shipyard pad (level ground).
+    /// Puzzle 4: distance from the launcher to the centre of the shipyard pad (level ground).
     pub pad_centre: f64,
     pub pad_half: f64,
-    /// Puzzle 3: distance from the launcher to the near face of the ridge (one block thick).
+    /// Puzzle 4: distance from the launcher to the near face of the ridge (one block thick).
     pub ridge_x: u32,
-    /// Puzzle 3: height of the ridge above the launcher.
+    /// Puzzle 4: height of the ridge above the launcher.
     pub ridge_h: u32,
-    /// Puzzle 3: the launcher's rated maximum speed, m/s.
+    /// Puzzle 4: the launcher's rated maximum speed, m/s.
     pub v_max: f64,
 }
 
@@ -88,16 +97,29 @@ impl Ch1Layout {
     pub const RAIL_LENGTH: u32 = 24;
     /// Half the width of the rail marker along the rail (the marker is one block).
     pub const RAIL_MARKER_HALF: f64 = 0.5;
-    /// Puzzle 2: how many crates the jack frame under the ledge launcher holds (and how many lie in
+    /// Puzzle 1: length of the haul track, from the haul cart's start to the buffer at its end.
+    pub const HAUL_LENGTH: u32 = 40;
+    /// Puzzle 1: the haul cart's rated top speed, m/s.
+    pub const CART_TOP_SPEED: f64 = 8.0;
+    /// Puzzle 1: half the width of the transfer marker along the track (the marker is one block).
+    pub const TRANSFER_HALF: f64 = 0.5;
+    /// Puzzle 1: the first timing post stands this far past the crawler's start, so the crawler is
+    /// well under way when the stopwatch starts.
+    pub const POST_LEAD: u32 = 2;
+    /// Puzzle 1: the speeds that put the coupling on the marker span at least this fraction either side
+    /// of the speed needed, so the crawler's speed worked out from the stopwatch (good to about 0.12 %)
+    /// always does.
+    pub const CHASE_WINDOW_MIN: f64 = 0.006;
+    /// Puzzle 3: how many crates the jack frame under the ledge launcher holds (and how many lie in
     /// the salvage pile on the ledge). Each raises the launcher one metre.
     pub const MAX_STACK: u32 = 8;
-    /// Puzzle 2: no stack's needed speed comes closer than this fraction to either end of the
+    /// Puzzle 3: no stack's needed speed comes closer than this fraction to either end of the
     /// launcher's band, so a player's own measurement of g never moves a stack in or out of it.
     pub const BAND_MARGIN: f64 = 0.015;
-    /// Puzzle 2: half the length of the catch strip on the far side, along the launch line. One block:
+    /// Puzzle 3: half the length of the catch strip on the far side, along the launch line. One block:
     /// a worked-out speed lands within a few centimetres; a guessed one rarely does.
     pub const CATCH_HALF: f64 = 0.5;
-    /// Puzzle 2: metres of flat ground the island keeps beyond the rim, which the furthest shot the
+    /// Puzzle 3: metres of flat ground the island keeps beyond the rim, which the furthest shot the
     /// launcher can make must come down on.
     pub const CANYON_RUN: usize = 70;
 
@@ -152,6 +174,10 @@ impl Ch1Layout {
             let trial = Ch1Layout {
                 g,
                 rail_target,
+                crawler_speed: 0.0,
+                head_start: 0,
+                transfer_at: 0,
+                post_gap: 0,
                 tower_h,
                 mast_h,
                 ledge_h,
@@ -172,9 +198,25 @@ impl Ch1Layout {
             }
         };
 
+        // The haul track, drawn last of all, so every number above stays what it was for older saves.
+        // Draws whose window of passing speeds is too narrow for a stopwatch reading are drawn again.
+        let (crawler_speed, head_start, transfer_at, post_gap) = loop {
+            let crawler_speed = (rng.range(1.2, 2.4) * 1000.0).round() / 1000.0;
+            let post_gap = rng.int(10, 14);
+            let head_start = rng.int(5, 10);
+            let transfer_at = rng.int(22, 32);
+            if chase_window(head_start, transfer_at) >= Self::CHASE_WINDOW_MIN {
+                break (crawler_speed, head_start, transfer_at, post_gap);
+            }
+        };
+
         Ch1Layout {
             g,
             rail_target,
+            crawler_speed,
+            head_start,
+            transfer_at,
+            post_gap,
             tower_h,
             mast_h,
             ledge_h,
@@ -243,19 +285,53 @@ impl Ch1Layout {
             })
     }
 
+    /// Puzzle 1: where the timing posts stand, as distances along the track from the haul cart's start.
+    pub fn posts(&self) -> (u32, u32) {
+        let a = self.head_start + Self::POST_LEAD;
+        (a, a + self.post_gap)
+    }
+
+    /// Puzzle 1: the crawler's time from the first timing post to the second, as the stopwatch shows it
+    /// (hundredths of a second).
+    pub fn crawler_time(&self) -> f64 {
+        (self.post_gap as f64 / self.crawler_speed * 100.0).round() / 100.0
+    }
+
+    /// Puzzle 1: the haul cart sent after the crawler at `speed`. Both start together and run at their
+    /// steady speeds; the run ends when the cart reaches the crawler, or when the crawler reaches the
+    /// buffer at the end of the track first.
+    pub fn chase(&self, speed: f64) -> ChaseRun {
+        let (u, d, end) = (self.crawler_speed, self.head_start as f64, Self::HAUL_LENGTH as f64);
+        if speed > u {
+            let t = d / (speed - u);
+            let x = speed * t;
+            if x <= end {
+                return ChaseRun { t, cart: x, crawler: x, coupled: true };
+            }
+        }
+        let t = (end - d) / u;
+        ChaseRun { t, cart: speed * t, crawler: end, coupled: false }
+    }
+
+    /// Puzzle 1: the cart speed that reaches the crawler on the marker's centre.
+    pub fn chase_speed_needed(&self) -> f64 {
+        let (d, m) = (self.head_start as f64, self.transfer_at as f64);
+        self.crawler_speed * m / (m - d)
+    }
+
     /// Fall time from the drop tower as the stopwatch shows it (hundredths of a second).
     pub fn tower_fall_time(&self) -> f64 {
         self.gate_time(self.tower_h)
     }
 
-    /// Puzzle 1: the light gate's reading with the gate clamped `drop` metres below the release point
+    /// Puzzle 2: the light gate's reading with the gate clamped `drop` metres below the release point
     /// (one of the notches `1..=tower_h`; the last is at the landing plate): the time from the release
     /// until the mass reaches the gate, as the stopwatch shows it (hundredths of a second).
     pub fn gate_time(&self, drop: u32) -> f64 {
         (fall_time(drop as f64, self.g) * 100.0).round() / 100.0
     }
 
-    /// Puzzle 1: the notches the light gate can be clamped at, as drops below the release point.
+    /// Puzzle 2: the notches the light gate can be clamped at, as drops below the release point.
     pub fn gate_notches(&self) -> std::ops::RangeInclusive<u32> {
         1..=self.tower_h
     }
@@ -272,10 +348,33 @@ impl Ch1Layout {
     }
 }
 
+/// How far either side of the speed needed, as a fraction of it, the cart's speed may be and still
+/// reach the crawler on the transfer marker. The coupling point is `x = v D / (v - u)`, so a change in
+/// `v` moves it by `(M - D)^2 / (u D)` metres per m/s at the marker; the marker's half-width over that,
+/// relative to `v = u M / (M - D)`, leaves the crawler's speed out.
+fn chase_window(head_start: u32, transfer_at: u32) -> f64 {
+    let (d, m) = (head_start as f64, transfer_at as f64);
+    Ch1Layout::TRANSFER_HALF * d / ((m - d) * m)
+}
+
+/// A run of the haul cart after the crawler.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChaseRun {
+    /// When the run ended, s.
+    pub t: f64,
+    /// Where the cart and the crawler were then, along the track from the cart's start.
+    pub cart: f64,
+    pub crawler: f64,
+    /// Whether the cart reached the crawler (otherwise the crawler reached the buffer first).
+    pub coupled: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum PuzzleKind {
     /// The tutorial: send a cart along a rail. Measure, enter, commit; no calculation.
     Rail,
+    /// Catch a crawler running at a steady speed: velocity and relative velocity.
+    Chase,
     Gravity,
     Canyon,
     Ridge,
@@ -339,6 +438,9 @@ pub enum Playback {
     Flight { projectile: Projectile, flight: Flight },
     /// The rail cart drives `distance` metres along its rail and stops.
     Slide { distance: f64 },
+    /// The haul cart sets off after the crawler, each at its steady speed, both from their marks, for
+    /// `t` seconds: until the cart reaches the crawler, or the crawler reaches the buffer.
+    Chase { cart_speed: f64, crawler_speed: f64, head_start: f64, t: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -409,6 +511,14 @@ impl Instance {
                 example: "d1   or   12 m",
                 source: InputSource::Typed,
             }],
+            PuzzleKind::Chase => vec![InputSpec {
+                key: "speed",
+                label: "Cart speed",
+                dim: Dim::SPEED,
+                unit: "m/s",
+                example: "2.6 m/s",
+                source: InputSource::Typed,
+            }],
             PuzzleKind::Gravity => vec![InputSpec {
                 key: "g",
                 label: "Gravitational acceleration",
@@ -451,6 +561,17 @@ impl Instance {
                 given("distance from the cart to the marker centre", Quantity::metres(l.rail_target as f64)),
                 given("length of the rail", Quantity::metres(Ch1Layout::RAIL_LENGTH as f64)),
             ],
+            PuzzleKind::Chase => {
+                let (a, b) = l.posts();
+                vec![
+                    given("distance from the haul cart to the crawler (its head start)", Quantity::metres(l.head_start as f64)),
+                    given("distance from the haul cart to the transfer marker centre", Quantity::metres(l.transfer_at as f64)),
+                    given("distance between the two timing posts", Quantity::metres((b - a) as f64)),
+                    given("crawler's time from the first timing post to the second", Quantity::seconds(l.crawler_time())),
+                    given("haul cart's top speed", Quantity::speed(Ch1Layout::CART_TOP_SPEED)),
+                    given("length of the haul track", Quantity::metres(Ch1Layout::HAUL_LENGTH as f64)),
+                ]
+            }
             PuzzleKind::Gravity => vec![
                 given("height of the drop tower", Quantity::metres(l.tower_h as f64)),
                 given("fall time from the drop tower", Quantity::seconds(l.tower_fall_time())),
@@ -478,7 +599,7 @@ impl Instance {
     pub fn profile(&self) -> Option<Profile> {
         let l = &self.layout;
         match self.kind {
-            PuzzleKind::Rail | PuzzleKind::Gravity => None,
+            PuzzleKind::Rail | PuzzleKind::Chase | PuzzleKind::Gravity => None,
             PuzzleKind::Canyon => Some(l.canyon_profile()),
             PuzzleKind::Ridge => {
                 let length = (l.pad_centre + l.pad_half) as usize + 40;
@@ -496,7 +617,8 @@ impl Instance {
 
     /// What stands at this puzzle's station in the world, given what the save says is placed there
     /// (`placed`: crates in the jack frame, the cargo crate on the cart, the light gate's notch), in
-    /// words for the station panel and the tutor. `None` where nothing is placed (the ridge).
+    /// words for the station panel and the tutor. `None` where nothing is placed (the haul track, the
+    /// ridge).
     pub fn built(&self, placed: u32) -> Option<String> {
         let plural = |n: u32| if n == 1 { "" } else { "s" };
         Some(match self.kind {
@@ -507,7 +629,7 @@ impl Instance {
             }
             PuzzleKind::Gravity => format!("the light gate is clamped {placed} m below the release point"),
             PuzzleKind::Canyon => format!("{placed} crate{} in the jack frame", plural(placed)),
-            PuzzleKind::Ridge => return None,
+            PuzzleKind::Chase | PuzzleKind::Ridge => return None,
         })
     }
 
@@ -566,9 +688,10 @@ impl Instance {
                     return out_of_range("gravity pulls downward; enter its size as a positive value.".into());
                 }
                 "speed" => {
-                    let limit = match self.kind {
-                        PuzzleKind::Ridge => self.layout.v_max,
-                        _ => LAUNCHER_HARD_LIMIT,
+                    let (limit, what, verb) = match self.kind {
+                        PuzzleKind::Ridge => (self.layout.v_max, "launcher", "fire"),
+                        PuzzleKind::Chase => (Ch1Layout::CART_TOP_SPEED, "haul cart", "run"),
+                        _ => (LAUNCHER_HARD_LIMIT, "launcher", "fire"),
                     };
                     if q.value <= 0.0 {
                         return out_of_range("the speed must be greater than zero.".into());
@@ -586,7 +709,7 @@ impl Instance {
                     }
                     if q.value > limit {
                         return out_of_range(format!(
-                            "the launcher is rated to {} and will not fire faster.",
+                            "the {what} is rated to {} and will not {verb} faster.",
                             Quantity::speed(limit).display()
                         ));
                     }
@@ -647,6 +770,67 @@ impl Instance {
                         observed: Quantity::metres(run),
                     }],
                     playback: Playback::Slide { distance: run },
+                }
+            }
+            PuzzleKind::Chase => {
+                let speed = value("speed");
+                let run = l.chase(speed);
+                let target = l.transfer_at as f64;
+                let miss = run.cart - target;
+                let pass = run.coupled && miss.abs() <= Ch1Layout::TRANSFER_HALF;
+                let (headline, detail) = if pass {
+                    (
+                        "Coupled on the marker".to_string(),
+                        format!(
+                            "The cart reached the crawler after {} s, {} m from the marker centre.",
+                            sig(run.t, 3),
+                            sig(miss.abs(), 2)
+                        ),
+                    )
+                } else if run.coupled {
+                    let (headline, side) = if miss < 0.0 { ("Caught it too soon", "before") } else { ("Caught it too late", "past") };
+                    (
+                        headline.to_string(),
+                        format!(
+                            "The cart reached the crawler after {} s, {} m {side} the marker centre.",
+                            sig(run.t, 3),
+                            sig(miss.abs(), 3)
+                        ),
+                    )
+                } else {
+                    (
+                        "Never caught it".to_string(),
+                        format!(
+                            "The crawler reached the buffer at the end of the track after {} s, still {} m ahead of the cart.",
+                            sig(run.t, 3),
+                            sig(run.crawler - run.cart, 3)
+                        ),
+                    )
+                };
+                let comparisons = if run.coupled {
+                    vec![Comparison {
+                        label: "Where the cart reached the crawler".into(),
+                        expected: Quantity::metres(target),
+                        observed: Quantity::metres(run.cart),
+                    }]
+                } else {
+                    vec![Comparison {
+                        label: "Gap left when the crawler stopped".into(),
+                        expected: Quantity::metres(0.0),
+                        observed: Quantity::metres(run.crawler - run.cart),
+                    }]
+                };
+                Outcome {
+                    pass,
+                    headline,
+                    detail,
+                    comparisons,
+                    playback: Playback::Chase {
+                        cart_speed: speed,
+                        crawler_speed: l.crawler_speed,
+                        head_start: l.head_start as f64,
+                        t: run.t,
+                    },
                 }
             }
             PuzzleKind::Gravity => {
@@ -830,6 +1014,47 @@ impl Instance {
                     ),
                 }
             }
+            PuzzleKind::Chase => {
+                let (s, t) = (l.post_gap as f64, l.crawler_time());
+                let (d, m) = (l.head_start as f64, l.transfer_at as f64);
+                let u = s / t;
+                let meet = (m - d) / u;
+                let v = m / meet;
+                // A slower cart reaches the crawler further on: the slowest that passes does at the
+                // marker's far edge.
+                let far = m + Ch1Layout::TRANSFER_HALF;
+                let window = (v - u * far / (far - d)) / v;
+                Solution {
+                    steps: vec![
+                        format!(
+                            "The crawler runs at a steady speed: the distance between the timing posts over the \
+                             time it takes, u = {s} m / {t} s = {} m/s.",
+                            sig(u, 4)
+                        ),
+                        format!(
+                            "It starts D = {d} m ahead. Running the same way, the cart gains on it at v - u, so \
+                             the gap closes in D / (v - u). By then the crawler must be at the marker, {} m further \
+                             on from its start: that takes (M - D) / u = {} s.",
+                            m - d,
+                            sig(meet, 4)
+                        ),
+                        format!(
+                            "In that time the cart covers the whole M = {m} m to the marker: v = M / t = u M / (M - D) \
+                             = {} m/s.",
+                            sig(v, 4)
+                        ),
+                    ],
+                    answers: vec![answer("speed", "Cart speed", Quantity::speed(v), "m/s")],
+                    note: format!(
+                        "The true crawler speed is {} m/s. The marker is one block, so the cart may reach the \
+                         crawler within {} m of {m} m: speeds within about {}% of the one needed pass. The \
+                         stopwatch reading of the crawler is good to about 0.1%.",
+                        l.crawler_speed,
+                        Ch1Layout::TRANSFER_HALF,
+                        sig(window * 100.0, 2)
+                    ),
+                }
+            }
             PuzzleKind::Gravity => {
                 let (h, t) = (l.tower_h as f64, l.tower_fall_time());
                 Solution {
@@ -955,7 +1180,7 @@ mod tests {
     use super::*;
 
     const SEEDS: u64 = 1000;
-    const ALL_KINDS: [PuzzleKind; 4] = [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge];
+    const ALL_KINDS: [PuzzleKind; 5] = [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge];
 
     fn inputs(pairs: &[(&str, Quantity)]) -> Inputs {
         pairs.iter().map(|(k, q)| (k.to_string(), *q)).collect()
@@ -989,6 +1214,18 @@ mod tests {
             for stack in 0..=Ch1Layout::MAX_STACK {
                 assert_ne!(l.canyon_shot(stack, high).1.end, FlightEnd::LeftTerrain, "seed {seed}: {stack} crates");
             }
+            // The haul track: whole metres, the posts and the marker on the track, a speed the cart can make.
+            assert!((1.2..=2.4).contains(&l.crawler_speed), "seed {seed}: crawler {}", l.crawler_speed);
+            assert!((5..=10).contains(&l.head_start) && (22..=32).contains(&l.transfer_at), "seed {seed}");
+            let (a, b) = l.posts();
+            assert!(a > l.head_start && b < Ch1Layout::HAUL_LENGTH, "seed {seed}: posts at {a} and {b} m");
+            assert!((10..=14).contains(&(b - a)), "seed {seed}");
+            assert!(l.transfer_at + 4 <= Ch1Layout::HAUL_LENGTH);
+            let v = l.chase_speed_needed();
+            assert!(v < Ch1Layout::CART_TOP_SPEED * 0.75, "seed {seed}: {v} m/s");
+            assert!(v > l.crawler_speed * 1.25, "seed {seed}: the cart must clearly outrun the crawler");
+            // The crawler takes several seconds between the posts, so the stopwatch's rounding is small.
+            assert!(l.crawler_time() >= 4.0, "seed {seed}: {} s", l.crawler_time());
         }
     }
 
@@ -1189,13 +1426,14 @@ mod tests {
         let reason = rail.unready(0).expect("an empty cart is refused");
         assert!(reason.starts_with("Load the cart first"), "{reason}");
         assert_eq!(rail.unready(1), None);
-        for kind in [PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+        for kind in [PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
             assert_eq!(Instance::new(kind, &layout).unready(0), None, "{kind:?}");
         }
         assert_eq!(rail.built(1).as_deref(), Some("the cargo crate is on the cart"));
         assert_eq!(Instance::new(PuzzleKind::Gravity, &layout).built(7).as_deref(), Some("the light gate is clamped 7 m below the release point"));
         assert_eq!(Instance::new(PuzzleKind::Canyon, &layout).built(1).as_deref(), Some("1 crate in the jack frame"));
         assert_eq!(Instance::new(PuzzleKind::Ridge, &layout).built(0), None);
+        assert_eq!(Instance::new(PuzzleKind::Chase, &layout).built(0), None);
     }
 
     #[test]
@@ -1287,6 +1525,87 @@ mod tests {
         println!("guessing: {mean:.2} tests on average, {:.0}% within three", lucky * 100.0);
         assert!(mean >= 6.0, "a guesser needs only {mean:.2} tests on average");
         assert!(lucky <= 0.35, "a guesser lands within three tests {:.0}% of the time", lucky * 100.0);
+    }
+
+    #[test]
+    fn the_players_own_timing_of_the_crawler_is_good_enough() {
+        // u from the whole-metre post gap and the 0.01 s stopwatch, then v = u M / (M - D), passes with
+        // room to spare: the cart reaches the crawler well inside the marker.
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let u = layout.post_gap as f64 / layout.crawler_time();
+            let (d, m) = (layout.head_start as f64, layout.transfer_at as f64);
+            let v = u * m / (m - d);
+            let chase = Instance::new(PuzzleKind::Chase, &layout);
+            let outcome = chase.evaluate(&inputs(&[("speed", Quantity::speed(v))])).unwrap();
+            assert!(outcome.pass, "seed {seed}: {}", outcome.detail);
+            let run = layout.chase(v);
+            assert!((run.cart - m).abs() < 0.3, "seed {seed}: reached it {} m from the marker", run.cart - m);
+        }
+    }
+
+    #[test]
+    fn chase_misses_point_the_right_way_without_the_answer() {
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            let chase = Instance::new(PuzzleKind::Chase, &layout);
+            let try_ = |v: f64| chase.evaluate(&inputs(&[("speed", Quantity::speed(v))])).unwrap();
+            let right = layout.chase_speed_needed();
+            let fast = try_(right * 1.1);
+            assert_eq!(fast.headline, "Caught it too soon", "seed {seed}");
+            assert!(fast.detail.contains("before the marker centre"), "seed {seed}: {}", fast.detail);
+            let slow = try_(right * 0.95);
+            assert!(!slow.pass);
+            assert!(slow.detail.contains("past the marker centre") || slow.headline == "Never caught it", "seed {seed}: {}", slow.detail);
+            // No faster than the crawler: it is never caught, and reaches the buffer.
+            let crawl = try_(layout.crawler_speed);
+            assert_eq!(crawl.headline, "Never caught it", "seed {seed}");
+            assert!(crawl.detail.contains("ahead of the cart"), "{}", crawl.detail);
+            for outcome in [fast, slow, crawl] {
+                assert!(!outcome.detail.contains("m/s"), "seed {seed}: no speed is reported: {}", outcome.detail);
+                let Playback::Chase { t, cart_speed, crawler_speed, head_start } = outcome.playback else { panic!("a chase") };
+                // The playback ends where the verdict says: together, or the crawler at the buffer.
+                let gap = head_start + crawler_speed * t - cart_speed * t;
+                assert!(gap >= -1e-9, "seed {seed}: the cart never passes the crawler");
+            }
+        }
+    }
+
+    #[test]
+    fn the_haul_cart_has_a_top_speed() {
+        let chase = Instance::new(PuzzleKind::Chase, &Ch1Layout::generate(5));
+        let err = chase.evaluate(&inputs(&[("speed", Quantity::speed(Ch1Layout::CART_TOP_SPEED + 0.5))])).unwrap_err();
+        let rating = Quantity::speed(Ch1Layout::CART_TOP_SPEED).display();
+        assert!(err.to_string().contains(&format!("the haul cart is rated to {rating} and will not run faster")), "{err}");
+        assert!(chase.evaluate(&inputs(&[("speed", Quantity::speed(0.0))])).is_err());
+        let err = chase.evaluate(&inputs(&[("speed", Quantity::seconds(5.0))])).unwrap_err();
+        assert_eq!(err.to_string(), "Cart speed must be a speed (m/s), but what you entered is a time (s).");
+    }
+
+    /// Tests a player needs who guesses the cart's speed instead of working it out, but uses every miss
+    /// well: they halve what is left of the cart's range on the side the miss points to.
+    fn chase_tests_by_guessing(layout: &Ch1Layout) -> u32 {
+        let chase = Instance::new(PuzzleKind::Chase, layout);
+        let (mut low, mut high) = (0.0, Ch1Layout::CART_TOP_SPEED);
+        for tests in 1..=60 {
+            let v = (low + high) / 2.0;
+            let outcome = chase.evaluate(&inputs(&[("speed", Quantity::speed(v))])).unwrap();
+            if outcome.pass {
+                return tests;
+            }
+            if outcome.headline == "Caught it too soon" { high = v } else { low = v }
+        }
+        60
+    }
+
+    #[test]
+    fn guessing_the_cart_speed_takes_more_tests_than_a_station_has_charges() {
+        let tests: Vec<u32> = (0..SEEDS).map(|seed| chase_tests_by_guessing(&Ch1Layout::generate(seed))).collect();
+        let mean = tests.iter().sum::<u32>() as f64 / tests.len() as f64;
+        let lucky = tests.iter().filter(|t| **t <= 3).count() as f64 / tests.len() as f64;
+        println!("guessing the cart speed: {mean:.2} tests on average, {:.0}% within three", lucky * 100.0);
+        assert!(mean >= 6.0, "a guesser needs only {mean:.2} tests on average");
+        assert!(lucky <= 0.15, "a guesser catches the crawler within three tests {:.0}% of the time", lucky * 100.0);
     }
 
     #[test]

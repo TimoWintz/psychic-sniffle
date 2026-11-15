@@ -71,7 +71,9 @@ pub struct Save {
 }
 
 impl Save {
-    pub const VERSION: u32 = 1;
+    /// 2: the haul track became puzzle 1.1.1 and the later puzzles moved up one, so a version 1 save's
+    /// ids name different puzzles.
+    pub const VERSION: u32 = 2;
 
     pub fn new(seed: u64) -> Self {
         Save {
@@ -196,12 +198,15 @@ mod tests {
         assert!(attempt(&mut save, "1.1.0", PuzzleKind::Rail, 1.0));
         assert!(save.is_unlocked(&chapter, "1.1.1"));
         assert!(!save.is_unlocked(&chapter, "1.1.2"));
-        assert!(attempt(&mut save, "1.1.1", PuzzleKind::Gravity, 1.0));
+        assert!(attempt(&mut save, "1.1.1", PuzzleKind::Chase, 1.0));
         assert!(save.is_unlocked(&chapter, "1.1.2"));
         assert!(!save.is_unlocked(&chapter, "1.1.3"));
+        assert!(attempt(&mut save, "1.1.2", PuzzleKind::Gravity, 1.0));
+        assert!(save.is_unlocked(&chapter, "1.1.3"));
+        assert!(!save.is_unlocked(&chapter, "1.1.4"));
         assert!(!save.chapter_complete(&chapter));
-        assert!(attempt(&mut save, "1.1.2", PuzzleKind::Canyon, 1.0));
-        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Ridge, 1.0));
+        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 1.0));
+        assert!(attempt(&mut save, "1.1.4", PuzzleKind::Ridge, 1.0));
         assert!(save.chapter_complete(&chapter));
     }
 
@@ -209,43 +214,51 @@ mod tests {
     fn charges_and_quality() {
         let chapter = chapter_1_1();
         let mut save = Save::new(42);
-        assert_eq!(save.charges_left(&chapter, "1.1.2"), 3);
-        assert!(!attempt(&mut save, "1.1.2", PuzzleKind::Canyon, 0.5));
-        assert!(!attempt(&mut save, "1.1.2", PuzzleKind::Canyon, 1.5));
-        assert_eq!(save.charges_left(&chapter, "1.1.2"), 1);
-        assert_eq!(save.progress("1.1.2").quality(), None);
-        assert!(attempt(&mut save, "1.1.2", PuzzleKind::Canyon, 1.0));
-        assert_eq!(save.charges_left(&chapter, "1.1.2"), 0);
-        assert_eq!(save.progress("1.1.2").quality(), Some(Quality::Serviceable));
-        save.recharge("1.1.2");
-        assert_eq!(save.charges_left(&chapter, "1.1.2"), 3);
+        assert_eq!(save.charges_left(&chapter, "1.1.3"), 3);
+        assert!(!attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 0.5));
+        assert!(!attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 1.5));
+        assert_eq!(save.charges_left(&chapter, "1.1.3"), 1);
+        assert_eq!(save.progress("1.1.3").quality(), None);
+        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 1.0));
+        assert_eq!(save.charges_left(&chapter, "1.1.3"), 0);
+        assert_eq!(save.progress("1.1.3").quality(), Some(Quality::Serviceable));
+        save.recharge("1.1.3");
+        assert_eq!(save.charges_left(&chapter, "1.1.3"), 3);
 
-        assert!(attempt(&mut save, "1.1.1", PuzzleKind::Gravity, 1.0));
-        assert_eq!(save.progress("1.1.1").quality(), Some(Quality::Pristine));
+        assert!(attempt(&mut save, "1.1.2", PuzzleKind::Gravity, 1.0));
+        assert_eq!(save.progress("1.1.2").quality(), Some(Quality::Pristine));
     }
 
     #[test]
     fn save_round_trips() {
         let mut save = Save::new(9);
         save.notebook.set("g", "gravity", Quantity::acceleration(8.25), "calculated");
-        save.placed.insert("1.1.2".into(), 4);
-        save.placed.insert("1.1.1".into(), 9);
+        save.placed.insert("1.1.3".into(), 4);
+        save.placed.insert("1.1.2".into(), 9);
         save.placed.insert("1.1.0".into(), 1);
-        attempt(&mut save, "1.1.1", PuzzleKind::Gravity, 1.0);
+        attempt(&mut save, "1.1.2", PuzzleKind::Gravity, 1.0);
         let text = save.to_ron();
         assert_eq!(Save::from_ron(&text).unwrap(), save);
-        assert!(Save::from_ron(&text.replace("version: 1", "version: 99")).is_err());
+        assert!(Save::from_ron(&text.replace("version: 2", "version: 99")).is_err());
     }
 
     #[test]
     fn saves_from_before_pages_and_demonstrations_still_load() {
-        let old = r#"(version: 1, seed: 5, notebook: (entries: []), puzzles: {"1.1.0": (attempts: [], charges_used: 1, solved: true)})"#;
+        let old = r#"(version: 2, seed: 5, notebook: (entries: []), puzzles: {"1.1.0": (attempts: [], charges_used: 1, solved: true)})"#;
         let save = Save::from_ron(old).unwrap();
         assert!(save.found.is_empty() && save.demos.is_empty() && save.placed.is_empty());
         // The tutorial is done, so its page is there; the drop tower's is not yet.
         let chapter = chapter_1_1();
         assert!(save.is_found(&chapter, "units"));
         assert!(!save.is_found(&chapter, "free_fall"));
+    }
+
+    #[test]
+    fn saves_from_before_the_haul_track_are_refused() {
+        // Their "1.1.1" was the drop tower; read as the haul track it would be wrong.
+        let old = r#"(version: 1, seed: 5, notebook: (entries: []), puzzles: {"1.1.1": (attempts: [], charges_used: 1, solved: true)})"#;
+        let err = Save::from_ron(old).unwrap_err();
+        assert!(err.contains("save version 1 is not supported"), "{err}");
     }
 
     #[test]
@@ -256,14 +269,14 @@ mod tests {
         assert!(!save.find("free_fall"), "a page is written once");
         assert!(save.is_found(&chapter, "free_fall"));
 
-        assert!(!save.demo_watched("1.1.2"));
-        save.record_demo("1.1.2", Some(0));
-        save.record_demo("1.1.2", Some(2));
-        assert!(save.demo_watched("1.1.2"));
-        assert_eq!(save.first_guess("1.1.2"), Some(0), "only the guess before the first run counts");
-        save.record_demo("1.1.3", None);
+        assert!(!save.demo_watched("1.1.3"));
+        save.record_demo("1.1.3", Some(0));
+        save.record_demo("1.1.3", Some(2));
         assert!(save.demo_watched("1.1.3"));
-        assert_eq!(save.first_guess("1.1.3"), None);
+        assert_eq!(save.first_guess("1.1.3"), Some(0), "only the guess before the first run counts");
+        save.record_demo("1.1.4", None);
+        assert!(save.demo_watched("1.1.4"));
+        assert_eq!(save.first_guess("1.1.4"), None);
 
         assert_eq!(Save::from_ron(&save.to_ron()).unwrap(), save);
     }

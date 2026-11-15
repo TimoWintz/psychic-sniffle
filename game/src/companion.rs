@@ -97,6 +97,13 @@ fn guide(kind: PuzzleKind) -> Guide {
             demo: None,
             demo_watch: None,
         },
+        PuzzleKind::Chase => Guide {
+            measure: ["Haul cart: front coupler", "Transfer marker: centre"],
+            study: "Transfer marker: centre",
+            target: "Transfer marker: centre",
+            demo: Some("Crawler: rear coupler"),
+            demo_watch: Some("Timing post B"),
+        },
         PuzzleKind::Gravity => Guide {
             measure: ["Drop tower: release point", "Drop tower: landing plate"],
             study: "Drop tower: release point",
@@ -494,12 +501,19 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
     companion.hold(target, RESULT_LOOK_SECONDS, false);
     if outcome.pass {
         companion.feel(Mood::Pleased, 5.0);
-        let cheers = ["Right on the mark.", "The world agrees with you.", "Clean. That one is ours.", "Over and down, right where you said."];
+        let cheers = [
+            "Right on the mark.",
+            "Caught it right where you said.",
+            "The world agrees with you.",
+            "Clean. That one is ours.",
+            "Over and down, right where you said.",
+        ];
         companion.say(cheers[puzzle % cheers.len()]);
     } else {
         companion.feel(Mood::Concerned, 5.0);
         companion.say(match kind {
             PuzzleKind::Gravity => "Not quite. Compare your prediction with the real fall.",
+            PuzzleKind::Chase => "Not quite. Look where the cart reached the crawler, compared with the marker.",
             _ => "Not this time. Look where it ended, compared with the target.",
         });
         // Point back to the idea the station is about: its page, or the experiment that writes it.

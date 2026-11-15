@@ -3,7 +3,8 @@
 //! companion, attached to Lumen's eye).
 //!
 //! The notebook, the handbook and Lumen are always on screen. Reduced, they show only their header
-//! (Lumen: its eye); their key, or a click on the header, expands and reduces them.
+//! (Lumen: its eye); their key, or a click on the header, expands and reduces them. The handbook is
+//! read in its own tall window beside the dock, since the dock's column is too short to read in.
 
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
@@ -47,6 +48,9 @@ const DOCK_BOTTOM_RESERVE: f32 = 170.0;
 const DOCK_RULER_RESERVE: f32 = 140.0;
 /// And while Lumen's conversation is open above the eye.
 const DOCK_LUMEN_RESERVE: f32 = 190.0;
+/// The handbook's reading window: its width, and the height kept free under it for the hints.
+const HANDBOOK_WIDTH: f32 = 540.0;
+const HANDBOOK_BOTTOM_RESERVE: f32 = 80.0;
 
 fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: ResMut<Ui>, mut ruler: ResMut<Ruler>) {
     if wants.wants_any_keyboard_input() {
@@ -151,15 +155,14 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
             }
             if ui_state.notebook_open {
                 ui.separator();
-                // Leave room for the handbook's header under it, or more when the handbook is open too.
-                let below = if ui_state.handbook_open { (floor - ui.cursor().top()) * 0.6 } else { 70.0 };
-                let room = (floor - ui.cursor().top() - below).max(70.0);
+                // Leave room for the handbook's header under it.
+                let room = (floor - ui.cursor().top() - 70.0).max(70.0);
                 notebook_body(ui, game, ui_state, room);
             }
         });
 
         egui::Frame::window(ui.style()).show(ui, |ui| {
-            ui.set_width(if ui_state.handbook_open { DOCK_WIDTH } else { DOCK_HEADER_WIDTH });
+            ui.set_width(DOCK_HEADER_WIDTH);
             let unread = ui_state.unread_pages.len();
             let badge = (unread > 0).then(|| format!("{unread} new"));
             if dock_header(ui, "Handbook", "H", ui_state.handbook_open, badge) {
@@ -168,14 +171,35 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
                     ui_state.handbook_focus = ui_state.unread_pages.last().cloned();
                 }
             }
-            if ui_state.handbook_open {
-                ui.separator();
-                let room = (floor - ui.cursor().top() - 20.0).max(40.0);
-                handbook_body(ui, game, ui_state, room);
-            }
         });
     });
     ui_state.dock_bottom = area.response.rect.bottom();
+    if ui_state.handbook_open {
+        handbook_window(ctx, game, ui_state);
+    }
+}
+
+/// The open handbook: a tall window beside the dock, from the top of the screen down to the hints.
+/// It can be moved and resized; its close button reduces it like its header does.
+fn handbook_window(ctx: &egui::Context, game: &Game, ui_state: &mut Ui) {
+    let screen = ctx.content_rect();
+    let height = (screen.height() - HANDBOOK_BOTTOM_RESERVE).max(200.0);
+    let mut open = true;
+    egui::Window::new("Handbook")
+        .id(egui::Id::new("handbook"))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(true)
+        .default_pos([screen.left() + 10.0 + DOCK_WIDTH + 10.0, screen.top() + 10.0])
+        .default_size([HANDBOOK_WIDTH, height])
+        .show(ctx, |ui| {
+            // Fill the window: a scroll area alone would size it to egui's default window height.
+            let room = ui.available_height().max(height - 50.0);
+            handbook_body(ui, game, ui_state, room);
+        });
+    if !open {
+        ui_state.handbook_open = false;
+    }
 }
 
 /// A dock panel's header: an arrow, the title, an optional badge, and the key that toggles it. The

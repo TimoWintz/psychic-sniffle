@@ -145,9 +145,14 @@ pub struct Ui {
     pub results: [Option<Outcome>; PUZZLES],
     /// Time left until a station has recharged.
     pub recharging: [Option<f32>; PUZZLES],
-    pub show_notebook: bool,
-    pub show_handbook: bool,
-    pub show_tutor: bool,
+    /// Whether the notebook, the handbook and Lumen's panel are expanded. They are always on
+    /// screen; reduced, they show only their header (Lumen: its eye).
+    pub notebook_open: bool,
+    pub handbook_open: bool,
+    pub tutor_open: bool,
+    /// Bottom edge of the dock at the top left, in interface points, so Lumen's panel can stay
+    /// clear of it.
+    pub dock_bottom: f32,
     pub calculator: String,
     pub chat: String,
     /// The choice picked in a station's demonstration before its first run.
@@ -161,7 +166,7 @@ pub struct Ui {
 impl Ui {
     /// Open the handbook at a page.
     pub fn open_page(&mut self, concept_id: &str) {
-        self.show_handbook = true;
+        self.handbook_open = true;
         self.handbook_focus = Some(concept_id.to_string());
     }
 

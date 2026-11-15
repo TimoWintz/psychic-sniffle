@@ -1,8 +1,11 @@
 //! Lumen's on-screen body: a holographic eye at the lower left that looks at things in the world,
-//! points at them with a beam of light, and says short lines.
+//! points at them with a beam of light, and says short lines. Its conversation panel grows out of the
+//! eye, where its lines appear, so the eye and the panel are one thing on screen.
 //!
 //! What it looks at comes from the state of the game (the director below), or for a while from a
 //! `[look: NAME]` tag in a tutor reply. Either way it is only a gaze: nothing here changes the game.
+//! It points only where it helps: at the next station for a while when one opens, at the job of an
+//! unsolved puzzle, at a running test. Nothing about a solved puzzle draws the beam.
 //! The scripted lines never contain a number, so they cannot give an answer away.
 
 use crate::island::Sites;
@@ -20,6 +23,8 @@ use physics_core::puzzle::PuzzleKind;
 const MODEL_LOOK_SECONDS: f32 = 9.0;
 /// How long Lumen keeps looking at the target after a test.
 const RESULT_LOOK_SECONDS: f32 = 6.0;
+/// How long Lumen points the way to the next station once it opens (and at the start).
+const BECKON_SECONDS: f32 = 12.0;
 
 /// Places Lumen can look at, by name, with where they are.
 #[derive(Resource, Clone, Debug)]
@@ -126,6 +131,8 @@ pub struct Companion {
     anim: Animation,
     /// Stations where Lumen has already suggested trying the experiment this session.
     nudged: [bool; PUZZLES],
+    /// Seconds left of pointing the way to the next station.
+    beckon_left: f32,
 }
 
 impl Companion {
@@ -172,10 +179,14 @@ struct Facts {
     demo_running: Option<PuzzleKind>,
     /// The focused puzzle has an experiment that has not been watched, and is not solved.
     demo_pending: bool,
+    /// The ruler is taking points.
     ruler_active: bool,
     /// Label of the ruler's first point, while it waits for the second.
     ruler_first: Option<String>,
-    ruler_done: bool,
+    /// Lumen is pointing the way to the next station (for a while after it opens).
+    beckon: bool,
+    /// The avatar stands at a station that is solved or still locked: the way on is elsewhere.
+    at_finished_station: bool,
     /// A place that outranks the rest for now.
     held: Option<String>,
 }
@@ -193,26 +204,30 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     {
         return Some(place.into());
     }
+    // The job of a puzzle still to solve; a solved one has nothing left to show.
+    let unsolved = f.focus_kind.filter(|_| !f.focus_solved);
     if f.ruler_active
-        && let Some(kind) = f.focus_kind
+        && let Some(kind) = unsolved
     {
         let [a, b] = guide(kind).measure;
-        return match (&f.ruler_first, f.ruler_done) {
-            (None, false) => Some(a.into()),
+        return Some(match &f.ruler_first {
+            None => a.into(),
             // Whichever of the two has not been clicked yet.
-            (Some(first), false) => Some(if first == b { a } else { b }.into()),
-            (_, true) => Some(b.into()),
-        };
+            Some(first) => if first == b { a } else { b }.into(),
+        });
     }
     if f.station_open
-        && let Some(kind) = f.focus_kind
+        && let Some(kind) = unsolved
     {
         if f.demo_pending
             && let Some(place) = guide(kind).demo
         {
             return Some(place.into());
         }
-        return Some(if f.focus_solved { guide(kind).target } else { guide(kind).study }.into());
+        return Some(guide(kind).study.into());
+    }
+    if !(f.beckon || f.at_finished_station) {
+        return None;
     }
     match &f.next_station {
         Some(station) => Some(station.clone()),
@@ -292,6 +307,7 @@ fn direct(
         None => {
             // The first frame: a greeting.
             let fresh = game.save.puzzles.values().all(|p| p.attempts.is_empty());
+            companion.beckon_left = BECKON_SECONDS;
             match next {
                 Some(n) if fresh => {
                     companion.say(first_sentence(&game.chapter.intro));
@@ -333,6 +349,7 @@ fn direct(
                 companion.say("Before any numbers, try the experiment. Make your guess first.");
             }
             if now.next != before.next {
+                companion.beckon_left = BECKON_SECONDS;
                 match now.next {
                     Some(n) => companion.say(format!("Next: {} Follow my beam.", lowercase_first(&game.def(n).task))),
                     None => companion.say("That is the whole frame. Come and see it on the shipyard floor."),
@@ -359,6 +376,7 @@ fn direct(
             companion.held = None;
         }
     }
+    companion.beckon_left = (companion.beckon_left - dt).max(0.0);
     companion.mood_left -= dt;
     if companion.mood_left <= 0.0 && companion.mood != Mood::Neutral {
         companion.mood = Mood::Neutral;
@@ -387,7 +405,8 @@ fn direct(
         demo_pending: focus_def.demo.is_some() && !game.save.demo_watched(&focus_def.id) && !game.solved(focus),
         ruler_active: ruler.active,
         ruler_first: ruler.first.as_ref().filter(|_| ruler.second.is_none()).map(|p| p.label.clone()),
-        ruler_done: ruler.second.is_some(),
+        beckon: companion.beckon_left > 0.0,
+        at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
         held: companion.held.as_ref().map(|(place, _, _)| place.clone()),
     };
     companion.gaze = choose_gaze(&facts).filter(|place| landmarks.position(place).is_some());
@@ -476,9 +495,25 @@ struct Animation {
     colour: [f32; 3],
 }
 
-fn eye_centre(ctx: &egui::Context, clock: f32, lift: f32) -> Pos2 {
+/// Where the eye rests, before it bobs.
+fn eye_rest(ctx: &egui::Context, lift: f32) -> Pos2 {
     let screen = ctx.content_rect();
-    pos2(screen.left() + EYE_INSET.x, screen.bottom() - EYE_INSET.y - lift + (clock * 1.7).sin() * 3.0)
+    pos2(screen.left() + EYE_INSET.x, screen.bottom() - EYE_INSET.y - lift)
+}
+
+/// Bottom left corner of what grows out of the eye: its speech bubble or its panel.
+fn bubble_anchor(eye: Pos2) -> Pos2 {
+    eye + vec2(-EYE + 2.0, -EYE - 22.0)
+}
+
+const BUBBLE_FILL: Color32 = Color32::from_rgba_premultiplied(11, 20, 31, 235);
+
+/// The tail that joins a bubble or panel to the eye.
+fn paint_tail(painter: &egui::Painter, rect: egui::Rect, eye: Pos2, fill: Color32, stroke: Stroke) {
+    let tail = [pos2(rect.left() + 18.0, rect.bottom() - 1.0), pos2(rect.left() + 34.0, rect.bottom() - 1.0), pos2(eye.x - 4.0, eye.y - EYE - 6.0)];
+    painter.add(egui::Shape::convex_polygon(tail.to_vec(), fill, Stroke::NONE));
+    painter.line_segment([tail[0], tail[2]], stroke);
+    painter.line_segment([tail[1], tail[2]], stroke);
 }
 
 fn mood_colour(mood: Mood) -> [f32; 3] {
@@ -520,10 +555,13 @@ fn edge_point(rect: egui::Rect, d: EVec2) -> Pos2 {
     rect.center() + d * sx.min(sy)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw(
     mut contexts: EguiContexts,
     time: Res<Time>,
     landmarks: Res<Landmarks>,
+    game: Res<Game>,
+    mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
     mut ui_state: ResMut<Ui>,
     ruler: Res<Ruler>,
@@ -564,9 +602,10 @@ fn draw(
 
     let screen = ctx.content_rect();
     let zoom = ctx.zoom_factor();
-    let lift = if ruler.active { RULER_LIFT } else { 0.0 };
+    let lift = if ruler.in_use() { RULER_LIFT } else { 0.0 };
     a.lift += (lift - a.lift) * (dt * 6.0).min(1.0);
-    let centre = eye_centre(&ctx, t, a.lift);
+    let rest = eye_rest(&ctx, a.lift);
+    let centre = rest + vec2(0.0, (t * 1.7).sin() * 3.0);
     let (camera, at) = *camera;
 
     // Where the beam goes: a point on screen, or an arrow at the screen's edge.
@@ -654,25 +693,43 @@ fn draw(
             response.on_hover_text("Lumen. Click or press T to talk.")
         });
     if area.inner.clicked() {
-        ui_state.show_tutor = !ui_state.show_tutor;
+        ui_state.tutor_open = !ui_state.tutor_open;
     }
 
-    // What Lumen is saying, unless the conversation window is open.
-    if !ui_state.show_tutor
-        && let Some(line) = companion.lines.first()
-    {
+    if ui_state.tutor_open {
+        // The conversation, in a panel that grows out of the eye where its lines appear. It moves
+        // with the eye and cannot be dragged away from it.
+        let anchor = bubble_anchor(rest);
+        let room = (anchor.y - ui_state.dock_bottom - 140.0).clamp(60.0, 300.0);
+        let stroke = Stroke::new(1.5, tint(colour, 0.8));
+        let panel = egui::Area::new(egui::Id::new("lumen-panel"))
+            .order(egui::Order::Foreground)
+            .pivot(egui::Align2::LEFT_BOTTOM)
+            .fixed_pos(anchor)
+            .show(&ctx, |ui| {
+                egui::Frame::new().fill(BUBBLE_FILL).stroke(stroke).corner_radius(8.0).inner_margin(10.0).show(ui, |ui| {
+                    if crate::ui::dock_header(ui, "Lumen", "T", true, None) {
+                        ui_state.tutor_open = false;
+                    }
+                    ui.separator();
+                    crate::ui::tutor_body(ui, &game, &mut ui_state, &mut lumen, &landmarks, room);
+                });
+            });
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-panel-tail")));
+        paint_tail(&painter, panel.response.rect, centre, BUBBLE_FILL, stroke);
+    } else if let Some(line) = companion.lines.first() {
+        // What Lumen is saying, in a bubble where the panel opens.
         let alpha = (line.shown / 0.25).min(1.0) * (line.left / 0.5).min(1.0);
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-says")));
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(14.0), tint([235.0, 245.0, 255.0], alpha), 250.0);
         let size = galley.size() + vec2(20.0, 14.0);
-        let anchor = centre + vec2(-EYE + 2.0, -EYE - 22.0);
+        let anchor = bubble_anchor(centre);
         let rect = egui::Rect::from_min_size(anchor - vec2(0.0, size.y), size);
-        painter.rect_filled(rect, 8.0, Color32::from_rgba_unmultiplied(12, 22, 34, (225.0 * alpha) as u8));
-        painter.rect_stroke(rect, 8.0, Stroke::new(1.5, tint(colour, 0.8 * alpha)), egui::StrokeKind::Inside);
-        let tail = [pos2(rect.left() + 18.0, rect.bottom()), pos2(rect.left() + 34.0, rect.bottom()), pos2(centre.x - 4.0, centre.y - EYE - 6.0)];
-        painter.add(egui::Shape::convex_polygon(tail.to_vec(), Color32::from_rgba_unmultiplied(12, 22, 34, (225.0 * alpha) as u8), Stroke::NONE));
-        painter.line_segment([tail[0], tail[2]], Stroke::new(1.5, tint(colour, 0.8 * alpha)));
-        painter.line_segment([tail[1], tail[2]], Stroke::new(1.5, tint(colour, 0.8 * alpha)));
+        let fill = BUBBLE_FILL.gamma_multiply(alpha);
+        let stroke = Stroke::new(1.5, tint(colour, 0.8 * alpha));
+        painter.rect_filled(rect, 8.0, fill);
+        painter.rect_stroke(rect, 8.0, stroke, egui::StrokeKind::Inside);
+        paint_tail(&painter, rect, centre, fill, stroke);
         painter.galley(rect.min + vec2(10.0, 7.0), galley, Color32::WHITE);
     }
     Ok(())
@@ -759,20 +816,39 @@ mod tests {
     use crate::island;
     use physics_core::puzzle::Ch1Layout;
 
+    /// Just after the station `next` opened: Lumen is pointing the way.
     fn walking_to(next: usize) -> Facts {
-        Facts { focus_kind: Some(PuzzleKind::Rail), next: Some(next), next_station: Some(format!("Station {next}")), ..Facts::default() }
+        Facts { focus_kind: Some(PuzzleKind::Rail), next: Some(next), next_station: Some(format!("Station {next}")), beckon: true, ..Facts::default() }
     }
 
     #[test]
     fn walking_looks_at_the_next_station_and_the_end_at_the_shipyard() {
         assert_eq!(choose_gaze(&walking_to(2)).as_deref(), Some("Station 2"));
-        let done = Facts { next: None, next_station: None, ..Facts::default() };
+        let done = Facts { next: None, next_station: None, beckon: true, ..Facts::default() };
         assert_eq!(choose_gaze(&done).as_deref(), Some("The shipyard floor"));
     }
 
     #[test]
+    fn once_the_way_is_shown_the_beam_rests() {
+        let f = Facts { beckon: false, ..walking_to(2) };
+        assert_eq!(choose_gaze(&f), None);
+        // Standing at a finished (or locked) station, the way on is shown again.
+        let at_done = Facts { at_finished_station: true, ..f };
+        assert_eq!(choose_gaze(&at_done).as_deref(), Some("Station 2"));
+    }
+
+    #[test]
+    fn nothing_about_a_solved_puzzle_draws_the_beam() {
+        let solved = Facts { focus_kind: Some(PuzzleKind::Canyon), focus_solved: true, beckon: false, ..walking_to(3) };
+        assert_eq!(choose_gaze(&Facts { station_open: true, ..solved.clone() }), None);
+        assert_eq!(choose_gaze(&Facts { ruler_active: true, ..solved.clone() }), None);
+        // A test or an experiment still running there is still watched.
+        assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Canyon), ..solved }).as_deref(), Some("Platform: centre"));
+    }
+
+    #[test]
     fn the_ruler_is_led_from_one_pin_to_the_other() {
-        let mut f = Facts { ruler_active: true, station_open: true, ..walking_to(0) };
+        let mut f = Facts { ruler_active: true, station_open: true, beckon: false, ..walking_to(0) };
         assert_eq!(choose_gaze(&f).as_deref(), Some("Rail cart: starting point"));
         f.ruler_first = Some("Rail cart: starting point".into());
         assert_eq!(choose_gaze(&f).as_deref(), Some("Rail marker: centre"));

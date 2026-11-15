@@ -80,9 +80,6 @@ fn proximity(
     {
         ui.station = if ui.station == Some(near) || !game.unlocked(near) { None } else { Some(near) };
     }
-    if keys.just_pressed(KeyCode::Escape) {
-        ui.station = None;
-    }
 }
 
 fn colour_beacons(game: Res<Game>, beacons: Query<(&Beacon, &MeshMaterial3d<StandardMaterial>)>, mut materials: ResMut<Assets<StandardMaterial>>) {

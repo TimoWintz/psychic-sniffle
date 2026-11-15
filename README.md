@@ -28,7 +28,8 @@ and came down, seen from orbit, over the mainland and on the island. Start (or E
 ![The title menu, with the intro in orbit behind it](docs/screenshots/intro.png)
 
 WASD move · Shift run · Space jump · right-drag or arrow keys look · scroll zoom ·
-E use a station · R ruler · N notebook and calculator · H handbook · T (or click the eye) Lumen
+E use a station (E or Esc leaves) · R measure once with the ruler · N notebook and calculator · H handbook ·
+T (or click the eye) Lumen. N, H and T expand and reduce panels that stay on screen.
 
 Progress is saved to `saves/slot1.ron`. Delete it to start over on a new planet (new numbers).
 

@@ -1,7 +1,7 @@
 //! The avatar and the camera that follows it.
 
 use crate::island::Sites;
-use crate::state::{Game, Mode};
+use crate::state::{Game, Mode, Ui};
 use crate::voxel::VoxelWorld;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
@@ -110,16 +110,18 @@ pub(crate) fn move_player(
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
     game: Res<Game>,
+    ui: Res<Ui>,
     camera: Res<OrbitCamera>,
     mut player: Single<(&mut Player, &mut Transform)>,
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
-    let typing = wants.wants_any_keyboard_input();
+    // At an open station the avatar stays at the console: the keys are for the panel.
+    let still = wants.wants_any_keyboard_input() || ui.station.is_some();
 
     // Walk relative to where the camera looks.
     let mut wish = Vec3::ZERO;
-    if !typing {
+    if !still {
         let forward = Vec3::new(-camera.yaw.sin(), 0.0, -camera.yaw.cos());
         let right = Vec3::new(forward.z, 0.0, -forward.x) * -1.0;
         for (key, direction) in [(KeyCode::KeyW, forward), (KeyCode::KeyS, -forward), (KeyCode::KeyD, right), (KeyCode::KeyA, -right)] {
@@ -139,7 +141,7 @@ pub(crate) fn move_player(
 
     // The avatar falls with the planet's own gravity.
     player.velocity.y = (player.velocity.y - game.layout.g as f32 * dt).max(-40.0);
-    if player.grounded && !typing && keys.pressed(KeyCode::Space) {
+    if player.grounded && !still && keys.pressed(KeyCode::Space) {
         player.velocity.y = JUMP_SPEED;
     }
 

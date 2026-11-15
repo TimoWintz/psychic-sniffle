@@ -158,6 +158,8 @@ struct Line {
     look: Option<String>,
     /// Part of a story (the opening): what is said meanwhile waits its turn instead of cutting it.
     keep: bool,
+    /// The frame it was said in.
+    said: u64,
 }
 
 /// Lumen's state: where it looks, how it feels, what it is saying, and its animation.
@@ -180,6 +182,8 @@ pub struct Companion {
     since_spoke: f32,
     /// Remarks already made this session, by their index in the chapter.
     remarked: BTreeSet<usize>,
+    /// Frames directed so far, to tell lines said in the same moment.
+    frame: u64,
 }
 
 impl Companion {
@@ -188,7 +192,8 @@ impl Companion {
     /// kept, in order.
     ///
     /// While a story is being told (lines said with `keep`), nothing cuts it short: a new line waits
-    /// behind it.
+    /// behind it, and replaces what was waiting there from an earlier moment, so what is said after
+    /// the story is still about what just happened.
     fn say(&mut self, text: impl Into<String>) {
         self.speak(text.into(), None, false);
     }
@@ -200,8 +205,10 @@ impl Companion {
 
     fn speak(&mut self, text: String, look: Option<String>, keep: bool) {
         let telling = self.lines.iter().any(|l| l.keep);
-        if !telling
-            && let Some(current) = self.lines.first_mut()
+        if telling {
+            let now = self.frame;
+            self.lines.retain(|l| l.keep || l.shown > 0.0 || l.said == now);
+        } else if let Some(current) = self.lines.first_mut()
             && current.shown > 0.0
         {
             current.left = current.left.min(0.3);
@@ -209,7 +216,7 @@ impl Companion {
         }
         let words = text.split_whitespace().count() as f32;
         // Long enough to read, then out of the way.
-        self.lines.push(Line { text, left: (2.5 + words * 0.32).min(10.0), shown: 0.0, look, keep });
+        self.lines.push(Line { text, left: (2.5 + words * 0.32).min(10.0), shown: 0.0, look, keep, said: self.frame });
         self.since_spoke = 0.0;
     }
 
@@ -429,6 +436,7 @@ fn direct(
 ) {
     let dt = time.delta_secs();
     let companion = &mut *companion;
+    companion.frame += 1;
     let focus = ui.focus(&game);
     let focus_kind = game.def(focus).kind;
     let next = game.next_unsolved();
@@ -1155,6 +1163,11 @@ mod tests {
         lumen.say("Refused before launch.");
         assert_eq!(lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["Once upon a time.", "Then this.", "Refused before launch."]);
         assert!(lumen.lines[0].left > 0.3, "the story goes on");
+        // A moment later, something newer replaces what was waiting; lines of one moment stay together.
+        lumen.frame += 1;
+        lumen.say("Why this station.");
+        lumen.say("Try the experiment.");
+        assert_eq!(lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["Once upon a time.", "Then this.", "Why this station.", "Try the experiment."]);
     }
 
     #[test]

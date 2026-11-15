@@ -336,7 +336,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         // on Earth and its quiz.
         OpenPage("acceleration"),
         Wait(5.5),
-        Shot("08e_handbook_acceleration"),
+        Shot("08b2_page_acceleration"),
         OpenPage("free_fall"),
         Wait(1.1),
         Shot("08f_handbook_free_fall"),

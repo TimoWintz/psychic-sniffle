@@ -121,6 +121,9 @@ pub struct Sites {
     pub stakes: Vec<Vec3>,
     /// Feet of the lamp posts at the camps and the shipyard.
     pub lanterns: Vec<Vec3>,
+    /// Ground where a piece of scrap lies, thrown clear of the wreck or kept at a camp. The pieces
+    /// are shown, not built: nothing stands on them or measures them.
+    pub scrap: Vec<Vec3>,
     /// Corners of the puzzle sites, kept as clean turf: no tufts in the way of a measurement.
     pub sites: Vec<[IVec2; 2]>,
 }
@@ -539,10 +542,11 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     }
     world.fill(wreck + IVec3::new(0, 0, 1), wreck + IVec3::new(0, 2, 4), Material::HullAlloy);
     world.fill(wreck + IVec3::new(1, -1, 1), wreck + IVec3::new(7, -1, 4), Material::HullAlloy);
-    // Plating thrown clear in the crash.
-    for offset in [IVec3::new(-3, 0, -2), IVec3::new(-4, 0, 7), IVec3::new(11, 0, -3), IVec3::new(2, 0, 8)] {
-        world.set(wreck + offset, Material::HullAlloy);
-    }
+    // Scrap thrown clear in the crash.
+    let mut scrap: Vec<Vec3> = [IVec3::new(-3, 0, -2), IVec3::new(-4, 0, 7), IVec3::new(11, 0, -3), IVec3::new(2, 0, 8)]
+        .into_iter()
+        .map(|offset| ground_at(&world, wreck + offset))
+        .collect();
 
     // Pins are numbered in the order they were added (the scripted tour picks them by number), so the
     // tutorial's go last, and the light gate's after them.
@@ -574,6 +578,9 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let crates = [IVec2::new(2, -1), IVec2::new(-2, -1), IVec2::new(-2, 1), IVec2::new(2, -1), IVec2::new(2, -1)];
     for (i, console) in stations.into_iter().enumerate() {
         camp(&mut world, console, crates[i]);
+        // Beside the crate, a piece of scrap salvaged from the wreck.
+        let beside = console + IVec3::new(crates[i].x + crates[i].x.signum(), 0, crates[i].y);
+        scrap.push(ground_at(&world, beside));
         lanterns.push(console.as_vec3() + Vec3::new(lamps[i].x as f32 + 0.5, 0.0, lamps[i].y as f32 + 0.5));
     }
 
@@ -609,6 +616,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         crane_foot,
         stakes,
         lanterns,
+        scrap,
         sites: plan.zones.iter().map(|r| [r.min, r.max]).collect(),
     };
     (world, sites)
@@ -908,7 +916,11 @@ fn camp(world: &mut VoxelWorld, console: IVec3, crate_at: IVec2) {
     world.set(console - IVec3::Y, Material::HullAlloy);
     let crate_ = console + IVec3::new(crate_at.x, 0, crate_at.y);
     put(world, crate_, Material::Timber);
-    put(world, crate_ + IVec3::new(crate_at.x.signum(), 0, 0), Material::HullAlloy);
+}
+
+/// The middle of the top of the ground in the column of `cell`.
+fn ground_at(world: &VoxelWorld, cell: IVec3) -> Vec3 {
+    Vec3::new(cell.x as f32 + 0.5, world.surface(cell.x, cell.z) as f32, cell.z as f32 + 0.5)
 }
 
 /// Trees in groves, and in the open meadows shrubs, boulders and quartz.

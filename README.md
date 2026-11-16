@@ -1,8 +1,9 @@
 # First Principles
 
-A physics game. You are stranded on a block planet and build a ship, part by part; every part is earned
-by doing the physics it depends on. Measure the world, work out the values, commit, and see whether the
-world agrees. The ship's computer, Lumen, can explain anything and touch nothing.
+A physics game. You are stranded on a block planet, beside an ancient road whose machines are
+asleep, and build a ship, part by part; every part is earned by doing the physics it depends on.
+Measure the world, work out the values, commit, and see whether the world agrees.
+The ship's computer, Lumen, can explain anything and touch nothing.
 
 This repository holds the design and a playable slice: tier 1, chapter 1 (kinematics: a tutorial and four puzzles).
 
@@ -40,7 +41,7 @@ N notebook and calculator · H handbook · T (or click the eye) Lumen. N, H and 
 that stay on screen.
 
 Some things are done with your hands. The supply rail's cart will not run until you have carried its
-cargo crate onto it. On the haul track a survey crawler runs at one steady speed you can only
+cargo crate onto it. On the haul track the road builders' crawler walks at one steady speed you can only
 measure: time it between two posts, then set the haul cart's speed so it catches the crawler on the
 transfer marker. At the drop tower you can clamp a light gate at any metre of the tower and time
 the fall to it, short drops and long. At the canyon the launcher's dial only turns within a band, too

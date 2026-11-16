@@ -73,14 +73,21 @@ Special relativity, an introduction to quantum physics, and statistical mechanic
 Planet gravity `g` is drawn per save from 6.5 to 13.5 m/s², excluding 9.3 to 10.3 so that the familiar
 value never works. All lengths are whole metres so they can be checked by counting blocks.
 
+The stations are the machines of the ancient way (see the game design's story): asleep at the start,
+woken one by one as each job is done right. The builders give no numbers; every orange mark is the
+castaway's. Each puzzle's **Wakes** line is the target design; today the machines all stand ready
+from the start.
+
 ### Puzzle 0 — The supply rail (tutorial)
 
-- **Story.** The first crate out of the wreck holds tools for the launchers; nothing hard, this is how
-  every station works. Pass: "Tools are out. Now the launchers need something to aim with."
+- **Story.** The first crate out of the wreck holds the castaway's tools; nothing hard, this is how
+  every station works. Pass: the marker lit when the cart stopped on it, and Lumen did nothing.
+- **Wakes.** The marker's quartz, then the stone gate at the end of the stretch, which opens; the cart
+  goes on through as the haul cart.
 - **Purpose.** Teach the station loop before any physics: brief, ruler, notebook, blueprint, units,
   commit, result, charges. It needs no mathematics; the answer is the measurement itself.
-- **Brief.** A powered cart on a straight, level rail beside the wreck drives exactly as far as it is
-  told and stops. Load it, then send it to the orange marker.
+- **Brief.** The builders' cart, on a straight, level rail sunk into the road beside the wreck,
+  drives exactly as far as it is told and stops. Load it, then send it to the orange marker.
 - **Carrying.** The cart starts empty and will not run so. Its cargo crate stands beside the rail
   start; the player picks it up (`F`) and puts it on the cart (`F`), which teaches the verb the
   canyon needs, with nothing at stake. Committing with an empty cart is refused for free ("load the
@@ -101,15 +108,16 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 1 — Catch the crawler
 
-- **Story.** The crawler carries the launchers' guidance unit (a box on its back), and the crash shook
-  its drive awake; without the unit nothing can aim. Pass: the unit sits at the transfer crane's foot,
-  and it can aim once it knows how hard the planet pulls.
+- **Story.** The crawler is the builders' own, still walking its rounds, and it carries the sight on
+  its back: the piece the launchers aim with. Pass: the sight is on the crane, and the launchers can
+  aim once they know how hard the planet pulls.
+- **Wakes.** The transfer crane's arm, which lifts the sight off; then the light runs to the tower.
 - **Purpose.** Velocity and relative velocity, before any acceleration: textbooks start here, and the
   drop tower's strobe ("evenly, or further apart?") then has a steady motion to be compared with.
-- **Brief.** A survey crawler from the wreck runs along the haul track at the one speed its drive
-  has, from the moment it starts, and cannot be stopped. The haul track is the railway's stretch past
-  the depot gate, and the haul cart is the tutorial's cart, gone on up the line: it stands behind the
-  crawler on the same track and runs at whatever speed is set. When the cart reaches the crawler the two couple; the load
+- **Brief.** The builders' crawler walks the haul track round after round; from its mark at the end
+  of a round it sets off at one steady speed, and cannot be stopped. The haul track is the rail's
+  stretch past the stone gate, and the haul cart is the tutorial's cart, gone on up the line: it
+  stands behind the crawler on the same track and runs at whatever speed is set. When the cart reaches the crawler the two couple; the load
   can only be lifted off at the transfer marker. Set the cart's speed so it reaches the crawler there.
 - **Investigate.** Ruler: the cart's front coupler to the crawler's rear coupler (the head start
   `D`), the cart's front coupler to the transfer marker's centre (`M`), and timing post A to timing
@@ -142,15 +150,17 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 ### Puzzle 2 — Local gravity
 
-- **Story.** The guidance unit only knows home's gravity, and so does Lumen's backup: Lumen would
-  rather have the player's number than its guess. Pass: the player's g is in the guidance unit and in
-  Lumen, and every later shot is worked out with it.
-- **Brief.** The launcher needs this planet's gravitational acceleration.
+- **Story.** The launchers do exactly what they are told and work nothing out, and Lumen's backup only
+  knows home's gravity: Lumen would rather have the player's number than its guess. Pass: the
+  player's g is in Lumen, and every later shot is worked out with it.
+- **Wakes.** The tower, to the top; the ramp onto the outcrop surfaces, and the sight is set on the
+  ledge launcher.
+- **Brief.** The launchers need this planet's gravitational acceleration.
 - **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
   fall with the stopwatch (free, repeatable).
 - **Place to measure: the light gate.** A gate on a stand by the station, carried (`F`) and clamped on
-  the drop tower at any whole-metre notch, from 1 m below the release down to the plate: the notch
-  the pointer marks on the tower, or the one at hand height. With a gate fitted, each release times
+  the drop tower at any whole-metre notch (painted orange by the castaway), from 1 m below the
+  release down to the plate: the notch the pointer marks on the tower, or the one at hand height. With a gate fitted, each release times
   the fall from the release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`,
   `t3`, ...), so the player designs their own measurement and can see that doubling the drop does not
   double the time. Without one, the stopwatch times the whole drop. The gate's notch is kept in the
@@ -176,10 +186,12 @@ value never works. All lengths are whole metres so they can be checked by counti
 - **Story.** The frame beam itself, packed in a salvage crate, crosses the canyon: the first real
   shot with the player's g. The platform is beside the tilting launcher. Pass: the crate stays on the
   platform and the beam waits on the tilting launcher.
+- **Wakes.** Both rims; the stair up the ridge opens, wide enough for the castaway but not the beam.
 - **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
-  horizontally, but its damaged dial turns only within a band (`vmin` to `vmax`), and from the bare
-  ledge no speed in the band reaches the strip. The launcher rides in a jack frame at the rim; every
-  crate slid into the frame raises it one metre.
+  horizontally, but its worn dial turns only within a band (`vmin` to `vmax`, found and painted on
+  the rating plate by the castaway), and from the bare ledge no speed in the band reaches the strip.
+  The launcher rides in a stone jack frame at the rim; every crate slid into its sockets raises it
+  one metre.
 - **Investigate.** Ruler: horizontal distance from the release point to the strip's centre, and the
   drop to it (the release point's pin rises with the launcher). The rating plate on the station gives
   the band, with a button to note it (`vmin`, `vmax`).
@@ -211,7 +223,9 @@ value never works. All lengths are whole metres so they can be checked by counti
 ### Puzzle 4 — Over the ridge (capstone)
 
 - **Story.** The one that matters: the frame beam, come across the canyon, over the ridge to the
-  shipyard on the north shore.
+  shipyard on the builders' old quay on the north shore.
+- **Wakes.** The landing circle, then the north gate, whose light points across the strait at the main
+  hull. In the closing, Lumen hears the core for the first time: faint, but there.
 - **Brief.** Launch the frame beam over the ridge onto the shipyard pad. The launcher has a maximum
   speed.
 - **Investigate.** Ruler: distance to the pad, distance to the ridge, height of the ridge.
@@ -225,7 +239,7 @@ value never works. All lengths are whole metres so they can be checked by counti
   rules out very steep shots, leaving a window of roughly ten degrees. The player must reason about
   both constraints before computing the speed.
 - **Relations.** `x = v cosθ · t`, `y = v sinθ · t − ½ g t²`; on level ground `R = v² sin 2θ / g`.
-- **Reward.** The skiff's frame rises on the shipyard floor, at the top of the slipway.
+- **Reward.** The skiff's frame rises on the shipyard floor, at the top of the old slipway.
 
 ### Handbook pages: Earth pictures and quizzes
 

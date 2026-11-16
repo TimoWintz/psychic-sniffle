@@ -4,7 +4,8 @@ Working title: **First Principles**.
 
 ## Vision
 
-You are stranded on a small voxel planet beside the wreck of your ship. To leave, you build a new ship
+You are stranded on a small voxel planet beside the wreck of your ship, which came down across an
+ancient road whose builders are long gone. Their machines along it are asleep. To leave, you build a new ship
 three times over — a skiff, an orbiter, a starship — and every part of it has to be earned by doing the
 physics that the part depends on. By the time the starship leaves, the player has worked through
 mechanics, electromagnetism and thermodynamics to first-year university level.
@@ -30,13 +31,13 @@ Lumen also carries the story, in a few short lines and never in the way of the p
 in the chapter's file; all of them are spoken, so none holds a digit.
 
 - **Opening.** In a fresh game: who Lumen is, the main hull across the strait (its eye turns to it),
-  and what the chapter has to do. The opening is not cut short: what happens meanwhile waits its turn.
+  what the chapter has to do, and the road the wreck came down across. The opening is not cut short: what happens meanwhile waits its turn.
 - **Why.** When a station first opens, one line on why this job matters now. It also heads the
   station's panel ("Lumen: ...").
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
-- **Closing.** When the chapter's part is installed.
-- **Remarks.** A handful of lines about places (the wreck, the shore facing the strait, the canyon
-  rim, the ridge, the shipyard), each said once a session when the player comes near. Lumen makes a
+- **Closing.** When the chapter's part is installed, and what woke along the way with it.
+- **Remarks.** A handful of lines about places (the wreck on the road, the shore facing the strait,
+  the canyon rim, the ridge, the old quay under the shipyard), each said once a session when the player comes near. Lumen makes a
   remark only when nothing is going on: no station open, no test or experiment running, the ruler
   away, nothing carried, its conversation closed, and nothing said for 40 seconds.
 - **Help.** Once per station a session: after a first miss at the canyon or the ridge, that the
@@ -56,9 +57,21 @@ strata, the trees are parasols and spires of teal and violet fronds, and quartz 
 glow. A ringed gas giant and a small moon hang in a turquoise sky, and other islands sit in the haze
 on the horizon.
 
-Puzzle sites are built by the castaway from the wreck, so they share one look: hull plates laid on the
-turf around each station, salvage crates, quartz lamp posts, worn paths from one to the next, and
-targets painted survey orange (they glow) with staked corners. Orange means "a number lives here".
+Two hands built what stands at the puzzle sites, and they should never be confused.
+
+- **The way.** A road of dressed pale stone runs from the south coast to a gate on the north shore,
+  and its builders' machines stand along it: a cart in a sunk rail, a crawler, a drop tower and a
+  taller survey mast, two launchers (one in a stone jack frame on the canyon rim, one that tilts), a
+  crane arm, and a quay with a slipway down to the strait. Their stone is smooth and pale and its
+  edges are worn; quartz runs in channels through the joints. A machine that is **asleep** has dark
+  quartz and does not move. An **awake** one glows the island's quartz colour.
+- **The castaway's salvage.** What the player and Lumen add is rough and new: a console wired into
+  each machine (Lumen reads through it, the player commits through it), hull plates laid on the turf
+  around it, salvage crates, the light gate, worn paths from one site to the next, and survey orange
+  paint on the old stone wherever a number lives: markers, timing posts, the tower's metre notches,
+  the target strip, the rating plate. Orange means "a number lives here", and it is always ours:
+  the builders left no numbers.
+
 The landforms a puzzle needs (the outcrop, the canyon, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
 
@@ -82,11 +95,23 @@ camera glides down to the player's view and Lumen says its first line. The place
 
 **Premise.** The ship broke up on the way in. Its drive section is still in orbit; the main hull came
 down on the mainland across the strait; the forward section, with the castaway in it, came down on the
-island. The main hull stays in view from the island's northern shore.
+island, across the southern end of an ancient road. The main hull stays in view from the island's
+northern shore.
+
+**The way.** The road and its machines were built by someone who is not here any more, long ago. The
+machines are asleep. Wired to a console, one does exactly what it is told and works nothing out:
+every number still has to come from the player. When a machine's job is done right (the cart stops on
+the marker, the crate lands in the strip), its quartz lights, and the light runs along the road to
+the next machine, which wakes. Why the way answers work done right is never explained. Lumen notices
+the pattern, wonders about it in a line or two, and is honest that it does not know. The way runs
+through the whole tier: each chapter wakes another part of it, the gate on the north shore points at
+the main hull, and the mainland may hold more of the builders' work in tier 2. The builders never
+give a number, a relation or an answer (pillar 1), and nothing that wakes does the player's job.
 
 **Lumen.** What survived in the forward section is a backup of Lumen, a sliver of it running on that
 section's cells: sensors, no hands, and tables made for home. It does not know this planet, and it
-relearns it with the player, one constant at a time, always the player's own measurement. Its core is
+relearns it with the player, one constant at a time, always the player's own measurement. The road
+is as new to it as the planet. Its core is
 in the main hull: its memory, its full instruments and the fabricator's controls. The core is silent.
 Lumen looks across at it now and then. Its tone is a colleague's: dry, curious, honest about being
 partial, never mopey.
@@ -107,26 +132,35 @@ The tier ends when the skiff reaches the main hull and the backup joins its core
 the core took damage, and the drive section is still in orbit. The main hull's fabricator builds the
 orbiter in tier 2, and the restored core brings the grapher, tier 2's instrument.
 
-**Chapter 1.1: the guidance chain.** The frame beam is at the wreck on the south coast; the shipyard
-is on the north shore, facing the strait and the main hull, past the canyon and over the ridge. The
-beam is too heavy to carry, but the old cargo launchers can throw it, once they can aim. The chapter is
-one route that leads there, and each station is the next step along it:
+**Chapter 1.1: waking the way.** The frame beam is at the wreck on the south coast; the shipyard
+is on the north shore, on the builders' old quay, facing the strait and the main hull, past the canyon
+and over the ridge. The beam is too heavy to carry, but the builders' launchers can throw it, once
+they can aim. The chapter is one route that leads there, the southern stretch of the way, and each
+station is the next machine along it. At the start all of it is asleep and only the first station
+has a console.
 
-1. One railway runs east from the wreck. Its first stretch is the supply rail; past a depot gate the
-   same line is the haul track, where the same cart chases the crawler to the transfer crane.
-2. The drop tower and the survey mast stand at the line's end, under the outcrop.
+1. The road's rail runs east from the wreck. Its first stretch is the supply rail; past a stone gate
+   the same rail is the haul track, where the same cart chases the crawler to the transfer crane.
+2. The drop tower and the survey mast stand at the rail's end, under the outcrop.
 3. A ramp climbs north onto the outcrop, where the ledge launcher fires north across the canyon. The
    crated beam lands on the platform beside the tilting launcher, and a dolly rail takes it aboard.
-4. The tilting launcher fires the beam north over the ridge onto the pad. Past it, the shipyard floor
-   and a slipway run down to the strait, with the main hull beyond.
+4. The tilting launcher fires the beam north over the ridge onto the landing circle on the quay. Past
+   it, the shipyard floor and the slipway run down to the strait, with the main hull beyond, and the
+   north gate stands at the quay's end.
 
-| Station | Why, in the story | What changes in the world |
+After each pass, the light runs to the next machine, and the castaway wires its console in a short
+fade ("by evening…"). The island visibly fills in from south to north.
+
+| Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
-| The supply rail | the first crate out of the wreck: tools for the launchers (and how every station works) | the crate rides to the marker; the cart rolls on through the depot gate and becomes the haul cart |
-| Catch the crawler | the crawler is carrying the launchers' guidance unit, and the crash shook its drive awake | the unit rides on the crawler, then waits at the transfer crane's foot |
-| Local gravity | the guidance unit, like Lumen's backup, only knows home's gravity | the player's g is in the notebook, and Lumen uses it; the unit is fitted beside the ledge launcher |
-| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | the crate stays on the platform, and the beam waits on the tilting launcher |
-| Over the ridge | the frame beam itself, on to the shipyard | the skiff's frame rises in its cradle at the top of the slipway |
+| The supply rail | the first crate out of the wreck: our tools, up the road (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
+| Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
+| Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
+| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | both rims light; the crate stays on the platform and the beam waits on the tilting launcher; the stair up the ridge opens (wide enough for the castaway, not for the beam) |
+| Over the ridge | the frame beam itself, on to the shipyard | the beam lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff's frame rises in its cradle at the top of the slipway; Lumen hears the core for the first time |
+
+Most of the waking is still to build: today every machine stands ready from the start, and only the
+beam's progress and the frame show in the world.
 
 ## Pillars
 
@@ -293,9 +327,9 @@ Lumen is pointing.
 
 ## The ship and progression
 
-The shipyard stands on the north shore, at the end of the chapter's route, with the strait and the
-main hull beyond it. Each chapter's capstone adds a part to the ship standing there, so progress is
-always in view; a puzzle on the way moves what it delivers one step nearer (the beam, across the
+The shipyard stands on the builders' quay on the north shore, at the end of the chapter's route, with
+the strait and the main hull beyond it. Progress shows twice over: the way wakes machine by machine
+along the route, and each chapter's capstone adds a part to the ship standing on the quay; a puzzle on the way moves what it delivers one step nearer (the beam, across the
 canyon to the tilting launcher).
 
 | Stage | Purpose in the story | Unlocks |

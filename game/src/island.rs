@@ -2,9 +2,18 @@
 //!
 //! Every distance a puzzle depends on is built here in whole blocks from [`Ch1Layout`], so the number
 //! the player measures and the number the simulator uses are the same. Around the puzzles the land is
-//! free to be a landscape: a ragged coast of beaches and cliffs, rolling turf, a mountain range to the
-//! north-east, groves of parasol trees. The puzzle sites themselves are kept exactly flat (the
-//! "zones" below), and the ground the tests' side-view cameras look across is kept low.
+//! free to be a landscape: a ragged coast of beaches and cliffs, rolling turf, hills to the west and
+//! the east, groves of parasol trees. The puzzle sites themselves are kept exactly flat (the "zones"
+//! below), and the ground the tests' side-view cameras look across is kept low.
+//!
+//! The chapter is one route, from the wreck on the south coast to the shipyard on the north shore,
+//! which faces the strait and the main hull beyond it (see [`Route`]):
+//!
+//! - one railway runs east from the wreck: the supply rail, a depot gate, then the haul track;
+//! - the drop tower and the survey mast stand at the line's end, under the outcrop;
+//! - a ramp climbs north onto the outcrop, whose ledge launcher fires north across the canyon;
+//! - the beam lands beside the tilting launcher, which fires it north over the ridge onto the pad;
+//! - past the pad, the shipyard floor and a slipway run down to the strait.
 
 use crate::state::PUZZLES;
 use crate::voxel::{VoxelWorld, fbm, hash01, smoothstep};
@@ -12,12 +21,7 @@ use bevy::prelude::*;
 use physics_core::materials::Material;
 use physics_core::puzzle::Ch1Layout;
 
-/// Where the layout's own coordinates start in the world. The margin around them leaves room for the
-/// coast to find its own shape, and for beaches wide enough to slope gently down to the water.
-pub const LAYOUT_ORIGIN: IVec3 = IVec3::new(OX, 0, OZ);
-const OX: i32 = 40;
-const OZ: i32 = 34;
-pub const WORLD_SIZE: IVec3 = IVec3::new(232, 72, 196);
+pub const WORLD_SIZE: IVec3 = IVec3::new(232, 72, 232);
 /// Height of the ground surface over most of the island.
 pub const GROUND: i32 = 20;
 pub const SEA_LEVEL: f32 = 8.6;
@@ -72,7 +76,8 @@ pub struct Sites {
     pub cargo_yard: [IVec3; 2],
     /// The haul track: the point on the track (at ground level, on its centre line) where the haul
     /// cart's front coupler stands at the start, and the way the cart and the crawler run. Distances
-    /// along the track are measured from here (see [`Sites::haul_at`]).
+    /// along the track are measured from here (see [`Sites::haul_at`]). It continues the supply rail,
+    /// past the depot gate: once the tools are delivered, the same cart waits here.
     pub haul_start: Vec3,
     pub haul_direction: Vec3,
     /// Where the crawler's rear coupler starts, in metres along the track (its head start).
@@ -94,7 +99,7 @@ pub struct Sites {
     pub canyon_well: IVec3,
     /// Cells of the salvage pile on the ledge: where the movable crates lie at the start.
     pub crate_pile: Vec<IVec3>,
-    /// Corners (inclusive) of the space where crates may be put down: the ledge north of the
+    /// Corners (inclusive) of the space where crates may be put down: the ledge west of the
     /// launcher's rail, up to three crates high. Off the launch lines, clear of the station.
     pub crate_yard: [IVec3; 2],
     /// Index in `pins` of the ledge launcher's release point, which moves with the launcher.
@@ -104,9 +109,10 @@ pub struct Sites {
     pub stations: [IVec3; PUZZLES],
     pub pins: Vec<Pin>,
     pub wreck: Vec3,
-    /// Centre of the shipyard floor, where the ship is assembled.
+    /// Centre of the shipyard floor, where the ship is assembled. The ship points north, down the
+    /// slipway into the strait.
     pub shipyard: Vec3,
-    /// The last dry ground from the wreck towards the main hull: where the strait opens up.
+    /// The last dry ground from the shipyard towards the main hull: where the slipway meets the strait.
     pub shore: Vec3,
     /// Ground at the foot of the transfer crane, beyond the haul track: where the guidance unit is
     /// set down once the crawler is caught.
@@ -129,25 +135,113 @@ impl Sites {
     }
 }
 
-/// Block the haul cart's front coupler starts on, and the row the haul track runs along. The track
-/// runs west, so a side view of a test looks north at it from the beach, clear of the drop tower
-/// and the survey mast.
-const HAUL_X: i32 = OX + 58;
-const HAUL_ROW: i32 = OZ + 10;
-/// Block the rail cart starts on, and the row the supply rail runs along (eastward).
-const RAIL_X: i32 = OX + 28;
-const RAIL_ROW: i32 = OZ + 47;
-const TOWER: IVec3 = IVec3::new(OX + 36, GROUND, OZ + 30);
-const MAST: IVec3 = IVec3::new(OX + 28, GROUND, OZ + 22);
-/// Near (west) rim of the canyon, where the ledge launcher releases.
-const CANYON_X: i32 = OX + 70;
-const CANYON_ROW: i32 = OZ + 56;
-const CANYON_Z: (i32, i32) = (OZ + 28, OZ + 84);
-/// Release point of the tilting launcher.
-const RIDGE_LAUNCH_X: i32 = OX + 40;
-const RIDGE_ROW: i32 = OZ + 100;
-/// West edge of the outcrop's flat top; the ramp climbs to it.
-const LEDGE_X: i32 = CANYON_X - 14;
+/// Column of the tilting launcher's line, which runs north to the pad and the shipyard.
+const RIDGE_X: i32 = 108;
+/// Row of the pad's centre. Everything else is laid back south from it, by the seed's distances.
+const PAD_Z: i32 = 60;
+/// How far east of the tilting launcher's line the ledge launcher's line runs: far enough that the
+/// ridge stays off the canyon shot's level run, near enough that the beam lands beside the launcher.
+const CANYON_OFFSET: i32 = 9;
+/// The canyon's length, across its launch line: it closes at the west end and climbs out at the east.
+const CANYON_ENDS: (i32, i32) = (-28, 28);
+/// Depth of the ledge's flat top, back from the rim.
+const LEDGE_DEPTH: i32 = 14;
+/// How far south of the rim the railway runs.
+const LINE_BACK: i32 = 38;
+
+/// A launch line's own grid of columns: `along` the way the load flies, `across` to its right, the
+/// station's side. Column (0, 0) is the first one past the release point.
+#[derive(Clone, Copy, Debug)]
+struct Frame {
+    origin: IVec2,
+    along: IVec2,
+    across: IVec2,
+}
+
+impl Frame {
+    /// A line that fires north; its right is east.
+    const fn north(origin: IVec2) -> Self {
+        Frame { origin, along: IVec2::new(0, -1), across: IVec2::new(1, 0) }
+    }
+
+    fn col(&self, a: i32, c: i32) -> IVec2 {
+        self.origin + self.along * a + self.across * c
+    }
+
+    fn cell(&self, a: i32, c: i32, y: i32) -> IVec3 {
+        let p = self.col(a, c);
+        IVec3::new(p.x, y, p.y)
+    }
+
+    /// The columns between two corners given in the frame.
+    fn rect(&self, a0: i32, c0: i32, a1: i32, c1: i32) -> Rect {
+        let (p, q) = (self.col(a0, c0), self.col(a1, c1));
+        Rect { min: p.min(q), max: p.max(q) }
+    }
+
+    /// Fill the box of blocks between two corners given in the frame, heights inclusive.
+    fn fill(&self, world: &mut VoxelWorld, (a0, c0, y0): (i32, i32, i32), (a1, c1, y1): (i32, i32, i32), material: Material) {
+        let (p, q) = (self.cell(a0, c0, y0), self.cell(a1, c1, y1));
+        world.fill(p.min(q), p.max(q), material);
+    }
+
+    /// The launcher whose release point is the face behind column (0, 0), at height `y`.
+    fn launch(&self, y: f32) -> LaunchSite {
+        let along = Vec3::new(self.along.x as f32, 0.0, self.along.y as f32);
+        let centre = Vec3::new(self.origin.x as f32 + 0.5, y, self.origin.y as f32 + 0.5);
+        LaunchSite { origin: centre - along * 0.5, direction: along }
+    }
+}
+
+/// Where the chapter's route lies for a layout. It is anchored at the shipyard pad and laid back
+/// south from it, so the shipyard always stands on the north shore and the seed's distances decide
+/// how far south the canyon, the outcrop and the railway reach.
+struct Route {
+    /// Row of the railway, and the block the rail cart starts on (it runs east).
+    line_z: i32,
+    rail_x: i32,
+    /// Block the haul cart's front coupler starts on, past the depot gate on the same row.
+    haul_x: i32,
+    tower: IVec3,
+    mast: IVec3,
+    /// The ledge launcher's line: column (0, 0) is the canyon's first column past the rim.
+    canyon: Frame,
+    /// The tilting launcher's line.
+    ridge: Frame,
+}
+
+impl Route {
+    fn new(layout: &Ch1Layout) -> Self {
+        let ridge_first = PAD_Z + layout.pad_centre.floor() as i32;
+        // The platform's centre is two blocks behind the tilting launcher's release point, where the
+        // beam waits for it.
+        let rim = ridge_first + 2 + layout.platform_centre.floor() as i32;
+        let canyon_x = RIDGE_X + CANYON_OFFSET;
+        // The line ends at a buffer three blocks short of the canyon's line, under the outcrop.
+        let rail_x = canyon_x - 72;
+        Route {
+            line_z: rim + LINE_BACK,
+            rail_x,
+            haul_x: rail_x + Ch1Layout::RAIL_LENGTH as i32 + 3,
+            tower: IVec3::new(canyon_x - 10, GROUND, rim + 30),
+            mast: IVec3::new(canyon_x - 19, GROUND, rim + 30),
+            canyon: Frame::north(IVec2::new(canyon_x, rim)),
+            ridge: Frame::north(IVec2::new(RIDGE_X, ridge_first)),
+        }
+    }
+
+    /// Row of the ridge's one-block crest on the tilting launcher's line.
+    fn ridge_row(&self, layout: &Ch1Layout) -> i32 {
+        self.ridge.col(layout.ridge_x as i32, 0).y
+    }
+
+    /// The first row of the shipyard floor past the pad, and its last, at the end of the tilting
+    /// launcher's level run (which the simulator needs for a beam thrown too far); the slipway runs
+    /// on from there down the shore to the water.
+    fn shipyard_rows(&self) -> (i32, i32) {
+        (PAD_Z - 6, PAD_Z - 42)
+    }
+}
 
 /// An axis-aligned rectangle of columns, both corners inclusive.
 #[derive(Clone, Copy, Debug)]
@@ -159,11 +253,6 @@ struct Rect {
 impl Rect {
     const fn new(x0: i32, z0: i32, x1: i32, z1: i32) -> Self {
         Rect { min: IVec2::new(x0, z0), max: IVec2::new(x1, z1) }
-    }
-
-    /// A rectangle given in the layout's own coordinates.
-    const fn local(x0: i32, z0: i32, x1: i32, z1: i32) -> Self {
-        Rect::new(OX + x0, OZ + z0, OX + x1, OZ + z1)
     }
 
     /// Distance in blocks from a column to the rectangle (0 inside).
@@ -180,44 +269,50 @@ struct Plan {
     zones: Vec<Rect>,
     /// Ground the tests' side-view cameras look across: kept low, no tall plants.
     corridors: Vec<Rect>,
-    /// Where the rail's and the haul track's test cameras look from: nothing taller than a crystal.
+    /// Where the railway's test cameras look from: nothing taller than a crystal.
     views: Vec<Rect>,
+    /// Rows south of this are where the railway's cameras stand: no sea stacks off that coast.
+    camera_coast: i32,
 }
 
 impl Plan {
-    fn new(layout: &Ch1Layout) -> Self {
-        let far_rim = CANYON_X + layout.canyon_width as i32;
-        let ridge_x = RIDGE_LAUNCH_X + layout.ridge_x as i32;
-        let yard_x = RIDGE_LAUNCH_X + layout.pad_centre.floor() as i32 + 7;
+    fn new(layout: &Ch1Layout, route: &Route) -> Self {
+        let (canyon, ridge) = (&route.canyon, &route.ridge);
+        let line = route.line_z;
+        let rim = canyon.origin.y;
+        let line_end = route.haul_x + Ch1Layout::HAUL_LENGTH as i32 + 4;
+        let pad = layout.pad_centre.floor() as i32;
+        let width = layout.canyon_width as i32;
         let zones = vec![
-            // Landing site: wreck, spawn, drop tower, survey mast.
-            Rect::local(10, 16, 46, 50),
-            // Supply rail.
-            Rect::local(22, 40, 58, 52),
-            // Haul track, from its buffer to the station by the haul cart.
-            Rect::new(HAUL_X - Ch1Layout::HAUL_LENGTH as i32 - 4, HAUL_ROW - 6, HAUL_X + 7, HAUL_ROW + 4),
-            // Ramp foot, outcrop and the launch line out past the canyon.
-            Rect::local(34, 50, 142, 62),
+            // Landing site: wreck, spawn, the rail's start and its station.
+            Rect::new(route.rail_x - 22, line - 14, route.rail_x + 4, line + 3),
+            // The railway, from the wreck to the buffer past the crane.
+            Rect::new(route.rail_x - 3, line - 6, line_end, line + 4),
+            // Drop tower, survey mast and their station, between the line and the outcrop.
+            Rect::new(route.mast.x - 5, route.tower.z - 4, route.tower.x + 8, line - 2),
+            // Ramp foot, outcrop, and the ledge launcher's line out past the canyon to the end of its
+            // level run.
+            canyon.rect(-LEDGE_DEPTH - 18, -6, Ch1Layout::CANYON_RUN as i32 + 10, 6),
             // The canyon, rim to rim.
-            Rect::new(CANYON_X - 6, CANYON_Z.0 - 4, far_rim + 4, CANYON_Z.1 + 4),
-            // Tilting launcher, ridge, pad and the line beyond.
-            Rect::new(OX + 32, RIDGE_ROW - 6, OX + 140, RIDGE_ROW + 6),
-            Rect::new(ridge_x - 4, RIDGE_ROW - 12, ridge_x + 5, RIDGE_ROW + 12),
-            // Shipyard.
-            Rect::new(yard_x - 3, RIDGE_ROW - 10, yard_x + 23, RIDGE_ROW + 10),
+            canyon.rect(-4, CANYON_ENDS.0 - 4, width + 4, CANYON_ENDS.1 + 4),
+            // The platform, the dolly rail, the tilting launcher and its station.
+            Rect::new(RIDGE_X - 3, ridge.origin.y - 2, canyon.origin.x + 3, ridge.origin.y + 8),
+            // The tilting launcher's line: ridge, pad, shipyard and on to the end of its level run.
+            ridge.rect(-6, -6, pad + 43, 6),
+            ridge.rect(layout.ridge_x as i32 - 4, -12, layout.ridge_x as i32 + 5, 8),
+            // The shipyard floor, on the north shore.
+            Rect::new(RIDGE_X - 11, route.shipyard_rows().1 - 3, RIDGE_X + 11, PAD_Z + 3),
         ];
+        // Each side view looks across its line from one side: the railway's from the south, the
+        // launchers' (which fire north) from the east.
         let corridors = vec![
-            Rect::local(18, 48, 62, 100),
-            Rect::local(20, 23, 46, 60),
-            Rect::new(HAUL_X - Ch1Layout::HAUL_LENGTH as i32 - 6, HAUL_ROW - 30, HAUL_X + 8, HAUL_ROW),
-            Rect::local(60, 59, 148, 140),
-            Rect::new(OX + 30, RIDGE_ROW + 3, OX + 142, WORLD_SIZE.z),
+            Rect::new(route.rail_x - 8, line, line_end + 4, WORLD_SIZE.z),
+            Rect::new(route.mast.x - 6, rim + 20, route.tower.x + 10, line),
+            canyon.rect(-6, 0, Ch1Layout::CANYON_RUN as i32 + 6, 90),
+            ridge.rect(-6, 0, pad + 43, 90),
         ];
-        let views = vec![
-            Rect::local(18, 48, 62, 100),
-            Rect::new(HAUL_X - Ch1Layout::HAUL_LENGTH as i32 - 4, HAUL_ROW - 30, HAUL_X + 8, HAUL_ROW - 1),
-        ];
-        Plan { zones, corridors, views }
+        let views = vec![Rect::new(route.rail_x - 6, line + 2, line_end + 4, WORLD_SIZE.z)];
+        Plan { zones, corridors, views, camera_coast: line - 10 }
     }
 
     fn zone_distance(&self, x: i32, z: i32) -> f32 {
@@ -237,8 +332,8 @@ impl Plan {
 
     /// Roughly how many blocks inland a column is; negative out at sea.
     fn inland(&self, x: i32, z: i32) -> f32 {
-        let (xf, zf) = ((x - OX) as f32, (z - OZ) as f32);
-        let ellipse = (((xf - 88.0) / 112.0).powi(2) + ((zf - 64.0) / 88.0).powi(2)).sqrt();
+        let (xf, zf) = (x as f32, z as f32);
+        let ellipse = (((xf - 116.0) / 110.0).powi(2) + ((zf - 116.0) / 108.0).powi(2)).sqrt();
         let wobble = (fbm(xf / 30.0, zf / 30.0, 1, 3) - 0.5) * 0.6;
         let coast = (1.0 - ellipse - wobble) * 60.0;
         // Puzzle sites always have a beach's width of land around them, more in places, so the coast
@@ -251,7 +346,8 @@ impl Plan {
 }
 
 pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
-    let plan = Plan::new(layout);
+    let route = Route::new(layout);
+    let plan = Plan::new(layout, &route);
     let mut world = VoxelWorld::new(WORLD_SIZE);
     terrain(&mut world, &plan);
     sea_stacks(&mut world, &plan);
@@ -260,73 +356,80 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let mut pins = Vec::new();
     let mut stakes = Vec::new();
     let mut lanterns = Vec::new();
+    let (rail_x, row) = (route.rail_x, route.line_z);
+
+    // --- The railway ------------------------------------------------------------------------
+    // One steel line flush with the grass, from the wreck east to a buffer under the outcrop. The
+    // depot gate splits it: west of it the supply rail (the tutorial), east of it the haul track,
+    // where the same cart, once the tools are delivered, chases the crawler.
+    let rail_len = Ch1Layout::RAIL_LENGTH as i32;
+    let haul_len = Ch1Layout::HAUL_LENGTH as i32;
+    let hx = route.haul_x;
+    world.fill(IVec3::new(rail_x - 2, GROUND - 1, row), IVec3::new(hx + haul_len + 1, GROUND - 1, row), Material::Steel);
 
     // --- Puzzle 0 (tutorial): the supply rail ------------------------------------------------
-    // A steel rail flush with the grass, a buffer stop past its far end, a start mark and a marker
-    // across the rail. The survey pins sit on the near side of the rail, where the cart does not hide
-    // them, so the ruler reads the run along the rail exactly.
-    let rail_len = Ch1Layout::RAIL_LENGTH as i32;
-    world.fill(IVec3::new(RAIL_X - 2, GROUND - 1, RAIL_ROW), IVec3::new(RAIL_X + rail_len, GROUND - 1, RAIL_ROW), Material::Steel);
-    world.set(IVec3::new(RAIL_X + rail_len + 1, GROUND, RAIL_ROW), Material::Steel);
-    world.set(IVec3::new(RAIL_X, GROUND - 1, RAIL_ROW - 1), Material::Concrete);
-    let marker_x = RAIL_X + layout.rail_target as i32;
-    world.fill(IVec3::new(marker_x, GROUND - 1, RAIL_ROW - 1), IVec3::new(marker_x, GROUND - 1, RAIL_ROW + 1), Material::Marker);
-    let rail_start = Vec3::new(RAIL_X as f32 + 0.5, ground, RAIL_ROW as f32 + 0.5);
+    // A start mark and a marker across the rail; the depot gate past its far end stops the cart. The
+    // survey pins sit on the near side of the rail, where the cart does not hide them, so the ruler
+    // reads the run along the rail exactly.
+    world.set(IVec3::new(rail_x + rail_len + 1, GROUND, row), Material::Steel);
+    world.set(IVec3::new(rail_x, GROUND - 1, row - 1), Material::Concrete);
+    let marker_x = rail_x + layout.rail_target as i32;
+    world.fill(IVec3::new(marker_x, GROUND - 1, row - 1), IVec3::new(marker_x, GROUND - 1, row + 1), Material::Marker);
+    let rail_start = Vec3::new(rail_x as f32 + 0.5, ground, row as f32 + 0.5);
     let beside = Vec3::new(0.0, 0.0, -1.0);
     let rail_start_pin = Pin { position: rail_start + beside, label: "Rail cart: starting point" };
     // The cargo crate stands on the station's side of the rail, two blocks short of the start mark so
     // it never hides the pin, with room around it to be put down again.
-    let cargo_cell = IVec3::new(RAIL_X - 2, GROUND, RAIL_ROW - 1);
-    let cargo_yard = [IVec3::new(RAIL_X - 3, GROUND, RAIL_ROW - 2), IVec3::new(RAIL_X - 1, GROUND, RAIL_ROW - 1)];
+    let cargo_cell = IVec3::new(rail_x - 2, GROUND, row - 1);
+    let cargo_yard = [IVec3::new(rail_x - 3, GROUND, row - 2), IVec3::new(rail_x - 1, GROUND, row - 1)];
     let rail_marker_pin = Pin { position: rail_start + beside + Vec3::X * layout.rail_target as f32, label: "Rail marker: centre" };
-    let station0 = IVec3::new(RAIL_X - 1, GROUND, RAIL_ROW - 3);
-    for z in [RAIL_ROW as f32 - 1.7, RAIL_ROW as f32 + 2.7] {
+    let station0 = IVec3::new(rail_x - 1, GROUND, row - 3);
+    for z in [row as f32 - 1.7, row as f32 + 2.7] {
         stakes.push(Vec3::new(marker_x as f32 + 0.5, ground, z));
     }
 
     // --- Puzzle 1: the haul track ---------------------------------------------------------------
-    // A steel track flush with the turf, running west to a buffer. The haul cart's front coupler and
-    // the crawler's rear coupler start on concrete marks; the transfer marker crosses the track. The
-    // two timing posts stand on the far (north) side, with the transfer crane's mast. The survey pins
-    // sit on the near side of the track, where the cart and the crawler do not hide them.
-    let haul_len = Ch1Layout::HAUL_LENGTH as i32;
-    // Block whose centre is `s` metres along the track (the track runs towards -x).
-    let haul_block = |s: u32| HAUL_X - s as i32;
+    // The line past the depot gate, east to a buffer. The haul cart's front coupler and the crawler's
+    // rear coupler start on concrete marks; the transfer marker crosses the track. The two timing
+    // posts stand on the far (north) side from the test's camera, with the transfer crane's mast. The
+    // survey pins sit on the near side of the track, where the cart and the crawler do not hide them.
+    // Block whose centre is `s` metres along the track (the track runs towards +x).
+    let haul_block = |s: u32| hx + s as i32;
     // The crawler stops with its rear coupler at the track's length; its body reaches a metre and a
     // half further, to the buffer.
-    world.fill(IVec3::new(HAUL_X - haul_len - 1, GROUND - 1, HAUL_ROW), IVec3::new(HAUL_X + 2, GROUND - 1, HAUL_ROW), Material::Steel);
-    world.set(IVec3::new(HAUL_X - haul_len - 2, GROUND, HAUL_ROW), Material::Steel);
-    world.set(IVec3::new(HAUL_X, GROUND - 1, HAUL_ROW - 1), Material::Concrete);
-    world.set(IVec3::new(haul_block(layout.head_start), GROUND - 1, HAUL_ROW - 1), Material::Concrete);
+    world.set(IVec3::new(hx + haul_len + 2, GROUND, row), Material::Steel);
+    world.set(IVec3::new(hx, GROUND - 1, row + 1), Material::Concrete);
+    world.set(IVec3::new(haul_block(layout.head_start), GROUND - 1, row + 1), Material::Concrete);
     let transfer_x = haul_block(layout.transfer_at);
-    world.fill(IVec3::new(transfer_x, GROUND - 1, HAUL_ROW - 1), IVec3::new(transfer_x, GROUND - 1, HAUL_ROW + 1), Material::Marker);
-    for z in [HAUL_ROW as f32 - 1.7, HAUL_ROW as f32 + 2.7] {
+    world.fill(IVec3::new(transfer_x, GROUND - 1, row - 1), IVec3::new(transfer_x, GROUND - 1, row + 1), Material::Marker);
+    for z in [row as f32 - 1.7, row as f32 + 2.7] {
         stakes.push(Vec3::new(transfer_x as f32 + 0.5, ground, z));
     }
     // The transfer crane: a mast beyond the far side of the marker, its jib reaching to the track's edge.
-    world.fill(IVec3::new(transfer_x, GROUND, HAUL_ROW + 2), IVec3::new(transfer_x, GROUND + 4, HAUL_ROW + 2), Material::Steel);
-    world.set(IVec3::new(transfer_x, GROUND + 4, HAUL_ROW + 1), Material::Steel);
-    let crane_foot = Vec3::new(transfer_x as f32 + 0.5, ground, HAUL_ROW as f32 + 3.5);
+    world.fill(IVec3::new(transfer_x, GROUND, row - 2), IVec3::new(transfer_x, GROUND + 4, row - 2), Material::Steel);
+    world.set(IVec3::new(transfer_x, GROUND + 4, row - 1), Material::Steel);
+    let crane_foot = Vec3::new(transfer_x as f32 + 0.5, ground, row as f32 - 2.5);
     let (post_a, post_b) = layout.posts();
     for post in [post_a, post_b] {
-        world.fill(IVec3::new(haul_block(post), GROUND, HAUL_ROW + 1), IVec3::new(haul_block(post), GROUND + 1, HAUL_ROW + 1), Material::Steel);
-        world.set(IVec3::new(haul_block(post), GROUND + 2, HAUL_ROW + 1), Material::Marker);
+        world.fill(IVec3::new(haul_block(post), GROUND, row - 1), IVec3::new(haul_block(post), GROUND + 1, row - 1), Material::Steel);
+        world.set(IVec3::new(haul_block(post), GROUND + 2, row - 1), Material::Marker);
     }
-    let haul_start = Vec3::new(HAUL_X as f32 + 0.5, ground, HAUL_ROW as f32 + 0.5);
-    let haul_direction = Vec3::NEG_X;
+    let haul_start = Vec3::new(hx as f32 + 0.5, ground, row as f32 + 0.5);
+    let haul_direction = Vec3::X;
     let along = |s: u32| haul_start + haul_direction * s as f32;
-    let near = Vec3::NEG_Z;
+    let near = Vec3::Z;
     let haul_pins = [
         Pin { position: along(0) + near, label: "Haul cart: front coupler" },
         Pin { position: along(layout.head_start) + near, label: "Crawler: rear coupler" },
         Pin { position: along(layout.transfer_at) + near, label: "Transfer marker: centre" },
         // On top of the posts, where they can be seen and clicked.
-        Pin { position: along(post_a) + Vec3::new(0.0, 3.0, 1.0), label: "Timing post A" },
-        Pin { position: along(post_b) + Vec3::new(0.0, 3.0, 1.0), label: "Timing post B" },
+        Pin { position: along(post_a) + Vec3::new(0.0, 3.0, -1.0), label: "Timing post A" },
+        Pin { position: along(post_b) + Vec3::new(0.0, 3.0, -1.0), label: "Timing post B" },
     ];
-    let station_haul = IVec3::new(HAUL_X + 3, GROUND, HAUL_ROW - 3);
+    // At the depot, on the station side of the gate.
+    let station_haul = IVec3::new(hx - 2, GROUND, row - 3);
 
-    // --- Puzzle 2: drop tower and survey mast -------------------------------------------------
+    // --- Puzzle 2: drop tower and survey mast, at the line's end -----------------------------
     let gantry = |world: &mut VoxelWorld, base: IVec3, height: i32| -> (Vec3, Vec3) {
         // A steel column with an arm; the mass hangs under the end of the arm, two blocks out. It
         // stands on a poured footing that runs out under the landing plate, with three steel feet.
@@ -342,68 +445,57 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         let foot = Vec3::new(plate.x as f32 + 0.5, base.y as f32, plate.z as f32 + 0.5);
         (foot + Vec3::Y * height as f32, foot)
     };
-    let (tower_release, tower_plate) = gantry(&mut world, TOWER, layout.tower_h as i32);
-    let (mast_release, mast_plate) = gantry(&mut world, MAST, layout.mast_h as i32);
+    let (tower, mast) = (route.tower, route.mast);
+    let (tower_release, tower_plate) = gantry(&mut world, tower, layout.tower_h as i32);
+    let (mast_release, mast_plate) = gantry(&mut world, mast, layout.mast_h as i32);
     pins.push(Pin { position: tower_release, label: "Drop tower: release point" });
     pins.push(Pin { position: tower_plate, label: "Drop tower: landing plate" });
     pins.push(Pin { position: mast_release, label: "Survey mast: release point" });
     pins.push(Pin { position: mast_plate, label: "Survey mast: landing plate" });
-    let station1 = IVec3::new(TOWER.x + 1, GROUND, TOWER.z + 5);
+    let station1 = IVec3::new(tower.x + 1, GROUND, tower.z + 5);
     // The light gate rests on a stand on the station's apron until it is clamped on the tower.
-    let gate_stand = Vec3::new(TOWER.x as f32 + 3.5, ground, TOWER.z as f32 + 3.5);
+    let gate_stand = Vec3::new(tower.x as f32 + 3.5, ground, tower.z as f32 + 3.5);
 
     // --- Puzzle 3: ledge, canyon, platform ----------------------------------------------------
+    let canyon_frame = route.canyon;
     let ledge_top = GROUND + layout.ledge_h as i32;
-    outcrop(&mut world, layout.ledge_h as i32);
-    canyon(&mut world, layout);
+    outcrop(&mut world, &canyon_frame, layout.ledge_h as i32);
+    canyon(&mut world, &canyon_frame, layout);
     // Launcher rail along the launch line, ending at the rim.
-    world.fill(IVec3::new(CANYON_X - 4, ledge_top - 1, CANYON_ROW), IVec3::new(CANYON_X - 1, ledge_top - 1, CANYON_ROW), Material::Steel);
-    let canyon_launch = LaunchSite {
-        origin: Vec3::new(CANYON_X as f32, ledge_top as f32, CANYON_ROW as f32 + 0.5),
-        direction: Vec3::X,
-    };
+    canyon_frame.fill(&mut world, (-4, 0, ledge_top - 1), (-1, 0, ledge_top - 1), Material::Steel);
+    let canyon_launch = canyon_frame.launch(ledge_top as f32);
     // Landing platform: marker blocks set flush into the far plateau, as long along the launch line as
     // the layout says (one block) and three wide across it.
-    let platform_mid = CANYON_X + layout.platform_centre.floor() as i32;
+    let platform_mid = layout.platform_centre.floor() as i32;
     let reach = (layout.platform_half - 0.5).round() as i32;
-    world.fill(
-        IVec3::new(platform_mid - reach, GROUND - 1, CANYON_ROW - 1),
-        IVec3::new(platform_mid + reach, GROUND - 1, CANYON_ROW + 1),
-        Material::Marker,
-    );
-    stakes.extend(corners(platform_mid - reach, platform_mid + reach, CANYON_ROW - 1, CANYON_ROW + 1, ground));
+    canyon_frame.fill(&mut world, (platform_mid - reach, -1, GROUND - 1), (platform_mid + reach, 1, GROUND - 1), Material::Marker);
+    stakes.extend(corners(canyon_frame.rect(platform_mid - reach, -1, platform_mid + reach, 1), ground));
     let canyon_release_pin = pins.len();
     pins.push(Pin { position: canyon_launch.origin, label: "Ledge launcher: release point" });
     pins.push(Pin { position: canyon_launch.at(layout.platform_centre, 0.0, ground), label: "Platform: centre" });
-    let station2 = IVec3::new(CANYON_X - 6, ledge_top, CANYON_ROW + 3);
+    let station2 = canyon_frame.cell(-6, 3, ledge_top);
     // The jack frame stands on the last block of the launcher's rail, at the rim. The salvage pile
-    // lies on the ledge north of the rail, two crates high: the crates themselves are put there when
+    // lies on the ledge west of the rail, two crates high: the crates themselves are put there when
     // the game starts (see `carry`), since they move.
-    let canyon_well = IVec3::new(CANYON_X - 1, ledge_top, CANYON_ROW);
-    let crate_pile: Vec<IVec3> = (0..Ch1Layout::MAX_STACK as i32)
-        .map(|i| IVec3::new(CANYON_X - 4 + (i / 2) % 2, ledge_top + i % 2, CANYON_ROW - 3 + i / 4))
-        .collect();
-    let crate_yard = [IVec3::new(LEDGE_X + 1, ledge_top, CANYON_ROW - 4), IVec3::new(CANYON_X - 2, ledge_top + 2, CANYON_ROW - 1)];
+    let canyon_well = canyon_frame.cell(-1, 0, ledge_top);
+    let crate_pile: Vec<IVec3> =
+        (0..Ch1Layout::MAX_STACK as i32).map(|i| canyon_frame.cell(-4 + (i / 2) % 2, -3 + i / 4, ledge_top + i % 2)).collect();
+    let yard = canyon_frame.rect(-(LEDGE_DEPTH - 1), -4, -2, -1);
+    let crate_yard = [IVec3::new(yard.min.x, ledge_top, yard.min.y), IVec3::new(yard.max.x, ledge_top + 2, yard.max.y)];
 
     // --- Puzzle 4: tilting launcher, ridge, pad -----------------------------------------------
-    let ridge_x = RIDGE_LAUNCH_X + layout.ridge_x as i32;
-    ridge(&mut world, ridge_x, layout.ridge_h as i32);
-    let pad_mid = RIDGE_LAUNCH_X + layout.pad_centre.floor() as i32;
-    world.fill(
-        IVec3::new(pad_mid - 2, GROUND - 1, RIDGE_ROW - 2),
-        IVec3::new(pad_mid + 2, GROUND - 1, RIDGE_ROW + 2),
-        Material::Marker,
-    );
-    stakes.extend(corners(pad_mid - 2, pad_mid + 2, RIDGE_ROW - 2, RIDGE_ROW + 2, ground));
-    world.fill(
-        IVec3::new(RIDGE_LAUNCH_X - 3, GROUND - 1, RIDGE_ROW),
-        IVec3::new(RIDGE_LAUNCH_X - 1, GROUND - 1, RIDGE_ROW),
-        Material::Steel,
-    );
-    let ridge_launch = LaunchSite {
-        origin: Vec3::new(RIDGE_LAUNCH_X as f32, ground, RIDGE_ROW as f32 + 0.5),
-        direction: Vec3::X,
-    };
+    let ridge_frame = route.ridge;
+    ridge(&mut world, &ridge_frame, layout.ridge_x as i32, layout.ridge_h as i32);
+    let pad_mid = layout.pad_centre.floor() as i32;
+    ridge_frame.fill(&mut world, (pad_mid - 2, -2, GROUND - 1), (pad_mid + 2, 2, GROUND - 1), Material::Marker);
+    stakes.extend(corners(ridge_frame.rect(pad_mid - 2, -2, pad_mid + 2, 2), ground));
+    ridge_frame.fill(&mut world, (-3, 0, GROUND - 1), (-1, 0, GROUND - 1), Material::Steel);
+    // The dolly rail: the beam, landed on the platform, rides it to the launcher's breech.
+    let platform_cell = canyon_frame.cell(platform_mid, 0, GROUND - 1);
+    let breech = ridge_frame.cell(-2, 0, GROUND - 1);
+    debug_assert_eq!(platform_cell.z, breech.z, "the platform is level with the breech");
+    world.fill(IVec3::new(breech.x + 1, GROUND - 1, breech.z), IVec3::new(platform_cell.x - 2, GROUND - 1, breech.z), Material::Steel);
+    let ridge_launch = ridge_frame.launch(ground);
     pins.push(Pin { position: ridge_launch.origin, label: "Tilting launcher: release point" });
     pins.push(Pin {
         position: ridge_launch.at(layout.ridge_x as f64, layout.ridge_h as f64, ground),
@@ -411,18 +503,29 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     });
     pins.push(Pin { position: ridge_launch.at(layout.ridge_x as f64, 0.0, ground), label: "Ridge: foot, near side" });
     pins.push(Pin { position: ridge_launch.at(layout.pad_centre, 0.0, ground), label: "Shipyard pad: centre" });
-    let station3 = IVec3::new(RIDGE_LAUNCH_X - 3, GROUND, RIDGE_ROW + 4);
+    let station3 = ridge_frame.cell(-5, 4, GROUND);
 
-    // --- Shipyard floor beyond the pad, lit at its corners -----------------------------------
-    let yard_x = pad_mid + 7;
-    world.fill(IVec3::new(yard_x, GROUND - 1, RIDGE_ROW - 7), IVec3::new(yard_x + 19, GROUND - 1, RIDGE_ROW + 7), Material::Concrete);
-    for (x, z) in [(yard_x - 1, RIDGE_ROW - 8), (yard_x + 20, RIDGE_ROW - 8), (yard_x - 1, RIDGE_ROW + 8), (yard_x + 20, RIDGE_ROW + 8)] {
+    // --- Shipyard floor past the pad, lit at its corners, and the slipway to the strait --------
+    let (yard_south, yard_north) = route.shipyard_rows();
+    world.fill(IVec3::new(RIDGE_X - 8, GROUND - 1, yard_north), IVec3::new(RIDGE_X + 8, GROUND - 1, yard_south), Material::Concrete);
+    for (x, z) in [(RIDGE_X - 10, yard_south + 1), (RIDGE_X + 10, yard_south + 1), (RIDGE_X - 10, yard_north - 1), (RIDGE_X + 10, yard_north - 1)] {
         lanterns.push(Vec3::new(x as f32 + 0.5, ground, z as f32 + 0.5));
     }
-    let shipyard = Vec3::new(yard_x as f32 + 10.0, ground, RIDGE_ROW as f32 + 0.5);
+    // The ship goes together at the floor's north end, at the head of the slipway.
+    let shipyard = Vec3::new(RIDGE_X as f32 + 0.5, ground, yard_north as f32 + 10.5);
+    // Two slipway rails run from the floor's north edge down the shore into the water.
+    for x in [RIDGE_X - 3, RIDGE_X + 3] {
+        for z in (0..yard_north).rev() {
+            let top = world.surface(x, z) - 1;
+            if (top as f32) < SEA_LEVEL - 1.0 {
+                break;
+            }
+            world.set(IVec3::new(x, top, z), Material::Steel);
+        }
+    }
 
-    // --- The wreck: a broken hull section near the start, in a scorched patch -----------------
-    let wreck = IVec3::new(OX + 16, GROUND, OZ + 40);
+    // --- The wreck: a broken hull section at the line's west end, in a scorched patch ---------
+    let wreck = IVec3::new(rail_x - 14, GROUND, row - 8);
     for dz in -5..=10 {
         for dx in -6..=14 {
             let p = wreck + IVec3::new(dx, -1, dz);
@@ -454,18 +557,25 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // The haul track's came last of all.
     pins.extend(haul_pins);
 
-    // Worn paths from the wreck past each station in turn, then on to the shipyard.
-    let ramp_foot = LEDGE_X - layout.ledge_h as i32 - 2;
-    path(&mut world, &[(OX + 24, OZ + 46), (OX + 30, OZ + 42), (OX + 34, OZ + 38), (station1.x, station1.z + 1)]);
-    path(&mut world, &[(OX + 34, OZ + 38), (OX + 46, OZ + 28), (OX + 56, OZ + 16), (station_haul.x, station_haul.z + 1)]);
-    path(&mut world, &[(station1.x + 1, station1.z + 1), (OX + 42, OZ + 43), (OX + 46, OZ + 50), (ramp_foot, CANYON_ROW)]);
-    path(&mut world, &[(ramp_foot, CANYON_ROW + 1), (ramp_foot - 2, OZ + 66), (OX + 42, OZ + 82), (OX + 38, OZ + 94), (station3.x + 1, station3.z - 1)]);
-    path(&mut world, &[(station3.x + 2, RIDGE_ROW - 3), (ridge_x - 3, RIDGE_ROW - 14), (ridge_x + 6, RIDGE_ROW - 14), (pad_mid - 3, RIDGE_ROW - 4), (yard_x, RIDGE_ROW)]);
+    // Worn paths along the route: beside the railway from the wreck to its end, past the drop tower
+    // to the foot of the ramp, round the canyon's east end to the platform and the tilting launcher,
+    // round the ridge's east end and on to the shipyard.
+    let rim = canyon_frame.origin.y;
+    let ramp_foot = canyon_frame.col(-LEDGE_DEPTH - layout.ledge_h as i32 - 2, 0);
+    let canyon_east = canyon_frame.col(0, CANYON_ENDS.1 + 3).x;
+    let far_side = rim - layout.canyon_width as i32 - 5;
+    let ridge_row = route.ridge_row(layout);
+    let launcher = ridge_frame.col(-3, 2);
+    path(&mut world, &[(wreck.x + 9, row - 3), (rail_x + 2, row - 2), (hx + haul_len + 2, row - 2)]);
+    path(&mut world, &[(hx + haul_len - 6, row - 2), (station1.x, station1.z + 1)]);
+    path(&mut world, &[(station1.x + 1, station1.z - 1), (ramp_foot.x - 1, tower.z - 3), (ramp_foot.x, ramp_foot.y)]);
+    path(&mut world, &[(ramp_foot.x + 3, ramp_foot.y), (canyon_east, rim + 6), (canyon_east, far_side), (canyon_frame.origin.x + 3, far_side - 4), (canyon_frame.origin.x + 3, launcher.y), (launcher.x + 3, launcher.y)]);
+    path(&mut world, &[(launcher.x + 3, launcher.y - 2), (RIDGE_X + 10, ridge_row + 5), (RIDGE_X + 10, ridge_row - 6), (RIDGE_X + 4, PAD_Z + 4), (RIDGE_X + 3, yard_south)]);
 
     // Station consoles, each in a small camp of salvage: a plated apron, a quartz lantern and crates.
     let stations = [station0, station_haul, station1, station2, station3];
-    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -1), IVec2::new(2, 1), IVec2::new(-2, 2), IVec2::new(-2, 2)];
-    let crates = [IVec2::new(2, -1), IVec2::new(2, 1), IVec2::new(-2, 1), IVec2::new(2, 1), IVec2::new(2, 2)];
+    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -2), IVec2::new(2, 1), IVec2::new(2, 2), IVec2::new(2, 2)];
+    let crates = [IVec2::new(2, -1), IVec2::new(-2, -1), IVec2::new(-2, 1), IVec2::new(2, -1), IVec2::new(2, -1)];
     for (i, console) in stations.into_iter().enumerate() {
         camp(&mut world, console, crates[i]);
         // Beside the crate, a piece of scrap salvaged from the wreck.
@@ -475,10 +585,10 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     }
 
     flora(&mut world, &plan);
-    let shore = shore(&world, wreck.as_vec3() + Vec3::new(4.5, 0.0, 3.0), crate::intro::Mainland::wreck());
+    let shore = shore(&world, shipyard, crate::intro::Mainland::wreck());
 
     let sites = Sites {
-        spawn: Vec3::new(OX as f32 + 30.5, ground, OZ as f32 + 40.5),
+        spawn: Vec3::new(rail_x as f32 + 2.5, ground, row as f32 - 6.5),
         rail_start,
         cart: rail_start,
         cargo_cell,
@@ -532,9 +642,9 @@ fn shore(world: &VoxelWorld, from: Vec3, towards: Vec3) -> Vec3 {
 }
 
 /// Feet of four stakes just outside the corners of a rectangle of blocks.
-fn corners(x0: i32, x1: i32, z0: i32, z1: i32, ground: f32) -> [Vec3; 4] {
-    let (w, e) = (x0 as f32 - 0.3, x1 as f32 + 1.3);
-    let (n, s) = (z0 as f32 - 0.3, z1 as f32 + 1.3);
+fn corners(r: Rect, ground: f32) -> [Vec3; 4] {
+    let (w, e) = (r.min.x as f32 - 0.3, r.max.x as f32 + 1.3);
+    let (n, s) = (r.min.y as f32 - 0.3, r.max.y as f32 + 1.3);
     [Vec3::new(w, ground, n), Vec3::new(e, ground, n), Vec3::new(w, ground, s), Vec3::new(e, ground, s)]
 }
 
@@ -545,7 +655,8 @@ fn put(world: &mut VoxelWorld, p: IVec3, material: Material) {
     }
 }
 
-/// Coast, beaches, cliffs, hills and the north-eastern range, in layers of turf, soil and rock.
+/// Coast, beaches, cliffs, hills and the ranges to the west and the east, in layers of turf, soil
+/// and rock.
 /// Width of a beach, from the turf down to the water.
 const BEACH: f32 = 24.0;
 
@@ -555,15 +666,15 @@ fn terrain(world: &mut VoxelWorld, plan: &Plan) {
     let mut beachy = vec![false; (sx * sz) as usize];
     for z in 0..sz {
         for x in 0..sx {
-            let (xf, zf) = ((x - OX) as f32, (z - OZ) as f32);
+            let (xf, zf) = (x as f32, z as f32);
             let flat = plan.flatness(x, z);
             let low = plan.lowland(x, z);
             let rolling = (fbm(xf / 26.0, zf / 26.0, 2, 3) - 0.5) * 7.0 * (1.0 - 0.55 * low);
-            // The range: strongest to the north-east and along the east end.
-            let north_east = ((xf - 95.0) / 50.0).clamp(0.0, 1.0) * ((45.0 - zf) / 35.0 + 0.4).clamp(0.0, 1.0);
-            let east = ((xf - 145.0) / 20.0).clamp(0.0, 1.0);
-            let west = ((22.0 - xf) / 14.0).clamp(0.0, 1.0) * 0.6;
-            let massif = smoothstep(0.3, 0.8, fbm(xf / 42.0, zf / 42.0, 3, 3) * 0.55 + north_east.max(east).max(west) * 0.6);
+            // The ranges: one in the west, between the railway and the north shore (off the line of
+            // sight from the shipyard to the main hull), and one along the east end.
+            let west = ((92.0 - xf) / 40.0).clamp(0.0, 1.0) * ((zf - 50.0) / 30.0).clamp(0.0, 1.0) * ((170.0 - zf) / 30.0).clamp(0.0, 1.0);
+            let east = ((xf - 190.0) / 20.0).clamp(0.0, 1.0);
+            let massif = smoothstep(0.3, 0.8, fbm(xf / 42.0, zf / 42.0, 3, 3) * 0.55 + west.max(east) * 0.6);
             let crest = 1.0 - (fbm(xf / 18.0, zf / 18.0, 4, 3) * 2.0 - 1.0).abs();
             let mountain = massif * (8.0 + 18.0 * crest) * (1.0 - low);
             let land = GROUND as f32 + flat * (rolling + mountain);
@@ -629,9 +740,9 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
             let x = gx + (hash01(IVec3::new(gx, 201, gz)) * CELL as f32) as i32;
             let z = gz + (hash01(IVec3::new(gx, 202, gz)) * CELL as f32) as i32;
             let inland = plan.inland(x, z);
-            // Not off the south coast: that is where the test cameras stand.
+            // Not off the south coast: that is where the railway's test cameras stand.
             let edge = x.min(WORLD_SIZE.x - 1 - x).min(z).min(WORLD_SIZE.z - 1 - z);
-            if !(-13.0..-5.0).contains(&inland) || z - OZ > 90 || edge < 6 || hash01(IVec3::new(gx, 203, gz)) < 0.35 {
+            if !(-13.0..-5.0).contains(&inland) || z > plan.camera_coast || edge < 6 || hash01(IVec3::new(gx, 203, gz)) < 0.35 {
                 continue;
             }
             let radius = 1.3 + 1.4 * hash01(IVec3::new(x, 204, z));
@@ -658,104 +769,112 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
     }
 }
 
-/// The outcrop that carries the ledge launcher: a steep-sided mesa with a gully ramp up its west side.
-fn outcrop(world: &mut VoxelWorld, ledge_h: i32) {
-    let (cx, cz) = ((CANYON_X - 6) as f32, CANYON_ROW as f32);
-    // The supply rail runs just north of it, so the mesa is shallower on that side.
-    for z in RAIL_ROW + 2..=OZ + 74 {
-        for x in OX + 42..CANYON_X {
-            let (xf, zf) = (x as f32, z as f32);
-            let reach = if zf < cz { 8.5 } else { 15.0 };
-            let ellipse = (((xf - cx) / 19.0).powi(2) + ((zf - cz) / reach).powi(2)).sqrt();
+/// The outcrop that carries the ledge launcher, on the canyon's near rim: a steep-sided mesa with a
+/// gully ramp up the back of it, climbing towards the rim from the railway's end.
+fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
+    // The railway's end and the drop tower lie behind it, so the mesa is shallower on the west.
+    for c in -7..=18 {
+        for a in -28..0 {
+            let (af, cf) = (a as f32, c as f32);
+            let col = frame.col(a, c);
+            let (xf, zf) = (col.x as f32, col.y as f32);
+            let reach = if c < 0 { 8.5 } else { 15.0 };
+            let ellipse = (((af + 6.0) / 19.0).powi(2) + (cf / reach).powi(2)).sqrt();
             let rim = ellipse + (fbm(xf / 7.0, zf / 7.0, 61, 2) - 0.5) * 0.35;
             let mut height = (((1.0 - rim) * 13.0 * 3.0).floor() as i32).clamp(0, ledge_h);
             // The flat top that holds the launcher and the station.
-            if (LEDGE_X..CANYON_X).contains(&x) && (CANYON_ROW - 4..=CANYON_ROW + 6).contains(&z) {
+            if (-LEDGE_DEPTH..0).contains(&a) && (-4..=6).contains(&c) {
                 height = ledge_h;
             }
-            // The ramp: one block up per block east, five wide, cut into the mesa's west side.
-            let ramp = (CANYON_ROW - 2..=CANYON_ROW + 2).contains(&z) && x < LEDGE_X;
+            // The ramp: one block up per block towards the rim, five wide, cut into the mesa's back.
+            let ramp = (-2..=2).contains(&c) && a < -LEDGE_DEPTH;
             if ramp {
-                height = (ledge_h - (LEDGE_X - x)).max(0);
+                height = (ledge_h - (-LEDGE_DEPTH - a)).max(0);
             }
             if height == 0 {
                 continue;
             }
             let top = GROUND + height - 1;
-            world.fill(IVec3::new(x, GROUND - 1, z), IVec3::new(x, top - 1, z), Material::Rock);
+            world.fill(IVec3::new(col.x, GROUND - 1, col.y), IVec3::new(col.x, top - 1, col.y), Material::Rock);
             let surface = if ramp {
                 Material::Soil
-            } else if height == ledge_h || hash01(IVec3::new(x, top, z)) < 0.3 {
+            } else if height == ledge_h || hash01(IVec3::new(col.x, top, col.y)) < 0.3 {
                 Material::Grass
             } else {
                 Material::Rock
             };
-            world.set(IVec3::new(x, top, z), surface);
+            world.set(IVec3::new(col.x, top, col.y), surface);
         }
     }
 }
 
-/// The canyon: exact width on the launch line, its walls wandering outward away from it, a rounded
-/// north end, a floor that climbs in steps at the south end so nobody is trapped, rubble and quartz.
-fn canyon(world: &mut VoxelWorld, layout: &Ch1Layout) {
+/// The canyon, across the ledge launcher's line: exact width on the line, its walls wandering
+/// outward away from it, a rounded west end, a floor that climbs in steps at the east end so nobody
+/// is trapped (and the way round it is a walk), rubble and quartz.
+fn canyon(world: &mut VoxelWorld, frame: &Frame, layout: &Ch1Layout) {
     let depth = layout.canyon_depth as i32;
-    let far_rim = CANYON_X + layout.canyon_width as i32;
-    for z in CANYON_Z.0..CANYON_Z.1 {
-        let zf = z as f32;
-        let off_line = (((z - CANYON_ROW).abs() - 6).max(0) as f32 / 6.0).min(1.0);
-        let mut west = CANYON_X - (fbm(zf / 6.0, 0.5, 71, 2) * 4.0 * off_line).round() as i32;
-        let mut east = far_rim - 1 + (fbm(zf / 6.0, 0.5, 73, 2) * 4.0 * off_line).round() as i32;
-        // The north end closes in a curve.
-        let pinch = ((CANYON_Z.0 + 5 - z).max(0) as f32).powi(2) / 3.0;
-        west += pinch as i32;
-        east -= pinch as i32;
-        let climb = (z - (CANYON_Z.1 - depth)).max(0);
+    let width = layout.canyon_width as i32;
+    let (first, last) = CANYON_ENDS;
+    for c in first..last {
+        let cf = c as f32;
+        let off_line = ((c.abs() - 6).max(0) as f32 / 6.0).min(1.0);
+        let mut near = -(fbm(cf / 6.0, 0.5, 71, 2) * 4.0 * off_line).round() as i32;
+        let mut far = width - 1 + (fbm(cf / 6.0, 0.5, 73, 2) * 4.0 * off_line).round() as i32;
+        // The west end closes in a curve.
+        let pinch = ((first + 5 - c).max(0) as f32).powi(2) / 3.0;
+        near += pinch as i32;
+        far -= pinch as i32;
+        let climb = (c - (last - depth)).max(0);
         let floor = GROUND - depth + climb;
-        for x in west..=east {
-            world.fill(IVec3::new(x, floor, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
-            world.set(IVec3::new(x, floor - 1, z), Material::Sand);
+        for a in near..=far {
+            let cell = frame.cell(a, c, floor);
+            world.fill(cell, cell.with_y(WORLD_SIZE.y - 1), Material::Air);
+            world.set(cell - IVec3::Y, Material::Sand);
             // Away from the launch line: fallen rock, and quartz growing at the foot of the walls.
-            // Kept off the west side, where anyone who walks off the rim lands and walks out.
-            let away = (z - CANYON_ROW).abs() > 6 && climb == 0 && x > CANYON_X + 1;
-            let h = hash01(IVec3::new(x, 301, z));
+            // Kept off the near side, where anyone who walks off the rim lands and walks out.
+            let away = c.abs() > 6 && climb == 0 && a > 1;
+            let h = hash01(cell.with_y(301));
             if away && h < 0.06 {
-                world.set(IVec3::new(x, floor, z), Material::Rock);
-            } else if away && (x == west || x == east) && h > 0.9 {
-                quartz(world, IVec3::new(x, floor, z), h);
+                world.set(cell, Material::Rock);
+            } else if away && (a == near || a == far) && h > 0.9 {
+                quartz(world, cell, h);
             }
         }
     }
 }
 
-/// The ridge: a fin of rock. Where the beam crosses it, it is exactly one block thick and `height`
-/// tall; further along it rises and falls, thickens behind, and sinks into the ground at both ends.
-fn ridge(world: &mut VoxelWorld, x: i32, height: i32) {
-    for dz in -11..=11 {
-        let z = RIDGE_ROW + dz;
-        let along = dz.abs();
-        let crest = if along <= 2 {
+/// The ridge, across the tilting launcher's line: a fin of rock. Where the beam crosses it, it is
+/// exactly one block thick and `height` tall; further along it rises and falls, thickens behind, and
+/// sinks into the ground at both ends. The east end, towards the ledge launcher's line, sinks quickly
+/// so that line's level run stays clear.
+fn ridge(world: &mut VoxelWorld, frame: &Frame, along: i32, height: i32) {
+    for c in -11_i32..=6 {
+        let side = c.abs();
+        let span = if c > 0 { 5.0 } else { 10.0 };
+        let column = frame.cell(along, c, GROUND);
+        let crest = if side <= 2 {
             height
         } else {
-            let t = (along - 2) as f32 / 10.0;
-            let jag = (hash01(IVec3::new(x, 91, z)) * 3.0) as i32 - 1;
+            let t = (side - 2) as f32 / span;
+            let jag = (hash01(column.with_y(91)) * 3.0) as i32 - 1;
             ((height as f32 * (1.0 - t * t)).round() as i32 + jag).clamp(0, height + 2)
         };
         if crest > 0 {
-            world.fill(IVec3::new(x, GROUND, z), IVec3::new(x, GROUND + crest - 1, z), Material::Rock);
+            frame.fill(world, (along, c, GROUND), (along, c, GROUND + crest - 1), Material::Rock);
         }
-        if along >= 3 {
+        if side >= 3 {
             for out in 1..=3 {
-                let h = crest - 3 * out - (hash01(IVec3::new(x + out, 92, z)) * 2.0) as i32;
+                let h = crest - 3 * out - (hash01(frame.cell(along + out, c, 92)) * 2.0) as i32;
                 if h > 0 {
-                    world.fill(IVec3::new(x + out, GROUND, z), IVec3::new(x + out, GROUND + h - 1, z), Material::Rock);
+                    frame.fill(world, (along + out, c, GROUND), (along + out, c, GROUND + h - 1), Material::Rock);
                 }
             }
         }
-        if along >= 4 && crest > 4 {
-            world.fill(IVec3::new(x - 1, GROUND, z), IVec3::new(x - 1, GROUND + crest - 5, z), Material::Rock);
+        if side >= 4 && crest > 4 {
+            frame.fill(world, (along - 1, c, GROUND), (along - 1, c, GROUND + crest - 5), Material::Rock);
         }
-        if along >= 5 && hash01(IVec3::new(x, 93, z)) < 0.3 {
-            quartz(world, IVec3::new(x + 1, GROUND, z), hash01(IVec3::new(x, 94, z)));
+        if side >= 5 && hash01(column.with_y(93)) < 0.3 {
+            quartz(world, frame.cell(along + 1, c, GROUND), hash01(column.with_y(94)));
         }
     }
 }
@@ -1007,15 +1126,16 @@ mod tests {
             let ground = GROUND as f32;
             let below = |p: Vec3| world.get((p - Vec3::Y * 0.5).floor().as_ivec3());
 
-            let platform = sites.canyon_launch.at(layout.platform_centre, 0.0, ground);
-            let pad = sites.ridge_launch.at(layout.pad_centre, 0.0, ground);
+            let (canyon, ridge) = (sites.canyon_launch, sites.ridge_launch);
+            let platform = canyon.at(layout.platform_centre, 0.0, ground);
+            let pad = ridge.at(layout.pad_centre, 0.0, ground);
             for offset in [-layout.platform_half + 0.1, 0.0, layout.platform_half - 0.1] {
-                assert_eq!(below(platform + Vec3::X * offset as f32), Material::Marker, "seed {seed}");
+                assert_eq!(below(platform + canyon.direction * offset as f32), Material::Marker, "seed {seed}");
             }
             for offset in [-layout.pad_half + 0.1, 0.0, layout.pad_half - 0.1] {
-                assert_eq!(below(pad + Vec3::X * offset as f32), Material::Marker, "seed {seed}");
+                assert_eq!(below(pad + ridge.direction * offset as f32), Material::Marker, "seed {seed}");
             }
-            assert_ne!(below(platform + Vec3::X * (layout.platform_half as f32 + 0.1)), Material::Marker);
+            assert_ne!(below(platform + canyon.direction * (layout.platform_half as f32 + 0.1)), Material::Marker);
 
             // Each console stands on solid ground with open space beside it.
             for console in sites.stations {
@@ -1025,13 +1145,81 @@ mod tests {
             }
             assert!(world.is_solid(sites.spawn.floor().as_ivec3() - IVec3::Y));
             assert!(!world.is_solid(sites.spawn.floor().as_ivec3()));
-            assert!(sites.shipyard.x + 12.0 < WORLD_SIZE.x as f32 - 8.0, "seed {seed}: shipyard runs off the island");
+        }
+    }
+
+    #[test]
+    fn the_route_leads_from_the_wreck_to_the_shipyard_on_the_strait() {
+        let hull = crate::intro::Mainland::wreck();
+        for seed in 0..200 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            let flat = |p: Vec3| p.xz();
+
+            // Each station is nearer the shipyard than the one before it, and the wreck is the farthest
+            // point of all: walking the chapter is walking towards the goal.
+            let mut last = flat(sites.wreck).distance(flat(sites.shipyard));
+            for (i, console) in sites.stations.iter().enumerate() {
+                let here = console.as_vec3().xz().distance(flat(sites.shipyard));
+                assert!(here < last, "seed {seed}: station {i} is no nearer the shipyard ({here} after {last})");
+                last = here;
+            }
+
+            // The shipyard is the end of the route nearest the main hull, and the strait is just past it.
+            assert!(flat(sites.shipyard).distance(flat(hull)) < flat(sites.wreck).distance(flat(hull)), "seed {seed}");
+            for console in sites.stations {
+                assert!(flat(sites.shipyard).distance(flat(hull)) < console.as_vec3().xz().distance(flat(hull)), "seed {seed}");
+            }
+            assert!(flat(sites.shore).distance(flat(sites.shipyard)) < 32.0, "seed {seed}: the shipyard is {} from the strait", flat(sites.shore).distance(flat(sites.shipyard)));
+            assert!(sites.shore.z < sites.shipyard.z, "seed {seed}: the shore is not north of the shipyard");
+
+            // The beam lands beside the tilting launcher, and the dolly rail between them is flush.
+            let platform = sites.canyon_launch.at(layout.platform_centre, 0.0, GROUND as f32);
+            let breech = sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5;
+            assert!((platform.z - breech.z).abs() < 0.01, "seed {seed}: the platform is not level with the breech");
+            assert!(platform.distance(breech) < 10.0, "seed {seed}");
+            for x in breech.x as i32 + 1..platform.x as i32 - 1 {
+                let cell = IVec3::new(x, GROUND - 1, breech.z.floor() as i32);
+                assert_eq!(world.get(cell), Material::Steel, "seed {seed}: the dolly rail is broken at {cell}");
+                assert_eq!(world.surface(x, cell.z), GROUND, "seed {seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn one_railway_carries_the_cart_from_the_supply_rail_to_the_haul_track() {
+        for seed in 0..200 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            assert_eq!(sites.haul_start.z, sites.rail_start.z, "the haul track continues the rail");
+            assert_eq!(sites.haul_direction, Vec3::X, "and runs the same way");
+            // The rail is steel all the way from the start to the buffer.
+            let row = sites.rail_start.z.floor() as i32;
+            let end = sites.haul_at(Ch1Layout::HAUL_LENGTH as f64 + 1.0).x.floor() as i32;
+            for x in sites.rail_start.x.floor() as i32..=end {
+                // Steel, or a mark painted across it.
+                let rail = world.get(IVec3::new(x, GROUND - 1, row));
+                assert!(matches!(rail, Material::Steel | Material::Marker), "seed {seed}: the line is broken at x = {x} ({rail:?})");
+            }
+            // The depot gate stands past the furthest the tutorial can send the cart, and short of where
+            // the haul cart waits.
+            let gate = sites.rail_start.x.floor() as i32 + Ch1Layout::RAIL_LENGTH as i32 + 1;
+            assert!(world.is_solid(IVec3::new(gate, GROUND, row)), "seed {seed}: no depot gate");
+            assert!((gate as f32) < sites.haul_at(-0.9).x, "seed {seed}: the gate is in the haul cart's way");
         }
     }
 
     #[test]
     fn the_island_is_ringed_by_sea_and_plants_keep_off_the_sites() {
-        for seed in [0, 7, 42, 199] {
+        // The extremes of how far the route reaches south, and a few in between.
+        let reach = |seed: &u64| {
+            let l = Ch1Layout::generate(*seed);
+            (l.pad_centre + l.platform_centre) as i64
+        };
+        let seeds: Vec<u64> = (0..200).collect();
+        let longest = *seeds.iter().max_by_key(|s| reach(s)).unwrap();
+        let shortest = *seeds.iter().min_by_key(|s| reach(s)).unwrap();
+        for seed in [0, 7, 42, 199, longest, shortest] {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
             for x in 0..WORLD_SIZE.x {
@@ -1062,9 +1250,10 @@ mod tests {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
             let ledge_top = GROUND + layout.ledge_h as i32;
+            let out = sites.canyon_launch.direction.as_ivec3();
             // The jack frame's column is clear all the way up, and stands on the ledge at the rim.
             assert!(world.is_solid(sites.canyon_well - IVec3::Y), "seed {seed}");
-            assert!(!world.is_solid(sites.canyon_well + IVec3::X - IVec3::Y), "seed {seed}: the rim must be the next block out");
+            assert!(!world.is_solid(sites.canyon_well + out - IVec3::Y), "seed {seed}: the rim must be the next block out");
             for k in 0..=Ch1Layout::MAX_STACK as i32 + 2 {
                 assert!(!world.is_solid(sites.canyon_well + IVec3::Y * k), "seed {seed}: the frame's column is blocked at {k}");
             }
@@ -1093,11 +1282,17 @@ mod tests {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
             let ledge = sites.canyon_launch.origin;
-            let mut last = world.surface(ledge.x as i32 - 30, ledge.z as i32);
-            assert_eq!(last, GROUND);
-            for x in ledge.x as i32 - 29..ledge.x as i32 {
-                let here = world.surface(x, ledge.z as i32);
-                assert!((0..=1).contains(&(here - last)), "seed {seed}: a step of {} at x = {x}", here - last);
+            let back = -sites.canyon_launch.direction;
+            // Columns walking up the ramp from 30 blocks back to the rim.
+            let column = |k: i32| {
+                let p = ledge + back * (k as f32 - 0.5);
+                world.surface(p.x.floor() as i32, p.z.floor() as i32)
+            };
+            let mut last = column(30);
+            assert_eq!(last, GROUND, "seed {seed}");
+            for k in (1..30).rev() {
+                let here = column(k);
+                assert!((0..=1).contains(&(here - last)), "seed {seed}: a step of {} {k} blocks back", here - last);
                 last = here;
             }
             assert_eq!(last as f32, ledge.y);

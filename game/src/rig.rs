@@ -89,19 +89,24 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
 
     // The jack frame at the rim: two uprights either side of the column the crates stack in, as
     // tall as the frame holds, and the launcher's cradle riding on the stack.
-    let frame_foot = sites.canyon_well.as_vec3();
+    // They stand either side of the launch line, so the load leaves between them.
+    let ledge = sites.canyon_launch;
+    let (out, side) = (ledge.direction, ledge.direction.cross(Vec3::Y).normalize());
+    let frame_centre = sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
     let tall = Ch1Layout::MAX_STACK as f32 + 0.6;
     let upright = meshes.add(Cuboid::new(0.14, tall, 0.14));
-    for (x, z) in [(0.07, -0.08), (0.93, -0.08), (0.07, 1.08), (0.93, 1.08)] {
-        commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(steel.clone()), Transform::from_translation(frame_foot + Vec3::new(x, tall / 2.0, z))));
+    for (u, v) in [(-0.43, -0.58), (0.43, -0.58), (-0.43, 0.58), (0.43, 0.58)] {
+        let at = frame_centre + out * u + side * v + Vec3::Y * tall / 2.0;
+        commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(steel.clone()), Transform::from_translation(at)));
     }
     // The cradle caps the top crate: a little wider than a block and standing a little proud of its
     // top, so its faces never share the crate's planes (which made them flicker).
     let cradle = meshes.add(Cuboid::new(1.0 + 2.0 * CRADLE_LIP, CRADLE_H, 1.0 + 2.0 * CRADLE_LIP));
     // Behind the load, clear of its back face and wider than it.
     let back_stop = meshes.add(Cuboid::new(0.08, 0.5, 0.96));
+    let facing = Quat::from_rotation_arc(Vec3::X, ledge.direction);
     commands
-        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(dark.clone()), Transform::from_translation(cradle_at(&sites)), Visibility::default()))
+        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(dark.clone()), Transform::from_translation(cradle_at(&sites)).with_rotation(facing), Visibility::default()))
         .with_children(|c| {
             c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.5, 0.3, 0.0)));
         });

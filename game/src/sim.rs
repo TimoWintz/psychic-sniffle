@@ -136,11 +136,12 @@ enum Prop {
     Ghost,
     Crate,
     Beam,
-    /// The tutorial's rail cart.
+    /// The rail cart, on the tutorial's stretch of the line.
     Cart,
     /// The cart's cargo crate, while it is loaded: it rides on the cart.
     Cargo,
-    /// The haul cart, behind its front coupler.
+    /// The same cart once it has delivered the tools and gone on through the depot gate: the haul
+    /// cart, behind its front coupler.
     HaulCart,
     /// The survey crawler, ahead of its rear coupler.
     Crawler,
@@ -157,7 +158,7 @@ struct Settling {
 enum AfterSettling {
     /// Removed, and the prop put back on its launcher.
     Restore(Prop),
-    /// Left where it came to rest (the beam on the pad).
+    /// Left where it came to rest (a load on its target).
     Stay,
     /// Removed (a demonstration body).
     Vanish,
@@ -222,8 +223,32 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sim>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, ride_the_cart, props::spin_wheels).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels).chain());
     }
+}
+
+/// How a prop rests when nothing is happening: where its centre is, and the beam lying along its
+/// launcher's line.
+fn rest_transform(prop: Prop, sites: &Sites) -> Transform {
+    let transform = Transform::from_translation(rest_pose(prop, sites));
+    if prop == Prop::Beam { transform.with_rotation(Quat::from_rotation_arc(Vec3::X, sites.ridge_launch.direction)) } else { transform }
+}
+
+/// Whether a prop is in the world when nothing is happening. The cart runs the tutorial's stretch
+/// until it has delivered the tools, then waits past the depot gate as the haul cart; the beam is
+/// on the tilting launcher once the ledge launcher has thrown it across the canyon.
+fn shown(prop: Prop, game: &Game) -> bool {
+    match prop {
+        Prop::Ghost | Prop::Cargo => false,
+        Prop::Cart => !solved(game, PuzzleKind::Rail),
+        Prop::HaulCart => solved(game, PuzzleKind::Rail),
+        Prop::Beam => solved(game, PuzzleKind::Canyon),
+        _ => true,
+    }
+}
+
+fn solved(game: &Game, kind: PuzzleKind) -> bool {
+    game.chapter.puzzles.iter().position(|p| p.kind == kind).is_some_and(|i| game.solved(i))
 }
 
 /// Where a prop rests when nothing is happening: transform of its centre.
@@ -271,16 +296,16 @@ pub(crate) fn setup(
         unlit: true,
         ..default()
     });
-    for (prop, material, visible) in [
-        (Prop::TowerMass, steel.clone(), true),
-        (Prop::MastMass, steel.clone(), true),
-        (Prop::Ghost, ghost, false),
-        (Prop::Crate, timber, true),
-        (Prop::Beam, alloy.clone(), true),
-        (Prop::Cart, steel.clone(), true),
-        (Prop::Cargo, timber_cargo, false),
-        (Prop::HaulCart, steel.clone(), true),
-        (Prop::Crawler, crawler, true),
+    for (prop, material) in [
+        (Prop::TowerMass, steel.clone()),
+        (Prop::MastMass, steel.clone()),
+        (Prop::Ghost, ghost),
+        (Prop::Crate, timber),
+        (Prop::Beam, alloy.clone()),
+        (Prop::Cart, steel.clone()),
+        (Prop::Cargo, timber_cargo),
+        (Prop::HaulCart, steel.clone()),
+        (Prop::Crawler, crawler),
     ] {
         let vehicle = match prop {
             Prop::Cart => Some(&rail_cart),
@@ -297,8 +322,8 @@ pub(crate) fn setup(
             prop,
             Mesh3d(mesh),
             MeshMaterial3d(material.clone()),
-            Transform::from_translation(rest_pose(prop, &sites)),
-            if visible { Visibility::Visible } else { Visibility::Hidden },
+            rest_transform(prop, &sites),
+            if shown(prop, &game) { Visibility::Visible } else { Visibility::Hidden },
         ));
         if let Some(vehicle) = vehicle {
             body.with_children(|parts| vehicle.spawn_parts(parts, |paint| finishes.paint(&material, paint), true));
@@ -433,12 +458,24 @@ fn handle_requests(
     }
     for (prop, mut transform, mut visibility) in &mut props {
         if !matches!(*prop, Prop::Ghost | Prop::Cargo) {
-            *transform = Transform::from_translation(rest_pose(*prop, &sites));
-            *visibility = Visibility::Visible;
+            *transform = rest_transform(*prop, &sites);
+            *visibility = if shown(*prop, &game) { Visibility::Visible } else { Visibility::Hidden };
         }
     }
     if sites.cart != sites.rail_start {
         sites.cart = sites.rail_start;
+    }
+    // A run of the tutorial after it is solved fetches the cart back down the line for it.
+    if let Request::Commit(puzzle) = request
+        && game.def(puzzle).kind == PuzzleKind::Rail
+    {
+        for (prop, _, mut visibility) in &mut props {
+            match prop {
+                Prop::Cart => *visibility = Visibility::Visible,
+                Prop::HaulCart => *visibility = Visibility::Hidden,
+                _ => {}
+            }
+        }
     }
     match request {
         Request::Demo(puzzle) => {
@@ -854,8 +891,9 @@ fn advance(
                 }
                 if *t - RUN_UP >= flight.t as f32 && *visibility != Visibility::Hidden {
                     *visibility = Visibility::Hidden;
-                    // A beam that lands on the pad stays down; anything else is returned to its launcher.
-                    let after = if verdict.outcome.pass && prop == Prop::Beam { AfterSettling::Stay } else { AfterSettling::Restore(prop) };
+                    // A load that lands on its target stays down (the crated beam on the platform beside
+                    // the tilting launcher, the beam on the pad); a miss is returned to its launcher.
+                    let after = if verdict.outcome.pass { AfterSettling::Stay } else { AfterSettling::Restore(prop) };
                     let material = if prop == Prop::Beam { assets.alloy.clone() } else { material.0.clone() };
                     let mesh = if prop == Prop::Beam { assets.beam.clone() } else { assets.crate_mesh.clone() };
                     hand_over(&mut commands, mesh, prop_size(prop), centre, velocity, material, after);
@@ -935,10 +973,82 @@ pub fn note_reading(game: &mut Game, gate: u32) {
     }
 }
 
-/// The cargo crate rides on the cart while it is loaded.
+/// Seconds the cart takes to roll on from the tutorial's marker, through the depot gate, to the haul
+/// cart's mark.
+const ROLL_ON: f32 = 3.0;
+
+/// What the relay of the chapter has done so far, as the world shows it.
+#[derive(Default)]
+struct Relayed {
+    /// The tutorial's solved state and the canyon's, as last shown; `None` before the first look.
+    shown: Option<(bool, bool)>,
+    /// The cart rolling on up the line after delivering the tools: seconds since it set off, and
+    /// where from.
+    rolling: Option<(f32, Vec3)>,
+    busy: bool,
+}
+
+/// Keep the line's one cart and the frame beam where the chapter has got them to. When the tutorial
+/// is solved, the cart rolls on through the depot gate to wait for the crawler; when the canyon is,
+/// the beam is on the tilting launcher. Once the world shows a stage it is left alone, so a beam
+/// that has just landed on the pad is not put back on the launcher.
+fn relay(
+    time: Res<Time>,
+    game: Res<Game>,
+    sim: Res<Sim>,
+    sites: Res<Sites>,
+    mut carry: ResMut<Carry>,
+    mut relayed: Local<Relayed>,
+    mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
+) {
+    let (rail, canyon) = (solved(&game, PuzzleKind::Rail), solved(&game, PuzzleKind::Canyon));
+    let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
+    if sim.busy() {
+        return;
+    }
+    let first = relayed.shown.is_none();
+    let (was_rail, was_canyon) = relayed.shown.unwrap_or((rail, canyon));
+    relayed.shown = Some((rail, canyon));
+    let start = rest_pose(Prop::HaulCart, &sites);
+    if rail && !was_rail {
+        let from = props.iter().find(|(p, _, _)| **p == Prop::Cart).map_or(start, |(_, t, _)| t.translation);
+        relayed.rolling = Some((0.0, from));
+    }
+    let mut swap = first || finished;
+    if let Some((t, from)) = relayed.rolling.as_mut() {
+        *t += time.delta_secs();
+        let progress = (*t / ROLL_ON).min(1.0);
+        let eased = progress * progress * (3.0 - 2.0 * progress);
+        let at = from.lerp(start.with_y(from.y), eased);
+        for (prop, mut transform, _) in &mut props {
+            if *prop == Prop::Cart {
+                transform.translation = at;
+            }
+        }
+        if progress < 1.0 {
+            return;
+        }
+        relayed.rolling = None;
+        swap = true;
+    }
+    carry.cart_gone = rail;
+    for (prop, mut transform, mut visibility) in &mut props {
+        let show = match prop {
+            Prop::Cart | Prop::HaulCart if swap => shown(*prop, &game),
+            Prop::Beam if first || canyon != was_canyon => shown(*prop, &game),
+            _ => continue,
+        };
+        if show && *prop == Prop::Beam {
+            *transform = rest_transform(*prop, &sites);
+        }
+        visibility.set_if_neq(if show { Visibility::Visible } else { Visibility::Hidden });
+    }
+}
+
+/// The cargo crate rides on the cart while it is loaded, until the cart has gone on up the line.
 fn ride_the_cart(carry: Res<Carry>, mut props: Query<(&Prop, &mut Transform, &mut Visibility)>) {
     let Some(cart) = props.iter().find(|(p, _, _)| **p == Prop::Cart).map(|(_, t, _)| t.translation) else { return };
-    let loaded = carry.holds(Slot::Cart) > 0;
+    let loaded = carry.holds(Slot::Cart) > 0 && !carry.cart_gone;
     for (prop, mut transform, mut visibility) in &mut props {
         if *prop == Prop::Cargo {
             transform.translation = cart + Vec3::Y * (CART_SIZE.y + CARGO_SIZE.y) / 2.0;
@@ -959,7 +1069,7 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
         }
         let restores = match body.after {
             AfterSettling::Stay => {
-                // The beam on the pad stays where it came to rest.
+                // A load on its target stays where it came to rest.
                 commands.entity(entity).remove::<Settling>();
                 continue;
             }
@@ -972,7 +1082,7 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
         commands.entity(entity).despawn();
         for (prop, mut transform, mut visibility) in &mut props {
             if *prop == restores {
-                *transform = Transform::from_translation(rest_pose(restores, &sites));
+                *transform = rest_transform(restores, &sites);
                 *visibility = Visibility::Visible;
             }
         }

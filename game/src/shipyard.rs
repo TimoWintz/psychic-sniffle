@@ -1,9 +1,11 @@
-//! What solving puts in the world: the ship, which grows on the shipyard floor as puzzles are
-//! solved, and the launchers' guidance unit, which rides the crawler until it is caught.
+//! What solving puts in the world: the launchers' guidance unit, which rides the crawler until it is
+//! caught, and the ship, which grows on the shipyard floor on the north shore. (The frame beam's own
+//! journey there, across the canyon and over the ridge, is `sim`'s.)
 //!
 //! - The haul track: the guidance unit sits on the crawler, then at the foot of the transfer crane.
-//! - The canyon: the frame beam's cradle appears on the shipyard floor.
-//! - The ridge (the chapter's capstone): the frame itself, a keel, ribs and two rails, on the cradle.
+//! - Local gravity: calibrated, the guidance unit is fitted beside the ledge launcher.
+//! - The ridge (the chapter's capstone): the frame itself, a keel, ribs and two rails, in its cradle,
+//!   pointing down the slipway into the strait.
 
 use crate::island::Sites;
 use crate::state::{Game, Mode};
@@ -20,9 +22,6 @@ struct Rising {
 
 #[derive(Component)]
 struct SkiffFrame;
-
-#[derive(Component)]
-struct Cradle;
 
 /// The launchers' guidance unit. One rides on the crawler (a child of it, so it goes along in
 /// experiments and tests) until the haul track is solved; the other waits at the crane's foot after.
@@ -50,7 +49,7 @@ pub struct ShipyardPlugin;
 impl Plugin for ShipyardPlugin {
     fn build(&self, app: &mut App) {
         // What solving put there appears as the game begins, not during the crash.
-        app.add_systems(Update, ((install_cradle, install_frame, place_guidance_unit).run_if(in_state(Mode::Playing)), assemble));
+        app.add_systems(Update, ((install_frame, place_guidance_unit).run_if(in_state(Mode::Playing)), assemble));
     }
 }
 
@@ -63,29 +62,11 @@ fn alloy(materials: &mut Assets<StandardMaterial>) -> Handle<StandardMaterial> {
     materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), metallic: 0.6, perceptual_roughness: 0.4, ..default() })
 }
 
+/// What rises on the shipyard floor is built along x and turned to lie along the slipway, which runs
+/// north to the strait.
 fn rising_at(sites: &Sites) -> (Rising, Transform, Visibility) {
-    (Rising { built: 0.0 }, Transform::from_translation(sites.shipyard).with_scale(Vec3::new(1.0, 0.01, 1.0)), Visibility::default())
-}
-
-/// The canyon's delivery: two cradle blocks for the keel to rest in.
-fn install_cradle(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    game: Res<Game>,
-    sites: Res<Sites>,
-    existing: Query<(), With<Cradle>>,
-) {
-    if !existing.is_empty() || !solved(&game, PuzzleKind::Canyon) {
-        return;
-    }
-    let alloy = alloy(&mut materials);
-    let block = meshes.add(Cuboid::new(0.8, 0.8, 3.0));
-    commands.spawn((Cradle, rising_at(&sites))).with_children(|cradle| {
-        for x in [-4.0, 4.0] {
-            cradle.spawn((Mesh3d(block.clone()), MeshMaterial3d(alloy.clone()), Transform::from_xyz(x, 0.4, 0.0)));
-        }
-    });
+    let along_slipway = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    (Rising { built: 0.0 }, Transform::from_translation(sites.shipyard).with_rotation(along_slipway).with_scale(Vec3::new(1.0, 0.01, 1.0)), Visibility::default())
 }
 
 /// Chapter 1.1's part: the skiff's frame, a keel, ribs and two rails, laid in the cradle.
@@ -103,6 +84,10 @@ fn install_frame(
     let alloy = alloy(&mut materials);
     let mut bar = |size: Vec3, centre: Vec3| (Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(alloy.clone()), Transform::from_translation(centre));
     commands.spawn((SkiffFrame, rising_at(&sites))).with_children(|frame| {
+        // The cradle: two blocks for the keel to rest in.
+        for x in [-4.0, 4.0] {
+            frame.spawn(bar(Vec3::new(0.8, 0.8, 3.0), Vec3::new(x, 0.4, 0.0)));
+        }
         // Keel, then ribs widest amidships, joined by a rail on each side.
         frame.spawn(bar(Vec3::new(14.0, 0.5, 0.5), Vec3::new(0.0, 1.05, 0.0)));
         for i in 0..7 {
@@ -119,7 +104,9 @@ fn install_frame(
     });
 }
 
-/// The guidance unit rides the crawler until the haul track is solved, then waits at the crane.
+/// The guidance unit rides the crawler until the haul track is solved, then waits at the crane, and
+/// once it knows this planet's g it is fitted beside the ledge launcher.
+#[allow(clippy::too_many_arguments)]
 fn place_guidance_unit(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -127,6 +114,7 @@ fn place_guidance_unit(
     game: Res<Game>,
     sites: Res<Sites>,
     mut units: Query<(&GuidanceUnit, &mut Visibility)>,
+    mut placed: Query<(&GuidanceUnit, &mut Transform)>,
     mut landed: Local<bool>,
 ) {
     let caught = solved(&game, PuzzleKind::Chase);
@@ -134,12 +122,27 @@ fn place_guidance_unit(
         let show = unit.riding != caught;
         visibility.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     }
+    let at = if solved(&game, PuzzleKind::Gravity) { fitted_at(&sites) } else { sites.crane_foot } + Vec3::Y * GUIDANCE_SIZE.y / 2.0;
     if caught && !*landed {
         *landed = true;
         let [body, lens] = guidance_parts(&mut meshes, &mut materials);
-        let at = sites.crane_foot + Vec3::Y * GUIDANCE_SIZE.y / 2.0;
         commands.spawn((GuidanceUnit { riding: false }, body.0, body.1, Transform::from_translation(at), Visibility::Inherited)).with_child(lens);
     }
+    for (unit, mut transform) in &mut placed {
+        if !unit.riding && transform.translation != at {
+            transform.translation = at;
+        }
+    }
+}
+
+/// Where the calibrated guidance unit sits: on the ledge, beside the ledge launcher's rail, on the
+/// station's side and behind its gauge.
+pub fn fitted_at(sites: &Sites) -> Vec3 {
+    let ledge = sites.canyon_launch;
+    let side = ledge.direction.cross(Vec3::Y).normalize();
+    let mut at = ledge.origin - ledge.direction * 3.0 + side * 1.0;
+    at.y = sites.canyon_well.y as f32;
+    at
 }
 
 /// What appears on the shipyard floor rises into place over a couple of seconds.

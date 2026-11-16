@@ -177,6 +177,9 @@ pub struct Carry {
     pub target: Option<Target>,
     /// The height on the drop tower's fall line that the pointer marks, when it is near the tower.
     pub aim: Option<f32>,
+    /// Whether the rail cart has delivered the tools and gone on up the line, past the depot gate,
+    /// to wait for the crawler: its slot can no longer be reached.
+    pub cart_gone: bool,
 }
 
 impl Carry {
@@ -397,7 +400,7 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
         let to = (point - feet).with_y(0.0);
         to.length() < reach && (feet.y - point.y).abs() < 0.6 && to.normalize_or_zero().dot(forward) > 0.5
     };
-    let at = |slot: Slot| faces(slot.foot(sites), slot.reach());
+    let at = |slot: Slot| faces(slot.foot(sites), slot.reach()) && !(slot == Slot::Cart && carry.cart_gone);
     let level = (feet.y + 0.01).floor() as i32;
     if let Some(item) = carry.holding {
         if let Some(slot) = SLOTS.into_iter().find(|s| s.takes() == item && at(*s)) {
@@ -426,7 +429,7 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
         let in_yard = (low.x..=high.x).contains(&ahead.x) && (low.z..=high.z).contains(&ahead.z);
         return Some(Target::Blocked(match (in_yard, yard) {
             (true, _) => "No room to put the crate down here.",
-            (false, Yard::Ledge) => "Crates go on the ledge, north of the launcher's rail.",
+            (false, Yard::Ledge) => "Crates go on the ledge, west of the launcher's rail.",
             (false, Yard::Rail) => "The cargo crate goes on the cart, or down beside the start of the rail.",
         }));
     }
@@ -684,11 +687,12 @@ mod tests {
             carry.loose.retain(|c| *c != cell);
             carry.holding = Some(Item::Crate(Yard::Ledge));
 
-            // At the frame's foot, facing it.
-            let foot = sites.canyon_well.as_vec3() + Vec3::new(-0.9, 0.0, 0.5);
-            assert_eq!(target_for(&world, &sites, &carry, foot, Vec3::X, None), Some(Target::PutIn(Slot::Frame, 1)), "seed {seed}");
+            // At the frame's foot on the launcher's rail, facing it.
+            let out = sites.canyon_launch.direction;
+            let foot = sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4;
+            assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::PutIn(Slot::Frame, 1)), "seed {seed}");
             // Facing away from it, the crate cannot be put on the rail.
-            assert!(matches!(target_for(&world, &sites, &carry, foot, Vec3::Z, None), Some(Target::Blocked(_))), "seed {seed}");
+            assert!(matches!(target_for(&world, &sites, &carry, foot, -out, None), Some(Target::Blocked(_))), "seed {seed}");
 
             set_stack(&mut world, &mut sites, &mut dirty, 3);
             assert_eq!(sites.canyon_launch.origin, base + Vec3::Y * 3.0);
@@ -697,7 +701,7 @@ mod tests {
             assert!(!world.is_solid(sites.canyon_well + IVec3::Y * 3));
             carry.filled[Slot::Frame.index()] = 3;
             carry.holding = None;
-            assert_eq!(target_for(&world, &sites, &carry, foot, Vec3::X, None), Some(Target::TakeOut(Slot::Frame, 2)));
+            assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::TakeOut(Slot::Frame, 2)));
             set_stack(&mut world, &mut sites, &mut dirty, 0);
             assert_eq!(sites.canyon_launch.origin, base);
         }
@@ -707,11 +711,12 @@ mod tests {
     fn crates_are_put_down_only_in_their_yard_and_never_on_the_avatar() {
         let (world, sites, mut carry) = laid_out(3);
         carry.holding = Some(Item::Crate(Yard::Ledge));
-        let [low, _] = sites.crate_yard;
-        let feet = Vec3::new(low.x as f32 + 2.5, low.y as f32, low.z as f32 + 0.5);
-        assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::Z, None), Some(Target::Put(IVec3::new(low.x + 2, low.y, low.z + 1))));
-        // Facing out of the yard (north, off its edge).
-        assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::Blocked(_))));
+        // At the yard's west edge, clear of the pile.
+        let [low, high] = sites.crate_yard;
+        let feet = Vec3::new(low.x as f32 + 0.5, low.y as f32, high.z as f32 - 1.5);
+        assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::Z, None), Some(Target::Put(IVec3::new(low.x, low.y, high.z - 1))));
+        // Facing out of the yard (west, off its edge).
+        assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_X, None), Some(Target::Blocked(_))));
         assert!(overlaps_avatar(feet, feet.floor().as_ivec3()));
         // A ledge crate does not go into the rail's yard, nor onto the cart.
         let [rail_low, _] = sites.cargo_yard;

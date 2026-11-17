@@ -3,6 +3,7 @@
 use crate::island::Sites;
 use crate::player::Player;
 use crate::state::{Game, Mode, Ui};
+use crate::waking::Waking;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use physics_core::materials::Material;
@@ -60,6 +61,7 @@ fn proximity(
     wants: Res<EguiWantsInput>,
     sites: Res<Sites>,
     game: Res<Game>,
+    waking: Res<Waking>,
     mut ui: ResMut<Ui>,
     player: Single<&Transform, With<Player>>,
 ) {
@@ -78,15 +80,25 @@ fn proximity(
     if keys.just_pressed(KeyCode::KeyE)
         && let Some(near) = ui.near_station
     {
-        ui.station = if ui.station == Some(near) || !game.unlocked(near) { None } else { Some(near) };
+        // A station opens once its console is wired in: once the machine has woken.
+        let ready = game.unlocked(near) && waking.console_shown(near);
+        ui.station = if ui.station == Some(near) || !ready { None } else { Some(near) };
     }
 }
 
-fn colour_beacons(game: Res<Game>, beacons: Query<(&Beacon, &MeshMaterial3d<StandardMaterial>)>, mut materials: ResMut<Assets<StandardMaterial>>) {
-    if !game.is_changed() {
+/// A console and its column of light are there once the castaway has wired the machine in: green
+/// once its job is done, orange while it is open.
+fn colour_beacons(
+    game: Res<Game>,
+    waking: Res<Waking>,
+    mut beacons: Query<(&Beacon, &MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if !game.is_changed() && !waking.is_changed() {
         return;
     }
-    for (beacon, handle) in &beacons {
+    for (beacon, handle, mut visibility) in &mut beacons {
+        visibility.set_if_neq(if waking.console_shown(beacon.0) { Visibility::Inherited } else { Visibility::Hidden });
         let colour = if game.solved(beacon.0) {
             Color::srgb(0.25, 0.95, 0.4)
         } else if game.unlocked(beacon.0) {

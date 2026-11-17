@@ -177,7 +177,7 @@ pub struct Carry {
     pub target: Option<Target>,
     /// The height on the drop tower's fall line that the pointer marks, when it is near the tower.
     pub aim: Option<f32>,
-    /// Whether the rail cart has delivered the tools and gone on up the line, past the depot gate,
+    /// Whether the rail cart has delivered the tools and gone on up the line, past the stone gate,
     /// to wait for the crawler: its slot can no longer be reached.
     pub cart_gone: bool,
 }

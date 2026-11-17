@@ -932,7 +932,7 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
     }
 }
 
-/// The outcrop that carries the ledge launcher, on the canyon's near rim: a steep-sided mesa with a
+/// The outcrop that carries the ledge launcher, on the canyon's near rim: a sheer-sided mesa with a
 /// gully ramp of stone steps up the back of it, climbing towards the rim from the railway's end.
 fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
     // The railway's end and the drop tower lie behind it, so the mesa is shallower on the west.
@@ -941,10 +941,13 @@ fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
             let (af, cf) = (a as f32, c as f32);
             let col = frame.col(a, c);
             let (xf, zf) = (col.x as f32, col.y as f32);
-            let reach = if c < 0 { 8.5 } else { 15.0 };
+            let reach = if c < 0 { 8.5 } else { 11.0 };
             let ellipse = (((af + 6.0) / 19.0).powi(2) + (cf / reach).powi(2)).sqrt();
             let rim = ellipse + (fbm(xf / 7.0, zf / 7.0, 61, 2) - 0.5) * 0.35;
-            let mut height = (((1.0 - rim) * 13.0 * 3.0).floor() as i32).clamp(0, ledge_h);
+            // Sheer all round, at the ledge's full height: the ramp is the only way up, so while it
+            // sleeps the ledge cannot be climbed (see `waking`). Boulders stand on the top near its
+            // edge, never on the flat the launcher and the station use.
+            let mut height = if rim < 1.0 { ledge_h + (rim > 0.82 && hash01(IVec3::new(col.x, 62, col.y)) < 0.25) as i32 } else { 0 };
             // The flat top that holds the launcher and the station.
             if (-LEDGE_DEPTH..0).contains(&a) && (-4..=6).contains(&c) {
                 height = ledge_h;

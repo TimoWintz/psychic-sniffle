@@ -99,6 +99,11 @@ impl Sim {
         self.running.is_some()
     }
 
+    /// Whether the camera is still on a test that has ended.
+    pub fn watching(&self) -> bool {
+        self.watch_left > 0.0
+    }
+
     /// The puzzle whose test is running, if one is (a demonstration is not a test).
     pub fn testing(&self) -> Option<usize> {
         match &self.running {
@@ -140,7 +145,7 @@ enum Prop {
     Cart,
     /// The cart's cargo crate, while it is loaded: it rides on the cart.
     Cargo,
-    /// The same cart once it has delivered the tools and gone on through the depot gate: the haul
+    /// The same cart once it has delivered the tools and gone on through the stone gate: the haul
     /// cart, behind its front coupler.
     HaulCart,
     /// The survey crawler, ahead of its rear coupler.
@@ -235,7 +240,7 @@ fn rest_transform(prop: Prop, sites: &Sites) -> Transform {
 }
 
 /// Whether a prop is in the world when nothing is happening. The cart runs the tutorial's stretch
-/// until it has delivered the tools, then waits past the depot gate as the haul cart; the beam is
+/// until it has delivered the tools, then waits past the stone gate as the haul cart; the beam is
 /// on the tilting launcher once the ledge launcher has thrown it across the canyon.
 fn shown(prop: Prop, game: &Game) -> bool {
     match prop {
@@ -973,7 +978,7 @@ pub fn note_reading(game: &mut Game, gate: u32) {
     }
 }
 
-/// Seconds the cart takes to roll on from the tutorial's marker, through the depot gate, to the haul
+/// Seconds the cart takes to roll on from the tutorial's marker, through the stone gate, to the haul
 /// cart's mark.
 const ROLL_ON: f32 = 3.0;
 
@@ -989,7 +994,7 @@ struct Relayed {
 }
 
 /// Keep the line's one cart and the frame beam where the chapter has got them to. When the tutorial
-/// is solved, the cart rolls on through the depot gate to wait for the crawler; when the canyon is,
+/// is solved, the cart rolls on through the stone gate to wait for the crawler; when the canyon is,
 /// the beam is on the tilting launcher. Once the world shows a stage it is left alone, so a beam
 /// that has just landed on the pad is not put back on the launcher.
 fn relay(
@@ -997,11 +1002,13 @@ fn relay(
     game: Res<Game>,
     sim: Res<Sim>,
     sites: Res<Sites>,
+    waking: Res<crate::waking::Waking>,
     mut carry: ResMut<Carry>,
     mut relayed: Local<Relayed>,
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
 ) {
-    let (rail, canyon) = (solved(&game, PuzzleKind::Rail), solved(&game, PuzzleKind::Canyon));
+    // The cart rolls on once the tools are delivered and the stone gate has opened for it.
+    let (rail, canyon) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(), solved(&game, PuzzleKind::Canyon));
     let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
     if sim.busy() {
         return;
@@ -1034,7 +1041,8 @@ fn relay(
     carry.cart_gone = rail;
     for (prop, mut transform, mut visibility) in &mut props {
         let show = match prop {
-            Prop::Cart | Prop::HaulCart if swap => shown(*prop, &game),
+            Prop::Cart if swap => !rail,
+            Prop::HaulCart if swap => rail,
             Prop::Beam if first || canyon != was_canyon => shown(*prop, &game),
             _ => continue,
         };

@@ -16,13 +16,14 @@
 
 use crate::avatar::{Activity, AvatarState};
 use crate::carry::{self, Carry, DirtyCells, Slot, Target};
+use crate::waking::Waking;
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
 use crate::player::{OrbitCamera, Player};
 use crate::ruler::{Ruler, pick_at};
 use crate::sim::{Request, Sim};
-use crate::state::{Game, Mode, Ui};
+use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::voxel::VoxelWorld;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -96,6 +97,10 @@ enum Step {
     ExpectPlayerView,
     /// Wait until the avatar has moved a metre from where it stood when the step began.
     UntilMoved { from: Option<Vec3>, within: f32 },
+    /// Mark the first `n` puzzles solved, as passes would, without playing them.
+    Solve(usize),
+    /// Wait until the way shows this stage; fail if it has not happened in time.
+    UntilWoken { stage: usize, within: f32 },
     Quit,
 }
 
@@ -621,22 +626,26 @@ fn intro() -> Vec<Step> {
     ]
 }
 
-/// The way's machines, one picture each, as they stand in the save the run starts from.
+/// The way's machines, one picture each: asleep in a new game, then with every puzzle solved.
 fn way(sites: &Sites) -> Vec<Step> {
     use Step::*;
     let way = &sites.way;
     let mut steps = vec![Start, UntilPlaying { within: 10.0 }, Windows { notebook: false, handbook: false, tutor: false }];
     let views: [(&'static str, Vec3, f32, f32, f32); 7] = [
-        ("way_01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
-        ("way_02_crane", way.machines[1].lerp(sites.crane_foot, 0.7), 0.6, 0.4, 22.0),
-        ("way_03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
-        ("way_04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
-        ("way_05_canyon", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
-        ("way_06_pad", sites.ridge_launch.origin.lerp(sites.shipyard, 0.4), 1.6, 0.6, 50.0),
-        ("way_07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
+        ("01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
+        ("02_crane", way.machines[1].lerp(sites.crane_foot, 0.7), 0.6, 0.4, 22.0),
+        ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
+        ("04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
+        ("05_canyon", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
+        ("06_pad", sites.ridge_launch.origin.lerp(sites.shipyard, 0.4), 1.6, 0.6, 50.0),
+        ("07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
     ];
-    for (name, at, yaw, pitch, distance) in views {
-        steps.extend([Watch(Some(at + Vec3::Y * 2.0)), Look { yaw, pitch, distance }, Wait(1.2), Shot(name)]);
+    for (state, solved) in [("asleep", 0), ("awake", PUZZLES)] {
+        steps.extend([Solve(solved), UntilWoken { stage: solved, within: 60.0 }]);
+        for (name, at, yaw, pitch, distance) in views {
+            let shot: &'static str = Box::leak(format!("way_{name}_{state}").into_boxed_str());
+            steps.extend([Watch(Some(at + Vec3::Y * 2.0)), Look { yaw, pitch, distance }, Wait(1.2), Shot(shot)]);
+        }
     }
     steps.push(Quit);
     steps
@@ -752,7 +761,7 @@ fn run(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar, mut carry, mut dirty): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>, ResMut<Carry>, ResMut<DirtyCells>),
+    (mut intro, mode, avatar, mut carry, mut dirty, waking): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>, ResMut<Carry>, ResMut<DirtyCells>, Res<Waking>),
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -761,6 +770,20 @@ fn run(
     let Some(step) = script.steps.pop_front() else { return };
     match step {
         Step::Wait(seconds) => script.wait = seconds,
+        Step::Solve(n) => {
+            for puzzle in 0..n {
+                let id = game.def(puzzle).id.clone();
+                game.save.puzzles.entry(id).or_default().solved = true;
+            }
+            game.persist();
+        }
+        Step::UntilWoken { stage, within } => {
+            if waking.shown != stage {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the way did not wake to stage {stage}: it shows {}", waking.shown);
+                script.steps.push_front(Step::UntilWoken { stage, within: left });
+            }
+        }
         Step::WaitIdle => {
             if sim.busy() || sim.request.is_some() {
                 script.steps.push_front(Step::WaitIdle);

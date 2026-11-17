@@ -279,15 +279,18 @@ pub(crate) fn setup(
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
     game: Res<Game>,
+    trim: Res<crate::waking::MachineTrim>,
 ) {
     let solid = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), perceptual_roughness: 0.6, ..default() })
     };
-    let steel = solid(&mut materials, [0.75, 0.16, 0.12]);
+    // The carts, the crawler and the test masses are the builders': their pale stone, the crawler a
+    // weathered shade of it.
+    let steel = crate::waking::stone(&mut materials);
     let timber = solid(&mut materials, Material::Timber.properties().colour);
     let timber_cargo = timber.clone();
     let alloy = solid(&mut materials, Material::HullAlloy.properties().colour);
-    let crawler = solid(&mut materials, [0.92, 0.78, 0.22]);
+    let crawler = solid(&mut materials, [0.72, 0.68, 0.58]);
     let finishes = Finishes::new(&mut materials);
     // The carts roll on spoked wheels; the crawler on treads, running west along the haul track.
     let rail_cart = props::cart(&mut meshes, CART_SIZE, false);
@@ -331,7 +334,11 @@ pub(crate) fn setup(
             if shown(prop, &game) { Visibility::Visible } else { Visibility::Hidden },
         ));
         if let Some(vehicle) = vehicle {
-            body.with_children(|parts| vehicle.spawn_parts(parts, |paint| finishes.paint(&material, paint), true));
+            // The carts' quartz is the supply rail's machine's; the crawler's is the haul track's.
+            let quartz = trim.0[if prop == Prop::Crawler { 1 } else { 0 }].clone();
+            body.with_children(|parts| {
+                vehicle.spawn_parts(parts, |paint| if paint == props::Paint::Trim { quartz.clone() } else { finishes.paint(&material, paint) }, true)
+            });
         }
         if prop == Prop::Cargo {
             // The orange handle of salvage that can be carried: it comes off the cart again with F.
@@ -340,11 +347,11 @@ pub(crate) fn setup(
             body.with_child((Mesh3d(handle), MeshMaterial3d(glow), Transform::from_xyz(0.0, CARGO_SIZE.y / 2.0 + 0.03, 0.0)));
         }
         if prop == Prop::Crawler {
-            // The launchers' guidance unit rides on top until the crawler is caught.
-            let [unit, lens] = crate::shipyard::guidance_parts(&mut meshes, &mut materials);
-            let on_top = Transform::from_xyz(0.0, (CRAWLER_SIZE.y + crate::shipyard::GUIDANCE_SIZE.y) / 2.0, 0.0);
+            // The launchers' sight rides on top until the crawler is caught.
+            let [unit, lens] = crate::shipyard::sight_parts(&mut meshes, &mut materials);
+            let on_top = Transform::from_xyz(0.0, (CRAWLER_SIZE.y + crate::shipyard::SIGHT_SIZE.y) / 2.0, 0.0);
             body.with_children(|crawler| {
-                crawler.spawn((crate::shipyard::GuidanceUnit { riding: true }, unit.0, unit.1, on_top, Visibility::Inherited)).with_child(lens);
+                crawler.spawn((crate::shipyard::Sight { riding: true }, unit.0, unit.1, on_top, Visibility::Inherited)).with_child(lens);
             });
         }
     }

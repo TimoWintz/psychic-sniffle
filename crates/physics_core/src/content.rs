@@ -123,6 +123,10 @@ pub struct PuzzleDef {
     /// Lumen's line when the puzzle is passed: what it got us, and what it leads to. Spoken.
     #[serde(default)]
     pub done: String,
+    /// The caption over the fade when the castaway wires this station's console into its machine,
+    /// once the light has woken it. The first station's console is in from the start.
+    #[serde(default)]
+    pub rigged: String,
 }
 
 /// A line Lumen says, with a place its eye holds while it says it (a landmark's name).
@@ -255,6 +259,12 @@ impl Chapter {
             }
             if has_digit(&puzzle.why) || has_digit(&puzzle.done) {
                 problems.push(format!("puzzle {}: the why and done lines are spoken and must hold no digits", puzzle.id));
+            }
+            if i > 0 && puzzle.rigged.trim().is_empty() {
+                problems.push(format!("puzzle {}: its console needs a caption for when it is wired in", puzzle.id));
+            }
+            if has_digit(&puzzle.rigged) {
+                problems.push(format!("puzzle {}: the wiring caption must hold no digits", puzzle.id));
             }
             if let Some(demo) = &puzzle.demo {
                 if demo.choices.len() < 2 || demo.answer >= demo.choices.len() {

@@ -74,7 +74,8 @@ fn proximity(
     if ui.station.is_some() && ui.station != ui.near_station {
         ui.station = None;
     }
-    if wants.wants_any_keyboard_input() {
+    // While the way wakes, E skips the wake (see `waking`) rather than opening a station.
+    if wants.wants_any_keyboard_input() || waking.playing() {
         return;
     }
     if keys.just_pressed(KeyCode::KeyE)

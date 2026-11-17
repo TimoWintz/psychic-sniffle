@@ -17,6 +17,40 @@
 use crate::island::SEA_LEVEL;
 use crate::voxel::{VoxelWorld, smoothstep};
 use bevy::prelude::*;
+use bevy_egui::egui::{self, Align2, Color32, FontId, pos2, vec2};
+
+/// A colour with an alpha, from sRGB components in `[0, 1]`.
+fn rgba(c: [f32; 3], a: f32) -> Color32 {
+    Color32::from_rgba_unmultiplied((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8, (a.clamp(0.0, 1.0) * 255.0) as u8)
+}
+
+/// Cover the screen in a colour, `fade` of the way to opaque.
+pub fn paint_veil(painter: &egui::Painter, screen: egui::Rect, fade: f32, colour: [f32; 3]) {
+    if fade > 0.0 {
+        painter.rect_filled(screen, 0.0, rgba(colour, fade));
+    }
+}
+
+/// Letterbox bars, `bars` of their full height, with a caption in the lower one: a small gold
+/// heading over a line, both at `alpha`. Returns whether any bar shows.
+pub fn paint_letterbox(painter: &egui::Painter, screen: egui::Rect, bars: f32, heading: Option<&str>, line: Option<&str>, alpha: f32) -> bool {
+    let bar = screen.height() * 0.11 * bars;
+    if bar <= 0.5 {
+        return false;
+    }
+    painter.rect_filled(egui::Rect::from_min_size(screen.min, vec2(screen.width(), bar)), 0.0, Color32::BLACK);
+    let bottom = egui::Rect::from_min_max(pos2(screen.left(), screen.bottom() - bar), screen.max);
+    painter.rect_filled(bottom, 0.0, Color32::BLACK);
+    if let Some(heading) = heading {
+        let gold = Color32::from_rgba_unmultiplied(230, 196, 120, (alpha.clamp(0.0, 1.0) * 255.0) as u8);
+        painter.text(pos2(screen.center().x, bottom.top() + bar * 0.32), Align2::CENTER_CENTER, heading, FontId::proportional(13.0), gold);
+    }
+    if let Some(line) = line {
+        let white = Color32::from_rgba_unmultiplied(235, 238, 242, (alpha.clamp(0.0, 1.0) * 255.0) as u8);
+        painter.text(pos2(screen.center().x, bottom.top() + bar * 0.62), Align2::CENTER_CENTER, line, FontId::proportional(17.0), white);
+    }
+    true
+}
 
 /// Length of one pass of the loop, in seconds.
 pub const LOOP: f32 = 48.0;

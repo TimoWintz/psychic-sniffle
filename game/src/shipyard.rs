@@ -1,9 +1,9 @@
-//! What solving puts in the world: the launchers' guidance unit, which rides the crawler until it is
+//! What solving puts in the world: the launchers' sight, which rides the crawler until it is
 //! caught, and the ship, which grows on the shipyard floor on the north shore. (The frame beam's own
 //! journey there, across the canyon and over the ridge, is `sim`'s.)
 //!
-//! - The haul track: the guidance unit sits on the crawler, then at the foot of the transfer crane.
-//! - Local gravity: calibrated, the guidance unit is fitted beside the ledge launcher.
+//! - The haul track: the sight sits on the crawler, then at the foot of the transfer crane.
+//! - Local gravity: calibrated, the sight is fitted beside the ledge launcher.
 //! - The ridge (the chapter's capstone): the frame itself, a keel, ribs and two rails, in its cradle,
 //!   pointing down the slipway into the strait.
 
@@ -23,24 +23,24 @@ struct Rising {
 #[derive(Component)]
 struct SkiffFrame;
 
-/// The launchers' guidance unit. One rides on the crawler (a child of it, so it goes along in
+/// The launchers' sight. One rides on the crawler (a child of it, so it goes along in
 /// experiments and tests) until the haul track is solved; the other waits at the crane's foot after.
 #[derive(Component)]
-pub struct GuidanceUnit {
+pub struct Sight {
     pub riding: bool,
 }
 
-pub const GUIDANCE_SIZE: Vec3 = Vec3::new(0.7, 0.4, 0.55);
+pub const SIGHT_SIZE: Vec3 = Vec3::new(0.7, 0.4, 0.55);
 
-/// The guidance unit's look: hull alloy with Lumen's cyan glowing in it.
-pub fn guidance_parts(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> [(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform); 2] {
-    let c = Material::HullAlloy.properties().colour;
-    let alloy = materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
-    let glow = materials.add(StandardMaterial { base_color: Color::srgb(0.35, 0.84, 1.0), emissive: LinearRgba::rgb(0.6, 2.2, 3.0), ..default() });
+/// The sight's look: a block of the builders' pale stone with a lens of their quartz on top, which
+/// glows whatever the machines around it are doing.
+pub fn sight_parts(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> [(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform); 2] {
+    let stone = crate::waking::stone(materials);
+    let q = Material::Quartz.properties().colour;
+    let glow = materials.add(StandardMaterial { base_color: Color::srgb(q[0], q[1], q[2]), unlit: true, ..default() });
     [
-        (Mesh3d(meshes.add(Cuboid::from_size(GUIDANCE_SIZE))), MeshMaterial3d(alloy), Transform::default()),
-        // A lens on top, the colour of Lumen's eye.
-        (Mesh3d(meshes.add(Cuboid::new(0.28, 0.06, 0.28))), MeshMaterial3d(glow), Transform::from_xyz(0.0, GUIDANCE_SIZE.y / 2.0 + 0.03, 0.0)),
+        (Mesh3d(meshes.add(Cuboid::from_size(SIGHT_SIZE))), MeshMaterial3d(stone), Transform::default()),
+        (Mesh3d(meshes.add(Cuboid::new(0.28, 0.06, 0.28))), MeshMaterial3d(glow), Transform::from_xyz(0.0, SIGHT_SIZE.y / 2.0 + 0.03, 0.0)),
     ]
 }
 
@@ -49,7 +49,7 @@ pub struct ShipyardPlugin;
 impl Plugin for ShipyardPlugin {
     fn build(&self, app: &mut App) {
         // What solving put there appears as the game begins, not during the crash.
-        app.add_systems(Update, ((install_frame, place_guidance_unit).run_if(in_state(Mode::Playing)), assemble));
+        app.add_systems(Update, ((install_frame, place_sight).run_if(in_state(Mode::Playing)), assemble));
     }
 }
 
@@ -104,17 +104,17 @@ fn install_frame(
     });
 }
 
-/// The guidance unit rides the crawler until the haul track is solved, then waits at the crane, and
+/// The sight rides the crawler until the haul track is solved, then waits at the crane, and
 /// once it knows this planet's g it is fitted beside the ledge launcher.
 #[allow(clippy::too_many_arguments)]
-fn place_guidance_unit(
+fn place_sight(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     game: Res<Game>,
     sites: Res<Sites>,
-    mut units: Query<(&GuidanceUnit, &mut Visibility)>,
-    mut placed: Query<(&GuidanceUnit, &mut Transform)>,
+    mut units: Query<(&Sight, &mut Visibility)>,
+    mut placed: Query<(&Sight, &mut Transform)>,
     mut landed: Local<bool>,
 ) {
     let caught = solved(&game, PuzzleKind::Chase);
@@ -122,11 +122,11 @@ fn place_guidance_unit(
         let show = unit.riding != caught;
         visibility.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
     }
-    let at = if solved(&game, PuzzleKind::Gravity) { fitted_at(&sites) } else { sites.crane_foot } + Vec3::Y * GUIDANCE_SIZE.y / 2.0;
+    let at = if solved(&game, PuzzleKind::Gravity) { fitted_at(&sites) } else { sites.crane_foot } + Vec3::Y * SIGHT_SIZE.y / 2.0;
     if caught && !*landed {
         *landed = true;
-        let [body, lens] = guidance_parts(&mut meshes, &mut materials);
-        commands.spawn((GuidanceUnit { riding: false }, body.0, body.1, Transform::from_translation(at), Visibility::Inherited)).with_child(lens);
+        let [body, lens] = sight_parts(&mut meshes, &mut materials);
+        commands.spawn((Sight { riding: false }, body.0, body.1, Transform::from_translation(at), Visibility::Inherited)).with_child(lens);
     }
     for (unit, mut transform) in &mut placed {
         if !unit.riding && transform.translation != at {
@@ -135,7 +135,7 @@ fn place_guidance_unit(
     }
 }
 
-/// Where the calibrated guidance unit sits: on the ledge, beside the ledge launcher's rail, on the
+/// Where the calibrated sight sits: on the ledge, beside the ledge launcher's rail, on the
 /// station's side and behind its gauge.
 pub fn fitted_at(sites: &Sites) -> Vec3 {
     let ledge = sites.canyon_launch;

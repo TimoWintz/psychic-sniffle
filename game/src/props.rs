@@ -17,8 +17,9 @@ pub enum Paint {
     Iron,
     /// Tread rubber.
     Rubber,
-    /// A lamp, glowing.
-    Lamp,
+    /// Quartz set into one of the builders' machines: it sleeps and wakes with the machine (the
+    /// caller picks the material; see `waking::MachineTrim`).
+    Trim,
 }
 
 /// One piece of a shape, placed relative to the entity it belongs to.
@@ -93,7 +94,8 @@ fn spokes(meshes: &mut Assets<Mesh>, radius: f32, width: f32) -> (f32, Handle<Me
     (radius, meshes.add(cross))
 }
 
-/// A cart inside `size`: a tub banded in iron on four spoked wheels, the rim of its top band flush
+/// A cart inside `size`: a stone tub banded in iron on four spoked wheels, a strip of quartz along
+/// each side, the rim of its top band flush
 /// with the envelope's top (the cargo rides there). With couplers, an iron coupler stands at each end
 /// of the envelope, and the tub is shortened to make room.
 ///
@@ -144,6 +146,11 @@ pub fn cart(meshes: &mut Assets<Mesh>, size: Vec3, couplers: bool) -> Vehicle {
         parts.push(Part { mesh: axle.clone(), transform: Transform::from_xyz(x, -size.y / 2.0 + RADIUS, 0.0).with_rotation(axle_along_z()), paint: Paint::Iron, wheel: None });
     }
     parts.extend(wheels(meshes, size, RADIUS, WIDTH, &xs, z));
+    // A strip of quartz along each side of the tub, between its face and the bands'.
+    let strip = meshes.add(Cuboid::new(length * 0.6, 0.06, 0.012));
+    for z in [1.0, -1.0] {
+        parts.push(Part { mesh: strip.clone(), transform: Transform::from_xyz(0.0, (strap_low + strap_high) / 2.0, z * (size.z / 2.0 - 0.025)), paint: Paint::Trim, wheel: None });
+    }
     if couplers {
         let hitch = meshes.add(Cuboid::new(coupler + 0.04, 0.1, 0.18));
         for x in [1.0, -1.0] {
@@ -154,9 +161,9 @@ pub fn cart(meshes: &mut Assets<Mesh>, size: Vec3, couplers: bool) -> Vehicle {
     Vehicle { body, parts, spokes }
 }
 
-/// The survey crawler inside `size`: a body on two rubber treads with road wheels, a lamp at the
-/// front (`front` is the sign of x it runs towards), a coupler at the rear, an antenna. The top is
-/// flush with the envelope's (the guidance unit rides there).
+/// The builders' crawler inside `size`: a stone body on two treads with road wheels, a quartz eye at
+/// the front (`front` is the sign of x it runs towards), a coupler at the rear, an antenna. The top
+/// is flush with the envelope's (the sight rides there).
 pub fn crawler(meshes: &mut Assets<Mesh>, size: Vec3, front: f32) -> Vehicle {
     const TREAD_H: f32 = 0.32;
     const TREAD_W: f32 = 0.18;
@@ -195,7 +202,8 @@ pub fn crawler(meshes: &mut Assets<Mesh>, size: Vec3, front: f32) -> Vehicle {
     let hitch = meshes.add(Cuboid::new(COUPLER + 0.04, 0.12, 0.2));
     parts.push(Part { mesh: hitch, transform: Transform::from_xyz(rear * (size.x / 2.0 - (COUPLER + 0.04) / 2.0), tread_y + 0.05, 0.0), paint: Paint::Iron, wheel: None });
     let lamp = meshes.add(Cuboid::new(LAMP, 0.12, 0.3));
-    parts.push(Part { mesh: lamp, transform: Transform::from_xyz(front * (size.x / 2.0 - LAMP / 2.0), size.y / 2.0 - height / 2.0 + 0.05, 0.0), paint: Paint::Lamp, wheel: None });
+    // Its eye at the front: quartz, which lights as the crawler's machine wakes.
+    parts.push(Part { mesh: lamp, transform: Transform::from_xyz(front * (size.x / 2.0 - LAMP / 2.0), size.y / 2.0 - height / 2.0 + 0.05, 0.0), paint: Paint::Trim, wheel: None });
     let mast = meshes.add(Cylinder::new(0.018, 0.55));
     parts.push(Part { mesh: mast, transform: Transform::from_xyz(rear * (size.x / 2.0 - 0.2), size.y / 2.0 + 0.27, size.z / 2.0 - 0.14), paint: Paint::Iron, wheel: None });
     let spokes = vec![spokes(meshes, ROAD, ROAD_W)];
@@ -241,7 +249,6 @@ pub fn spin_wheels(mut wheels: Query<(&mut Wheel, &mut Transform, &GlobalTransfo
 pub struct Finishes {
     pub iron: Handle<StandardMaterial>,
     pub rubber: Handle<StandardMaterial>,
-    pub lamp: Handle<StandardMaterial>,
     pub alloy: Handle<StandardMaterial>,
     pub copper: Handle<StandardMaterial>,
     pub soot: Handle<StandardMaterial>,
@@ -256,7 +263,6 @@ impl Finishes {
         Self {
             iron: metal(materials, [0.17, 0.18, 0.20], 0.5, 0.55),
             rubber: metal(materials, [0.07, 0.07, 0.08], 0.0, 0.9),
-            lamp: materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.93, 0.7), emissive: LinearRgba::rgb(3.0, 2.6, 1.6), ..default() }),
             alloy: metal(materials, Material::HullAlloy.properties().colour, 0.6, 0.4),
             copper: metal(materials, Material::Copper.properties().colour, 0.7, 0.35),
             soot: metal(materials, [0.09, 0.08, 0.08], 0.0, 0.95),
@@ -270,7 +276,7 @@ impl Finishes {
             Paint::Body => body.clone(),
             Paint::Iron => self.iron.clone(),
             Paint::Rubber => self.rubber.clone(),
-            Paint::Lamp => self.lamp.clone(),
+            Paint::Trim => body.clone(),
         }
     }
 }
@@ -484,6 +490,6 @@ mod tests {
         assert!(low.z >= -size.z / 2.0 - 1e-4 && high.z <= size.z / 2.0 + 1e-4, "{low} {high}");
         let (mut top, mut floor) = (Vec3::splat(f32::MIN), Vec3::splat(f32::MAX));
         grow(meshes.get(&crawler.body).unwrap(), Transform::default(), &mut floor, &mut top);
-        assert!((top.y - size.y / 2.0).abs() < 1e-4, "the guidance unit rides on the body's top");
+        assert!((top.y - size.y / 2.0).abs() < 1e-4, "the sight rides on the body's top");
     }
 }

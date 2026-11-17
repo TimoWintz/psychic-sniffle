@@ -63,6 +63,16 @@ impl OrbitCamera {
         self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * self.distance);
     }
 
+    /// Take the camera to watch something with this pitch and distance (set `watch` to say what),
+    /// keeping the player's own view to come back with [`OrbitCamera::release_view`].
+    pub fn borrow(&mut self, pitch: f32, distance: f32) {
+        if self.saved.is_none() {
+            self.saved = Some((self.yaw, self.pitch, self.distance));
+        }
+        self.pitch = pitch;
+        self.distance = distance;
+    }
+
     pub fn release_view(&mut self) {
         self.watch = None;
         if let Some((yaw, pitch, distance)) = self.saved.take() {
@@ -111,13 +121,15 @@ pub(crate) fn move_player(
     sites: Res<Sites>,
     game: Res<Game>,
     ui: Res<Ui>,
+    waking: Res<crate::waking::Waking>,
     camera: Res<OrbitCamera>,
     mut player: Single<(&mut Player, &mut Transform)>,
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
     // At an open station the avatar stays at the console: the keys are for the panel.
-    let still = wants.wants_any_keyboard_input() || ui.station.is_some();
+    // While the way wakes, the avatar waits too.
+    let still = wants.wants_any_keyboard_input() || ui.station.is_some() || waking.playing();
 
     // Walk relative to where the camera looks.
     let mut wish = Vec3::ZERO;

@@ -16,7 +16,7 @@ Chapter(
     ],
     closing: [
         Spoken(text: "That is the whole frame. Come and see it on the shipyard floor.", look: Some("The shipyard floor")),
-        Spoken(text: "The gate on the quay is pointing across the strait. And just then, something answered. The core. Faint, but it was there.", look: Some("The main hull, across the strait")),
+        Spoken(text: "The gate on the quay is pointing across the strait. And just then, something answered. The core. Faint, but it was there.", look: Some("The north gate")),
     ],
     remarks: [
         Remark(near: "The wreck", radius: 7.0, when: Always, line: Spoken(text: "That was the forward section. This backup of me lives in what is left of it. We came down right across their road. Nobody has complained yet.")),
@@ -302,6 +302,7 @@ Chapter(
             investigate: "Ruler (R): click the haul cart's front coupler, then the crawler's rear coupler, for the crawler's head start; then the cart's front coupler and the transfer marker's centre. The two couplers meet when the cart reaches the crawler. Click the tops of the two timing posts beside the track for the distance between them.\n\nStopwatch: every run of the experiment below times the crawler from the first timing post to the second and notes it (such as t1). The crawler's speed is not written anywhere: work it out from what you measure.",
             concepts: ["velocity", "relative_velocity"],
             requires: ["1.1.0"],
+            rigged: "By evening, a console is wired into the haul track past the stone gate.",
             charges: 3,
             demo: Some(DemoDef(
                 question: "The crawler and the haul cart leave their marks at the same moment, the cart at a lower steady speed. A flash marks both at equal moments. How does the gap between them change?",
@@ -325,6 +326,7 @@ Chapter(
             investigate: "Ruler (R): click the release point at the top of the drop tower, then the landing plate below it. Stopwatch: every run of the experiment below times the fall and notes it.\n\nLight gate: the gate on the stand by this station can be carried (F) and clamped on the drop tower at any of the orange notches painted on it a metre apart, from a metre below the release down to the plate: point at the height on the tower and press F. With a gate fitted, each run times the fall from the release to the gate and notes the drop and the time as a pair with one number (such as h2 and t2). The stopwatch reads to hundredths of a second, so a short drop gives a rough value: the longer the drop, the better the reading.",
             concepts: ["acceleration", "free_fall"],
             requires: ["1.1.1"],
+            rigged: "By evening, a console is wired into the drop tower.",
             charges: 3,
             demo: Some(DemoDef(
                 question: "The test mass is released from the top of the drop tower. A flash marks where it is at equal moments as it falls. How will the marks be spaced?",
@@ -348,6 +350,7 @@ Chapter(
             investigate: "Ruler (R): click the launcher's release point, then the centre of the strip. The ruler reports the horizontal and the vertical separation; the release point rises with the launcher. The rating plate on the station gives the dial's band: note it.",
             concepts: ["free_fall", "independence"],
             requires: ["1.1.2"],
+            rigged: "By evening, a console is wired into the ledge launcher, up the new steps.",
             charges: 3,
             demo: Some(DemoDef(
                 question: "Two test crates leave the ledge at the same moment: one is simply dropped, the other is fired straight out sideways. Which reaches the canyon floor first?",
@@ -371,6 +374,7 @@ Chapter(
             investigate: "Ruler (R): measure from the release point to the pad centre, and to the top of the ridge on the side facing you.",
             concepts: ["components", "range", "independence"],
             requires: ["1.1.3"],
+            rigged: "By evening, a console is wired into the tilting launcher.",
             charges: 3,
             demo: Some(DemoDef(
                 question: "Two test slugs are fired from the tilting launcher at the same speed, one at 30 degrees and one at 60 degrees. Which lands further away?",

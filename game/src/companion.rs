@@ -57,7 +57,21 @@ impl Landmarks {
         places.push(("The shipyard floor".into(), sites.shipyard + Vec3::Y * 1.0));
         places.push((MAIN_HULL.into(), crate::intro::Mainland::wreck() + Vec3::Y * 6.0));
         places.push((SHORE.into(), sites.shore + Vec3::Y * 1.0));
+        // The way: its gates and the ramp, and the light that runs along it while a machine wakes.
+        let way = &sites.way;
+        places.push(("The stone gate".into(), way.stone_gate + Vec3::Y * 2.0));
+        places.push(("The north gate".into(), way.keystone));
+        let ramp = way.ramp.iter().map(|(c, _)| c.as_vec3()).sum::<Vec3>() / way.ramp.len().max(1) as f32;
+        places.push(("The ramp".into(), ramp + Vec3::Y));
+        places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
         Landmarks(places)
+    }
+
+    /// Move a place that moves (the light running up the road).
+    pub fn set(&mut self, name: &str, at: Vec3) {
+        if let Some(place) = self.0.iter_mut().find(|(n, _)| n == name) {
+            place.1 = at;
+        }
     }
 
     pub fn names(&self) -> Vec<String> {
@@ -321,6 +335,8 @@ struct Facts {
     line_look: Option<String>,
     /// What the avatar is carrying.
     carrying: Option<Item>,
+    /// The light is running up the road to wake a machine.
+    light_running: bool,
     /// Nothing is placed at the focused puzzle's station: no crate in the jack frame, no cargo on
     /// the cart, no gate on the tower.
     slot_empty: bool,
@@ -330,6 +346,9 @@ struct Facts {
 
 /// Where Lumen should look, in priority order.
 fn choose_gaze(f: &Facts) -> Option<String> {
+    if f.light_running {
+        return Some(crate::waking::LIGHT_ON_THE_ROAD.into());
+    }
     if let Some(held) = &f.held {
         return Some(held.clone());
     }
@@ -431,6 +450,7 @@ fn direct(
     ruler: Res<Ruler>,
     carry: Res<Carry>,
     landmarks: Res<Landmarks>,
+    waking: Res<crate::waking::Waking>,
     player: Single<&Transform, With<crate::player::Player>>,
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
@@ -441,7 +461,9 @@ fn direct(
     companion.frame += 1;
     let focus = ui.focus(&game);
     let focus_kind = game.def(focus).kind;
-    let next = game.next_unsolved();
+    // The next job as the world shows it: after a pass, Lumen points on once the way has woken the
+    // next machine and its console is in, and closes the chapter once the north gate is lit.
+    let next = (waking.shown < PUZZLES).then_some(waking.shown);
 
     // The tutor pointed somewhere.
     for conversation in &mut lumen.conversations {
@@ -638,6 +660,7 @@ fn direct(
         held: companion.held.as_ref().map(|(place, _, _)| place.clone()),
         line_look: companion.lines.first().filter(|l| l.shown > 0.0).and_then(|l| l.look.clone()),
         carrying: carry.holding,
+        light_running: waking.light_running(),
         slot_empty: crate::carry::SLOTS.iter().find(|s| s.puzzle() == focus_kind).is_some_and(|s| carry.holds(*s) == 0),
         gate_pending: focus_kind == PuzzleKind::Gravity && gate_pending(&game, focus),
     };
@@ -1069,6 +1092,14 @@ mod tests {
     /// Just after the station `next` opened: Lumen is pointing the way.
     fn walking_to(next: usize) -> Facts {
         Facts { focus_kind: Some(PuzzleKind::Rail), next: Some(next), next_station: Some(format!("Station {next}")), beckon: true, ..Facts::default() }
+    }
+
+    #[test]
+    fn while_the_light_runs_the_eye_follows_it() {
+        let held = Facts { held: Some("Platform: centre".into()), station_open: true, ..walking_to(1) };
+        assert_eq!(choose_gaze(&held).as_deref(), Some("Platform: centre"));
+        let running = Facts { light_running: true, ..held };
+        assert_eq!(choose_gaze(&running).as_deref(), Some(crate::waking::LIGHT_ON_THE_ROAD));
     }
 
     #[test]

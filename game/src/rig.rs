@@ -61,9 +61,20 @@ fn puzzle_of(game: &Game, kind: PuzzleKind) -> usize {
     game.chapter.puzzles.iter().position(|p| p.kind == kind).expect("the chapter has this kind of puzzle")
 }
 
-pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, game: Res<Game>) {
+pub(crate) fn spawn(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    sites: Res<Sites>,
+    game: Res<Game>,
+    trim: Res<crate::waking::MachineTrim>,
+) {
+    // The launchers are the builders': stone, with their machine's quartz set in. The gauges are the
+    // castaway's, salvage in dark paint.
     let steel = materials.add(StandardMaterial { base_color: Color::srgb(0.55, 0.57, 0.62), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
+    let stone = crate::waking::stone(&mut materials);
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.10, 0.11, 0.14), perceptual_roughness: 0.7, ..default() });
+    let (ledge_quartz, ridge_quartz) = (trim.0[3].clone(), trim.0[4].clone());
     let mark = materials.add(StandardMaterial { base_color: Color::srgb(0.92, 0.95, 1.0), unlit: true, ..default() });
 
     // The tilting launcher's guide arm: two rails hinged at the release point, which the beam rides
@@ -74,7 +85,10 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
     let base = Quat::from_rotation_arc(Vec3::X, site.direction);
     let rail = meshes.add(Cuboid::new(ARM_LENGTH, 0.1, 0.08));
     let hinge = meshes.add(Cuboid::new(0.25, 0.25, 0.9));
-    commands.spawn((Mesh3d(hinge), MeshMaterial3d(dark.clone()), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
+    commands.spawn((Mesh3d(hinge), MeshMaterial3d(stone.clone()), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
+    // A band of quartz round the hinge, proud of its faces.
+    let band = meshes.add(Cuboid::new(0.08, 0.27, 0.92));
+    commands.spawn((Mesh3d(band), MeshMaterial3d(ridge_quartz), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
     commands
         .spawn((
             Arm { puzzle: ridge, angle: ARM_REST, base, axis: across },
@@ -95,9 +109,12 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
     let frame_centre = sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
     let tall = Ch1Layout::MAX_STACK as f32 + 0.6;
     let upright = meshes.add(Cuboid::new(0.14, tall, 0.14));
+    // Each upright is capped with quartz.
+    let cap = meshes.add(Cuboid::new(0.18, 0.16, 0.18));
     for (u, v) in [(-0.43, -0.58), (0.43, -0.58), (-0.43, 0.58), (0.43, 0.58)] {
         let at = frame_centre + out * u + side * v + Vec3::Y * tall / 2.0;
-        commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(steel.clone()), Transform::from_translation(at)));
+        commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(at)));
+        commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(ledge_quartz.clone()), Transform::from_translation(at + Vec3::Y * (tall / 2.0 + 0.08))));
     }
     // The cradle caps the top crate: a little wider than a block and standing a little proud of its
     // top, so its faces never share the crate's planes (which made them flicker).
@@ -106,7 +123,7 @@ pub(crate) fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mu
     let back_stop = meshes.add(Cuboid::new(0.08, 0.5, 0.96));
     let facing = Quat::from_rotation_arc(Vec3::X, ledge.direction);
     commands
-        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(dark.clone()), Transform::from_translation(cradle_at(&sites)).with_rotation(facing), Visibility::default()))
+        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(stone.clone()), Transform::from_translation(cradle_at(&sites)).with_rotation(facing), Visibility::default()))
         .with_children(|c| {
             c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.5, 0.3, 0.0)));
         });

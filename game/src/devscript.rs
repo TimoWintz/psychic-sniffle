@@ -23,7 +23,7 @@ use crate::island::Sites;
 use crate::player::{OrbitCamera, Player};
 use crate::ruler::{Ruler, pick_at};
 use crate::sim::{Request, Sim};
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{Game, Mode, Ui};
 use crate::voxel::VoxelWorld;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
@@ -99,8 +99,12 @@ enum Step {
     UntilMoved { from: Option<Vec3>, within: f32 },
     /// Mark the first `n` puzzles solved, as passes would, without playing them.
     Solve(usize),
+    /// Wait until no wake is playing; fail if one still is after this many seconds.
+    WaitWakeEnd(f32),
     /// Wait until the way shows this stage; fail if it has not happened in time.
     UntilWoken { stage: usize, within: f32 },
+    /// Wait until the wake to this stage has played this many seconds; fail if it has not in time.
+    UntilWakeAt { stage: usize, at: f32, within: f32 },
     Quit,
 }
 
@@ -272,11 +276,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Station(Some(1)),
         expect_gaze("Crawler: rear coupler"),
         Shot("06c_haul_track"),
-        // The crawler carries the launchers' guidance unit on its back.
+        // The crawler carries the launchers' sight on its back.
         Watch(Some(sites.haul_at(game.layout.head_start as f64 + 0.7))),
         Look { yaw: HAUL_YAW, pitch: 0.35, distance: 6.0 },
         Wait(1.0),
-        Shot("06c2_guidance_unit_on_the_crawler"),
+        Shot("06c2_sight_on_the_crawler"),
         Watch(None),
         Look { yaw: HAUL_YAW, pitch: 0.5, distance: 34.0 },
         Guess(1, 0),
@@ -331,13 +335,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.5),
         ExpectSolved(1),
         Shot("06j_chase_result"),
-        // Caught: the guidance unit waits at the foot of the transfer crane.
+        // Caught: the sight waits at the foot of the transfer crane.
         Station(None),
         Watch(Some(sites.crane_foot)),
         // From above, so the crane's mast does not stand between the camera and the unit.
         Look { yaw: 2.6, pitch: 1.1, distance: 9.0 },
         Wait(1.0),
-        Shot("06k_guidance_unit_at_the_crane"),
+        Shot("06k_sight_at_the_crane"),
         Watch(None),
         // Puzzle 2: measure the tower, time the drop, work out g.
         GoToStation(2),
@@ -640,13 +644,25 @@ fn way(sites: &Sites) -> Vec<Step> {
         ("06_pad", sites.ridge_launch.origin.lerp(sites.shipyard, 0.4), 1.6, 0.6, 50.0),
         ("07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
     ];
-    for (state, solved) in [("asleep", 0), ("awake", PUZZLES)] {
-        steps.extend([Solve(solved), UntilWoken { stage: solved, within: 60.0 }]);
+    let photograph = |steps: &mut Vec<Step>, state: &str| {
         for (name, at, yaw, pitch, distance) in views {
             let shot: &'static str = Box::leak(format!("way_{name}_{state}").into_boxed_str());
             steps.extend([Watch(Some(at + Vec3::Y * 2.0)), Look { yaw, pitch, distance }, Wait(1.2), Shot(shot)]);
         }
+        steps.push(Watch(None));
+    };
+    photograph(&mut steps, "asleep");
+    // Three wakes as they play: the light running, the machine waking, the console going in.
+    // Seconds into each wake: the light running, the machine waking, the console going in.
+    for (stage, moments) in [(1, [2.2, 5.6, 7.6, 10.4]), (3, [2.2, 4.6, 6.4, 8.0]), (5, [2.6, 5.0, 6.6, 7.6])] {
+        steps.extend([Solve(stage - 1), UntilWoken { stage: stage - 1, within: 240.0 }, WaitWakeEnd(240.0), Solve(stage)]);
+        for (i, at) in moments.into_iter().enumerate() {
+            let shot: &'static str = Box::leak(format!("way_wake_{stage}_{i}").into_boxed_str());
+            steps.extend([UntilWakeAt { stage, at, within: 120.0 }, Shot(shot)]);
+        }
+        steps.extend([UntilWoken { stage, within: 60.0 }, WaitWakeEnd(60.0)]);
     }
+    photograph(&mut steps, "awake");
     steps.push(Quit);
     steps
 }
@@ -770,12 +786,26 @@ fn run(
     let Some(step) = script.steps.pop_front() else { return };
     match step {
         Step::Wait(seconds) => script.wait = seconds,
+        Step::WaitWakeEnd(within) => {
+            if waking.playing() {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the wake did not end");
+                script.steps.push_front(Step::WaitWakeEnd(left));
+            }
+        }
         Step::Solve(n) => {
             for puzzle in 0..n {
                 let id = game.def(puzzle).id.clone();
                 game.save.puzzles.entry(id).or_default().solved = true;
             }
             game.persist();
+        }
+        Step::UntilWakeAt { stage, at, within } => {
+            if !waking.play.is_some_and(|p| p.timeline.stage == stage && p.t >= at) {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the wake to stage {stage} did not reach {at} s: {:?}", waking.play.map(|p| (p.timeline.stage, p.t)));
+                script.steps.push_front(Step::UntilWakeAt { stage, at, within: left });
+            }
         }
         Step::UntilWoken { stage, within } => {
             if waking.shown != stage {

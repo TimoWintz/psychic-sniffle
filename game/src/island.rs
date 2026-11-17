@@ -115,7 +115,7 @@ pub struct Sites {
     pub shipyard: Vec3,
     /// The last dry ground from the shipyard towards the main hull: where the slipway meets the strait.
     pub shore: Vec3,
-    /// Ground at the foot of the transfer crane, beyond the haul track: where the guidance unit is
+    /// Ground at the foot of the transfer crane, beyond the haul track: where the sight is
     /// set down once the crawler is caught.
     pub crane_foot: Vec3,
     /// Feet of the survey stakes that flag the corners of each target.

@@ -9,9 +9,9 @@
 
 use crate::island::Sites;
 use crate::state::{Game, Mode};
+use crate::waking::Waking;
 use bevy::prelude::*;
 use physics_core::materials::Material;
-use physics_core::puzzle::PuzzleKind;
 
 /// Something on the shipyard floor that rises into place when it first appears.
 #[derive(Component)]
@@ -24,7 +24,7 @@ struct Rising {
 struct SkiffFrame;
 
 /// The launchers' sight. One rides on the crawler (a child of it, so it goes along in
-/// experiments and tests) until the haul track is solved; the other waits at the crane's foot after.
+/// experiments and tests) until the crane lifts it off; the other is the same sight once it is off.
 #[derive(Component)]
 pub struct Sight {
     pub riding: bool,
@@ -53,9 +53,6 @@ impl Plugin for ShipyardPlugin {
     }
 }
 
-fn solved(game: &Game, kind: PuzzleKind) -> bool {
-    game.chapter.puzzles.iter().position(|p| p.kind == kind).is_some_and(|i| game.solved(i))
-}
 
 fn alloy(materials: &mut Assets<StandardMaterial>) -> Handle<StandardMaterial> {
     let c = Material::HullAlloy.properties().colour;
@@ -104,32 +101,33 @@ fn install_frame(
     });
 }
 
-/// The sight rides the crawler until the haul track is solved, then waits at the crane, and
-/// once it knows this planet's g it is fitted beside the ledge launcher.
-#[allow(clippy::too_many_arguments)]
+/// The sight rides the crawler until the crane lifts it off in the wake after the haul track's pass,
+/// then waits at the crane's foot, and once the launchers know this planet's g it is set beside the
+/// ledge launcher (by evening, behind the fade). Where it is is the way's to say (see `waking`).
 fn place_sight(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    game: Res<Game>,
+    waking: Res<Waking>,
     sites: Res<Sites>,
-    mut units: Query<(&Sight, &mut Visibility)>,
-    mut placed: Query<(&Sight, &mut Transform)>,
+    mut units: Query<(&Sight, &mut Visibility, &mut Transform)>,
     mut landed: Local<bool>,
 ) {
-    let caught = solved(&game, PuzzleKind::Chase);
-    for (unit, mut visibility) in &mut units {
-        let show = unit.riding != caught;
-        visibility.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
-    }
-    let at = if solved(&game, PuzzleKind::Gravity) { fitted_at(&sites) } else { sites.crane_foot } + Vec3::Y * SIGHT_SIZE.y / 2.0;
-    if caught && !*landed {
+    let off = waking.sight(&sites);
+    if let Some(at) = off
+        && !*landed
+    {
         *landed = true;
         let [body, lens] = sight_parts(&mut meshes, &mut materials);
         commands.spawn((Sight { riding: false }, body.0, body.1, Transform::from_translation(at), Visibility::Inherited)).with_child(lens);
     }
-    for (unit, mut transform) in &mut placed {
-        if !unit.riding && transform.translation != at {
+    for (unit, mut visibility, mut transform) in &mut units {
+        let show = unit.riding == off.is_none();
+        visibility.set_if_neq(if show { Visibility::Inherited } else { Visibility::Hidden });
+        if let Some(at) = off
+            && !unit.riding
+            && transform.translation != at
+        {
             transform.translation = at;
         }
     }

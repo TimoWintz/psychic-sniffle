@@ -228,7 +228,7 @@ const AO_LIGHT: [f32; 4] = [0.50, 0.66, 0.82, 1.0];
 
 /// Sleeping quartz: slate with a cold green cast, darker than any rock, so it reads as a channel
 /// waiting to be lit and is never taken for survey paint.
-const DARK_QUARTZ: [f32; 3] = [0.17, 0.24, 0.27];
+pub const DARK_QUARTZ: [f32; 3] = [0.17, 0.24, 0.27];
 
 /// Blocks drawn unlit, so they read as glowing: survey markers and quartz.
 pub fn glows(material: Material) -> bool {

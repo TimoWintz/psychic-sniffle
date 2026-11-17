@@ -227,9 +227,27 @@ pub struct SimPlugin;
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sim>()
+            .init_resource::<TerrainReshaped>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels, props::step_legs, reshape_terrain).chain());
     }
+}
+
+/// The physics engine's view of the island's blocks.
+#[derive(Component)]
+struct TerrainCollider;
+
+/// Set when blocks of the island have come or gone for good (the way's stonework rising or sinking,
+/// a new game putting it back to sleep), so the physics engine's view of the island is built again.
+#[derive(Resource, Default)]
+pub struct TerrainReshaped(pub bool);
+
+fn reshape_terrain(mut commands: Commands, mut reshaped: ResMut<TerrainReshaped>, world: Res<VoxelWorld>, terrain: Single<Entity, With<TerrainCollider>>) {
+    if !reshaped.0 {
+        return;
+    }
+    reshaped.0 = false;
+    commands.entity(*terrain).insert(Collider::voxels(Vec3::ONE, &world.exposed_blocks()));
 }
 
 /// How a prop rests when nothing is happening: where its centre is, and the beam lying along its
@@ -286,13 +304,14 @@ pub(crate) fn setup(
     };
     // The carts, the crawler and the test masses are the builders': their pale stone, the crawler a
     // weathered shade of it.
-    let steel = crate::waking::stone(&mut materials);
+    let stone = crate::waking::stone(&mut materials);
     let timber = solid(&mut materials, Material::Timber.properties().colour);
     let timber_cargo = timber.clone();
     let alloy = solid(&mut materials, Material::HullAlloy.properties().colour);
     let crawler = solid(&mut materials, [0.72, 0.68, 0.58]);
     let finishes = Finishes::new(&mut materials);
-    // The carts roll on spoked wheels; the crawler on treads, running west along the haul track.
+    let crawler_quartz = crate::waking::lit_quartz(&mut materials);
+    // The carts roll on stone wheels in the groove; the crawler walks, west along the haul track.
     let rail_cart = props::cart(&mut meshes, CART_SIZE, false);
     let haul_cart = props::cart(&mut meshes, HAUL_CART_SIZE, true);
     let crawler_shape = props::crawler(&mut meshes, CRAWLER_SIZE, sites.haul_direction.x.signum());
@@ -305,14 +324,14 @@ pub(crate) fn setup(
         ..default()
     });
     for (prop, material) in [
-        (Prop::TowerMass, steel.clone()),
-        (Prop::MastMass, steel.clone()),
+        (Prop::TowerMass, stone.clone()),
+        (Prop::MastMass, stone.clone()),
         (Prop::Ghost, ghost),
         (Prop::Crate, timber),
         (Prop::Beam, alloy.clone()),
-        (Prop::Cart, steel.clone()),
+        (Prop::Cart, stone.clone()),
         (Prop::Cargo, timber_cargo),
-        (Prop::HaulCart, steel.clone()),
+        (Prop::HaulCart, stone.clone()),
         (Prop::Crawler, crawler),
     ] {
         let vehicle = match prop {
@@ -334,8 +353,9 @@ pub(crate) fn setup(
             if shown(prop, &game) { Visibility::Visible } else { Visibility::Hidden },
         ));
         if let Some(vehicle) = vehicle {
-            // The carts' quartz is the supply rail's machine's; the crawler's is the haul track's.
-            let quartz = trim.0[if prop == Prop::Crawler { 1 } else { 0 }].clone();
+            // The cart's quartz is the supply rail's machine's, and sleeps and wakes with it. The
+            // crawler never slept: it still walks its rounds, so its quartz is lit.
+            let quartz = if prop == Prop::Crawler { crawler_quartz.clone() } else { trim.0[0].clone() };
             body.with_children(|parts| {
                 vehicle.spawn_parts(parts, |paint| if paint == props::Paint::Trim { quartz.clone() } else { finishes.paint(&material, paint) }, true)
             });
@@ -358,7 +378,7 @@ pub(crate) fn setup(
 
     // The physics engine's view of the island: every block anything could touch.
     commands.insert_resource(Gravity(Vec3::NEG_Y * game.layout.g as f32));
-    commands.spawn((RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
+    commands.spawn((TerrainCollider, RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
 
     // Loose wreckage, left to the engine: it falls and settles where it will. Bent hull plating,
     // conduit, girder, a thruster bell and a console, thrown clear in the crash.
@@ -386,19 +406,22 @@ pub(crate) fn setup(
     for (j, ground) in sites.scrap.iter().enumerate() {
         let piece = props::debris(&mut meshes, &finishes, j);
         let lift = Vec3::Y * piece.depth(&meshes) * SCRAP_SCALE;
-        commands
-            .spawn((
-                RigidBody::Static,
-                piece.collider,
-                Mesh3d(piece.mesh),
-                MeshMaterial3d(piece.material),
-                Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
-            ))
-            .with_children(|trim| {
-                for (mesh, material, transform) in piece.trim {
-                    trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
-                }
-            });
+        let mut scrap = commands.spawn((
+            RigidBody::Static,
+            piece.collider,
+            Mesh3d(piece.mesh),
+            MeshMaterial3d(piece.material),
+            Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
+        ));
+        scrap.with_children(|trim| {
+            for (mesh, material, transform) in piece.trim {
+                trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
+            }
+        });
+        // Scrap dragged to a camp is there once that station's console is wired in.
+        if let Some(Some(station)) = sites.scrap_camp.get(j) {
+            scrap.insert(crate::waking::Camp(*station));
+        }
     }
     let unlit = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), unlit: true, ..default() })
@@ -1015,7 +1038,7 @@ fn relay(
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
 ) {
     // The cart rolls on once the tools are delivered and the stone gate has opened for it.
-    let (rail, canyon) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(), solved(&game, PuzzleKind::Canyon));
+    let (rail, canyon) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(&sites.way), solved(&game, PuzzleKind::Canyon));
     let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
     if sim.busy() {
         return;

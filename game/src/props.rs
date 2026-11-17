@@ -6,20 +6,28 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 use physics_core::materials::Material;
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 /// What a part is painted with: the colour of what it belongs to, or one of the shared finishes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Paint {
-    /// The prop's own colour (the cart's red, the crawler's yellow).
-    Body,
-    /// Dark iron: wheels, chassis, couplers, bands.
-    Iron,
-    /// Tread rubber.
-    Rubber,
+    /// The same stone, worn darker where it works: wheels, legs, couplers, lips.
+    Worn,
     /// Quartz set into one of the builders' machines: it sleeps and wakes with the machine (the
     /// caller picks the material; see `waking::MachineTrim`).
     Trim,
+}
+
+/// How a part moves with its vehicle.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Motion {
+    Fixed,
+    /// A wheel of this radius (its axle along z): it turns as the vehicle rolls, and carries a cross
+    /// of quartz so that can be seen.
+    Wheel(f32),
+    /// A leg hung from its hip (the part's own origin): it swings fore and aft and lifts on the
+    /// forward swing as the vehicle walks. Legs with the same phase step together.
+    Leg(f32),
 }
 
 /// One piece of a shape, placed relative to the entity it belongs to.
@@ -28,9 +36,13 @@ pub struct Part {
     pub mesh: Handle<Mesh>,
     pub transform: Transform,
     pub paint: Paint,
-    /// A wheel of this radius (its axle along z): it turns as the vehicle rolls, and carries spokes
-    /// so that can be seen.
-    pub wheel: Option<f32>,
+    pub motion: Motion,
+}
+
+impl Part {
+    fn fixed(mesh: &Handle<Mesh>, transform: Transform, paint: Paint) -> Self {
+        Part { mesh: mesh.clone(), transform, paint, motion: Motion::Fixed }
+    }
 }
 
 /// A vehicle: the body is the entity's own mesh, the rest are children.
@@ -38,8 +50,8 @@ pub struct Part {
 pub struct Vehicle {
     pub body: Handle<Mesh>,
     pub parts: Vec<Part>,
-    /// Two crossed bars across a wheel's faces, in the wheel's own frame (axis along y), per wheel
-    /// radius.
+    /// Two crossed bars of quartz across a wheel's faces, in the wheel's own frame (axis along y), per
+    /// wheel radius.
     spokes: Vec<(f32, Handle<Mesh>)>,
 }
 
@@ -50,6 +62,21 @@ pub struct Wheel {
     angle: f32,
     last: Option<f32>,
 }
+
+/// A leg that steps with the distance its vehicle travels along x.
+#[derive(Component)]
+pub struct Leg {
+    rest: Transform,
+    phase: f32,
+    walked: f32,
+    last: Option<f32>,
+}
+
+/// How far the crawler goes in one full step of a leg, how far its legs reach below the hips, and how
+/// high a foot lifts as it swings forward.
+const STRIDE: f32 = 0.44;
+const LEG_H: f32 = 0.34;
+const LIFT: f32 = 0.05;
 
 /// Lying on its side: a cylinder's axis turned from y to z.
 fn axle_along_z() -> Quat {
@@ -78,34 +105,35 @@ pub fn i_beam(size: Vec3) -> Mesh {
     ])
 }
 
-/// Wheels below a body, `xs` along it, one on each side, standing on the envelope's floor.
+/// Solid stone wheels below a body, `xs` along it, one on each side, standing on the envelope's floor.
 fn wheels(meshes: &mut Assets<Mesh>, size: Vec3, radius: f32, width: f32, xs: &[f32], z: f32) -> Vec<Part> {
     let mesh = meshes.add(Cylinder::new(radius, width));
     let y = -size.y / 2.0 + radius;
     xs.iter()
-        .flat_map(|&x| [z, -z].map(|z| Part { mesh: mesh.clone(), transform: Transform::from_xyz(x, y, z).with_rotation(axle_along_z()), paint: Paint::Iron, wheel: Some(radius) }))
+        .flat_map(|&x| [z, -z].map(|z| Part { mesh: mesh.clone(), transform: Transform::from_xyz(x, y, z).with_rotation(axle_along_z()), paint: Paint::Worn, motion: Motion::Wheel(radius) }))
         .collect()
 }
 
+/// The quartz cross set into a wheel's faces.
 fn spokes(meshes: &mut Assets<Mesh>, radius: f32, width: f32) -> (f32, Handle<Mesh>) {
     // Proud of both faces, and a little short of the rim.
-    let bar = Cuboid::new(radius * 1.7, width + 0.02, radius * 0.28);
+    let bar = Cuboid::new(radius * 1.7, width + 0.02, radius * 0.22);
     let cross = merged([(bar.into(), Transform::default()), (bar.into(), Transform::from_rotation(Quat::from_rotation_y(FRAC_PI_2)))]);
     (radius, meshes.add(cross))
 }
 
-/// A cart inside `size`: a stone tub banded in iron on four spoked wheels, a strip of quartz along
-/// each side, the rim of its top band flush
-/// with the envelope's top (the cargo rides there). With couplers, an iron coupler stands at each end
-/// of the envelope, and the tub is shortened to make room.
+/// The builders' cart inside `size`: a smooth stone tub with a worn stone lip round its top, a
+/// channel of quartz along each side, on four solid stone wheels with quartz crosses. The lip is
+/// flush with the envelope's top (the cargo rides there). With couplers, a stone coupler stands at
+/// each end of the envelope, and the tub is shortened to make room.
 ///
 /// No two faces of different finishes share a plane, or the renderer flickers between them: the tub
-/// sits inside its bands and a little below the rim, the straps run between the bands, and the wheels
-/// stand between the tub's sides and the bands' faces.
+/// sits inside its lip and a little below its top, and the wheels stand between the tub's sides and
+/// the lip's faces.
 pub fn cart(meshes: &mut Assets<Mesh>, size: Vec3, couplers: bool) -> Vehicle {
     const RADIUS: f32 = 0.17;
     const WIDTH: f32 = 0.09;
-    const BAND: f32 = 0.07;
+    const LIP: f32 = 0.07;
     const RIM: f32 = 0.06;
     let coupler = if couplers { 0.1 } else { 0.0 };
     let length = size.x - 2.0 * coupler;
@@ -113,115 +141,111 @@ pub fn cart(meshes: &mut Assets<Mesh>, size: Vec3, couplers: bool) -> Vehicle {
     let height = size.y - RADIUS * 1.1;
     let floor = size.y / 2.0 - height;
     let top = size.y / 2.0;
-    // The tub's sides are inset from the bands', its bottom inside the lower band, its top just under
-    // the rim.
     let (tub_low, tub_high) = (floor + 0.01, top - 0.02);
-    let body = meshes.add(Mesh::from(Cuboid::new(length - 0.06, tub_high - tub_low, size.z - 0.08)).translated_by(Vec3::Y * (tub_low + tub_high) / 2.0));
-    let iron = |mesh: &Handle<Mesh>, at: Vec3| Part { mesh: mesh.clone(), transform: Transform::from_translation(at), paint: Paint::Iron, wheel: None };
-    // The lower band wraps the tub's foot; the upper is a rim around its top.
-    let band = meshes.add(Cuboid::new(length, BAND, size.z));
-    let rim_long = meshes.add(Cuboid::new(length, BAND, RIM));
-    let rim_short = meshes.add(Cuboid::new(RIM, BAND, size.z - 2.0 * RIM));
-    let rim_y = top - BAND / 2.0;
+    let tub_half_z = (size.z - 0.08) / 2.0;
+    let body = meshes.add(Mesh::from(Cuboid::new(length - 0.06, tub_high - tub_low, 2.0 * tub_half_z)).translated_by(Vec3::Y * (tub_low + tub_high) / 2.0));
+    // The lip: a rim of worn stone round the tub's top.
+    let rim_long = meshes.add(Cuboid::new(length, LIP, RIM));
+    let rim_short = meshes.add(Cuboid::new(RIM, LIP, size.z - 2.0 * RIM));
+    let rim_y = top - LIP / 2.0;
     let mut parts = vec![
-        iron(&band, Vec3::Y * (floor + BAND / 2.0)),
-        iron(&rim_long, Vec3::new(0.0, rim_y, size.z / 2.0 - RIM / 2.0)),
-        iron(&rim_long, Vec3::new(0.0, rim_y, -(size.z / 2.0 - RIM / 2.0))),
-        iron(&rim_short, Vec3::new(length / 2.0 - RIM / 2.0, rim_y, 0.0)),
-        iron(&rim_short, Vec3::new(-(length / 2.0 - RIM / 2.0), rim_y, 0.0)),
+        Part::fixed(&rim_long, Transform::from_xyz(0.0, rim_y, size.z / 2.0 - RIM / 2.0), Paint::Worn),
+        Part::fixed(&rim_long, Transform::from_xyz(0.0, rim_y, -(size.z / 2.0 - RIM / 2.0)), Paint::Worn),
+        Part::fixed(&rim_short, Transform::from_xyz(length / 2.0 - RIM / 2.0, rim_y, 0.0), Paint::Worn),
+        Part::fixed(&rim_short, Transform::from_xyz(-(length / 2.0 - RIM / 2.0), rim_y, 0.0), Paint::Worn),
     ];
-    // Corner straps from band to band.
-    let strap_low = floor + BAND;
-    let strap_high = top - BAND;
-    let strap = meshes.add(Cuboid::new(0.06, strap_high - strap_low, 0.06));
-    for (x, z) in [(1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0)] {
-        parts.push(iron(&strap, Vec3::new(x * (length / 2.0 - 0.03), (strap_low + strap_high) / 2.0, z * (size.z / 2.0 - 0.03))));
-    }
     let xs = [length / 2.0 - 0.2, -(length / 2.0 - 0.2)];
-    // The wheels' outer faces between the tub's sides and the band's, their spokes short of the band.
+    // The wheels' outer faces between the tub's sides and the lip's, their crosses short of the lip.
     let z = size.z / 2.0 - WIDTH / 2.0 - 0.02;
-    // Axles through the wheels, under the tub.
+    // Stone axles through the wheels, under the tub.
     let axle = meshes.add(Cylinder::new(0.03, 2.0 * z));
     for x in xs {
-        parts.push(Part { mesh: axle.clone(), transform: Transform::from_xyz(x, -size.y / 2.0 + RADIUS, 0.0).with_rotation(axle_along_z()), paint: Paint::Iron, wheel: None });
+        parts.push(Part::fixed(&axle, Transform::from_xyz(x, -size.y / 2.0 + RADIUS, 0.0).with_rotation(axle_along_z()), Paint::Worn));
     }
     parts.extend(wheels(meshes, size, RADIUS, WIDTH, &xs, z));
-    // A strip of quartz along each side of the tub, between its face and the bands'.
+    // A channel of quartz along each side of the tub, set just proud of its face.
     let strip = meshes.add(Cuboid::new(length * 0.6, 0.06, 0.012));
-    for z in [1.0, -1.0] {
-        parts.push(Part { mesh: strip.clone(), transform: Transform::from_xyz(0.0, (strap_low + strap_high) / 2.0, z * (size.z / 2.0 - 0.025)), paint: Paint::Trim, wheel: None });
+    let strip_y = (floor + top) / 2.0 + 0.04;
+    for side in [1.0, -1.0] {
+        parts.push(Part::fixed(&strip, Transform::from_xyz(0.0, strip_y, side * (tub_half_z + 0.008)), Paint::Trim));
     }
     if couplers {
         let hitch = meshes.add(Cuboid::new(coupler + 0.04, 0.1, 0.18));
         for x in [1.0, -1.0] {
-            parts.push(iron(&hitch, Vec3::new(x * (size.x / 2.0 - (coupler + 0.04) / 2.0), floor + 0.1, 0.0)));
+            parts.push(Part::fixed(&hitch, Transform::from_xyz(x * (size.x / 2.0 - (coupler + 0.04) / 2.0), floor + 0.1, 0.0), Paint::Worn));
         }
     }
     let spokes = vec![spokes(meshes, RADIUS, WIDTH)];
     Vehicle { body, parts, spokes }
 }
 
-/// The builders' crawler inside `size`: a stone body on two treads with road wheels, a quartz eye at
-/// the front (`front` is the sign of x it runs towards), a coupler at the rear, an antenna. The top
-/// is flush with the envelope's (the sight rides there).
+/// The builders' crawler inside `size`: a stone body that walks on six stone legs, three a side,
+/// stepping in two alternating threes, quartz at each knee and in a channel along each flank, a
+/// quartz eye at the front (`front` is the sign of x it walks towards) and a stone coupler at the
+/// rear. The top is flush with the envelope's (the sight rides there); the feet, at rest, stand on
+/// its floor.
 pub fn crawler(meshes: &mut Assets<Mesh>, size: Vec3, front: f32) -> Vehicle {
-    const TREAD_H: f32 = 0.32;
-    const TREAD_W: f32 = 0.18;
+    const LEG_W: f32 = 0.09;
     const COUPLER: f32 = 0.1;
-    let tread_y = -size.y / 2.0 + TREAD_H / 2.0;
-    // The treads are inset from the envelope's sides, so the road wheels stand proud of them.
-    let tread_z = size.z / 2.0 - TREAD_W / 2.0 - 0.03;
-    // The body overhangs the treads, and stops short of the rear for the coupler and of the front for
-    // the lamp.
-    const LAMP: f32 = 0.04;
-    let height = size.y - TREAD_H + 0.04;
-    let length = size.x - COUPLER - LAMP / 2.0;
-    let body = meshes.add(Mesh::from(Cuboid::new(length, height, size.z - 0.12)).translated_by(Vec3::new(front * (COUPLER - LAMP / 2.0) / 2.0, size.y / 2.0 - height / 2.0, 0.0)));
-    // A tread: a straight run with round ends.
-    let end = TREAD_H / 2.0;
-    let tread = meshes.add(merged([
-        (Cuboid::new(size.x - TREAD_H, TREAD_H, TREAD_W).into(), Transform::default()),
-        (Cylinder::new(end, TREAD_W).into(), Transform::from_xyz(size.x / 2.0 - end, 0.0, 0.0).with_rotation(axle_along_z())),
-        (Cylinder::new(end, TREAD_W).into(), Transform::from_xyz(-(size.x / 2.0 - end), 0.0, 0.0).with_rotation(axle_along_z())),
-    ]));
-    let mut parts: Vec<Part> = [tread_z, -tread_z]
-        .map(|z| Part { mesh: tread.clone(), transform: Transform::from_xyz(0.0, tread_y, z), paint: Paint::Rubber, wheel: None })
-        .into();
-    // Road wheels on the treads' outer faces, standing out from them (their spokes reach the
-    // envelope's side).
-    const ROAD: f32 = 0.11;
-    const ROAD_W: f32 = 0.05;
-    let road = meshes.add(Cylinder::new(ROAD, ROAD_W));
-    for x in [-0.42, 0.0, 0.42] {
-        for z in [1.0, -1.0] {
-            let at = Vec3::new(x * size.x / 1.4, tread_y, z * (size.z / 2.0 - 0.01 - ROAD_W / 2.0));
-            parts.push(Part { mesh: road.clone(), transform: Transform::from_translation(at).with_rotation(axle_along_z()), paint: Paint::Iron, wheel: Some(ROAD) });
+    const EYE: f32 = 0.04;
+    let hip_y = -size.y / 2.0 + LEG_H;
+    // The legs stand outside the body's flanks, inside the envelope.
+    let leg_z = size.z / 2.0 - LEG_W / 2.0 - 0.02;
+    let body_half_z = leg_z - LEG_W / 2.0 - 0.04;
+    // The body stops short of the rear for the coupler and of the front for the eye; its foot sits a
+    // little below the hips, between the legs.
+    let height = size.y / 2.0 - hip_y + 0.03;
+    let length = size.x - COUPLER - EYE / 2.0;
+    let body = meshes.add(Mesh::from(Cuboid::new(length, height, 2.0 * body_half_z)).translated_by(Vec3::new(front * (COUPLER - EYE / 2.0) / 2.0, size.y / 2.0 - height / 2.0, 0.0)));
+    // A leg: a stone shank hung from the hip, with a block of quartz at the knee, both swinging from
+    // the hip.
+    let shank = meshes.add(Mesh::from(Cuboid::new(LEG_W, LEG_H, LEG_W)).translated_by(Vec3::Y * -LEG_H / 2.0));
+    let knee = meshes.add(Mesh::from(Cuboid::new(LEG_W + 0.03, 0.07, LEG_W + 0.03)).translated_by(Vec3::Y * -LEG_H * 0.45));
+    let mut parts = Vec::new();
+    for (i, x) in [-0.36, 0.0, 0.36].into_iter().enumerate() {
+        for (j, side) in [1.0, -1.0].into_iter().enumerate() {
+            // Two alternating threes: front and rear on one side with the middle on the other.
+            let phase = if (i + j) % 2 == 0 { 0.0 } else { PI };
+            let hip = Transform::from_xyz(x * size.x / 1.4, hip_y, side * leg_z);
+            parts.push(Part { mesh: shank.clone(), transform: hip, paint: Paint::Worn, motion: Motion::Leg(phase) });
+            parts.push(Part { mesh: knee.clone(), transform: hip, paint: Paint::Trim, motion: Motion::Leg(phase) });
         }
+    }
+    // A channel of quartz along each flank, just proud of it.
+    let strip = meshes.add(Cuboid::new(length * 0.7, 0.05, 0.012));
+    for side in [1.0, -1.0] {
+        parts.push(Part::fixed(&strip, Transform::from_xyz(front * (COUPLER - EYE / 2.0) / 2.0, size.y / 2.0 - height * 0.45, side * (body_half_z + 0.008)), Paint::Trim));
     }
     let rear = -front;
     let hitch = meshes.add(Cuboid::new(COUPLER + 0.04, 0.12, 0.2));
-    parts.push(Part { mesh: hitch, transform: Transform::from_xyz(rear * (size.x / 2.0 - (COUPLER + 0.04) / 2.0), tread_y + 0.05, 0.0), paint: Paint::Iron, wheel: None });
-    let lamp = meshes.add(Cuboid::new(LAMP, 0.12, 0.3));
-    // Its eye at the front: quartz, which lights as the crawler's machine wakes.
-    parts.push(Part { mesh: lamp, transform: Transform::from_xyz(front * (size.x / 2.0 - LAMP / 2.0), size.y / 2.0 - height / 2.0 + 0.05, 0.0), paint: Paint::Trim, wheel: None });
-    let mast = meshes.add(Cylinder::new(0.018, 0.55));
-    parts.push(Part { mesh: mast, transform: Transform::from_xyz(rear * (size.x / 2.0 - 0.2), size.y / 2.0 + 0.27, size.z / 2.0 - 0.14), paint: Paint::Iron, wheel: None });
-    let spokes = vec![spokes(meshes, ROAD, ROAD_W)];
-    Vehicle { body, parts, spokes }
+    parts.push(Part::fixed(&hitch, Transform::from_xyz(rear * (size.x / 2.0 - (COUPLER + 0.04) / 2.0), hip_y + 0.05, 0.0), Paint::Worn));
+    // Its eye at the front: quartz. The crawler never slept; it still walks its rounds.
+    let eye = meshes.add(Cuboid::new(EYE, 0.12, 0.3));
+    parts.push(Part::fixed(&eye, Transform::from_xyz(front * (size.x / 2.0 - EYE / 2.0), size.y / 2.0 - height / 2.0 + 0.05, 0.0), Paint::Trim));
+    Vehicle { body, parts, spokes: Vec::new() }
 }
 
 impl Vehicle {
-    /// Put the vehicle's parts under `parent`, painted by `paint`. With `turning`, its wheels turn as
-    /// it moves (an afterimage's do not).
-    pub fn spawn_parts(&self, parent: &mut ChildSpawnerCommands, paint: impl Fn(Paint) -> Handle<StandardMaterial>, turning: bool) {
+    /// Put the vehicle's parts under `parent`, painted by `paint`. With `moving`, its wheels turn and
+    /// its legs step as it moves (an afterimage's do not).
+    pub fn spawn_parts(&self, parent: &mut ChildSpawnerCommands, paint: impl Fn(Paint) -> Handle<StandardMaterial>, moving: bool) {
         for part in &self.parts {
             let mut child = parent.spawn((Mesh3d(part.mesh.clone()), MeshMaterial3d(paint(part.paint)), part.transform));
-            let Some(radius) = part.wheel else { continue };
-            if turning {
-                child.insert(Wheel { radius, angle: 0.0, last: None });
-            }
-            if let Some((_, spokes)) = self.spokes.iter().find(|(r, _)| *r == radius) {
-                child.with_child((Mesh3d(spokes.clone()), MeshMaterial3d(paint(Paint::Body))));
+            match part.motion {
+                Motion::Fixed => {}
+                Motion::Leg(phase) => {
+                    if moving {
+                        child.insert(Leg { rest: part.transform, phase, walked: 0.0, last: None });
+                    }
+                }
+                Motion::Wheel(radius) => {
+                    if moving {
+                        child.insert(Wheel { radius, angle: 0.0, last: None });
+                    }
+                    if let Some((_, spokes)) = self.spokes.iter().find(|(r, _)| *r == radius) {
+                        child.with_child((Mesh3d(spokes.clone()), MeshMaterial3d(paint(Paint::Trim))));
+                    }
+                }
             }
         }
     }
@@ -244,11 +268,47 @@ pub fn spin_wheels(mut wheels: Query<(&mut Wheel, &mut Transform, &GlobalTransfo
     }
 }
 
+/// Where a leg is in its step after its vehicle has walked `walked` metres along x: its swing about
+/// z (positive puts the foot towards +x) and how high its foot is lifted. For the first half of each
+/// step the foot is planted and sweeps back exactly as fast as the body goes on, so it does not
+/// slide; for the second half it lifts and swings forward again.
+pub fn step(walked: f32, phase: f32) -> (f32, f32) {
+    let u = (walked / STRIDE + phase / TAU).rem_euclid(1.0);
+    let reach = STRIDE / 4.0;
+    let (ahead, lift) = if u < 0.5 {
+        (reach - u * STRIDE, 0.0)
+    } else {
+        let a = TAU * (u - 0.5);
+        (-reach * a.cos(), LIFT * a.sin())
+    };
+    ((ahead / LEG_H).clamp(-1.0, 1.0).asin(), lift)
+}
+
+/// Step each leg by the distance its vehicle walked along x since the last frame (a jump of more
+/// than a metre is a vehicle put back at its start). Planted feet sweep back as the body goes on, and
+/// lifted ones swing forward.
+pub fn step_legs(mut legs: Query<(&mut Leg, &mut Transform, &GlobalTransform)>) {
+    for (mut leg, mut transform, global) in &mut legs {
+        let x = global.translation().x;
+        if let Some(last) = leg.last {
+            let dx = x - last;
+            if dx.abs() < 1.0 {
+                leg.walked += dx;
+            }
+        }
+        leg.last = Some(x);
+        let (swing, lift) = step(leg.walked, leg.phase);
+        transform.rotation = leg.rest.rotation * Quat::from_rotation_z(swing);
+        transform.translation = leg.rest.translation + Vec3::Y * lift;
+    }
+}
+
 /// The finishes shared by the vehicles' parts and the debris.
 #[derive(Clone)]
 pub struct Finishes {
     pub iron: Handle<StandardMaterial>,
-    pub rubber: Handle<StandardMaterial>,
+    /// The builders' stone worn darker where it works: wheels, legs, couplers, lips.
+    pub worn: Handle<StandardMaterial>,
     pub alloy: Handle<StandardMaterial>,
     pub copper: Handle<StandardMaterial>,
     pub soot: Handle<StandardMaterial>,
@@ -262,7 +322,7 @@ impl Finishes {
         };
         Self {
             iron: metal(materials, [0.17, 0.18, 0.20], 0.5, 0.55),
-            rubber: metal(materials, [0.07, 0.07, 0.08], 0.0, 0.9),
+            worn: metal(materials, [0.60, 0.56, 0.48], 0.0, 0.9),
             alloy: metal(materials, Material::HullAlloy.properties().colour, 0.6, 0.4),
             copper: metal(materials, Material::Copper.properties().colour, 0.7, 0.35),
             soot: metal(materials, [0.09, 0.08, 0.08], 0.0, 0.95),
@@ -270,12 +330,10 @@ impl Finishes {
         }
     }
 
-    /// The material for a part of a vehicle painted `body`.
+    /// The material for a part of a vehicle whose own stone is `body`.
     pub fn paint(&self, body: &Handle<StandardMaterial>, paint: Paint) -> Handle<StandardMaterial> {
         match paint {
-            Paint::Body => body.clone(),
-            Paint::Iron => self.iron.clone(),
-            Paint::Rubber => self.rubber.clone(),
+            Paint::Worn => self.worn.clone(),
             Paint::Trim => body.clone(),
         }
     }
@@ -441,11 +499,13 @@ mod tests {
         let mut meshes = Assets::<Mesh>::default();
         let vehicles = [cart(&mut meshes, Vec3::new(0.9, 0.7, 0.9), false), cart(&mut meshes, Vec3::new(1.2, 0.7, 0.9), true), crawler(&mut meshes, Vec3::new(1.4, 0.9, 0.9), 1.0)];
         for vehicle in &vehicles {
-            let mut pieces = vec![(Paint::Body, meshes.get(&vehicle.body).unwrap(), Transform::default())];
+            // The body is painted with the vehicle's own stone (`None`).
+            let mut pieces = vec![(None, meshes.get(&vehicle.body).unwrap(), Transform::default())];
             for part in &vehicle.parts {
-                pieces.push((part.paint, meshes.get(&part.mesh).unwrap(), part.transform));
-                if let Some((_, spokes)) = part.wheel.and_then(|r| vehicle.spokes.iter().find(|(s, _)| *s == r)) {
-                    pieces.push((Paint::Body, meshes.get(spokes).unwrap(), part.transform));
+                pieces.push((Some(part.paint), meshes.get(&part.mesh).unwrap(), part.transform));
+                let Motion::Wheel(radius) = part.motion else { continue };
+                if let Some((_, spokes)) = vehicle.spokes.iter().find(|(s, _)| *s == radius) {
+                    pieces.push((Some(Paint::Trim), meshes.get(spokes).unwrap(), part.transform));
                 }
             }
             let faces: Vec<_> = pieces.iter().map(|(paint, mesh, t)| (*paint, flat_faces(mesh, *t))).collect();
@@ -485,11 +545,40 @@ mod tests {
         let size = Vec3::new(1.4, 0.9, 0.9);
         let crawler = crawler(&mut meshes, size, -1.0);
         let (low, high) = bounds(&meshes, &crawler);
-        assert!((low.y + size.y / 2.0).abs() < 1e-4, "the treads stand on the floor: {low}");
-        assert!(low.x >= -size.x / 2.0 - 1e-4 && high.x <= size.x / 2.0 + 1e-4, "the lamp and the coupler keep to the ends: {low} {high}");
+        assert!((low.y + size.y / 2.0).abs() < 1e-4, "the feet stand on the floor: {low}");
+        assert!(low.x >= -size.x / 2.0 - 1e-4 && high.x <= size.x / 2.0 + 1e-4, "the eye and the coupler keep to the ends: {low} {high}");
         assert!(low.z >= -size.z / 2.0 - 1e-4 && high.z <= size.z / 2.0 + 1e-4, "{low} {high}");
         let (mut top, mut floor) = (Vec3::splat(f32::MIN), Vec3::splat(f32::MAX));
         grow(meshes.get(&crawler.body).unwrap(), Transform::default(), &mut floor, &mut top);
         assert!((top.y - size.y / 2.0).abs() < 1e-4, "the sight rides on the body's top");
+        // It walks: six legs, nothing that rolls, and no part of the castaway's (iron, rubber).
+        assert_eq!(crawler.parts.iter().filter(|p| matches!(p.motion, Motion::Leg(_)) && p.paint == Paint::Worn).count(), 6);
+        assert!(crawler.parts.iter().all(|p| !matches!(p.motion, Motion::Wheel(_))));
+    }
+
+    /// A planted foot keeps still on the ground while the body walks on, either way: it sweeps back
+    /// exactly as fast as the body goes, and it is down for half of each step.
+    #[test]
+    fn a_planted_foot_does_not_slide() {
+        let foot_x = |walked: f32| walked + LEG_H * step(walked, 0.0).0.sin();
+        let n = 400;
+        let mut planted = 0;
+        for i in 0..n {
+            let walked = 3.0 * STRIDE * i as f32 / n as f32;
+            if step(walked, 0.0).1 == 0.0 && step(walked + 0.002, 0.0).1 == 0.0 {
+                planted += 1;
+                assert!((foot_x(walked + 0.002) - foot_x(walked)).abs() < 1e-4, "the foot slides at {walked}");
+            }
+            let back = -walked;
+            if step(back, 0.0).1 == 0.0 && step(back - 0.002, 0.0).1 == 0.0 {
+                assert!((foot_x(back - 0.002) - foot_x(back)).abs() < 1e-4, "walking back, the foot slides at {back}");
+            }
+        }
+        assert!((planted as f32 / n as f32 - 0.5).abs() < 0.03, "down for {planted} of {n}");
+        // The two threes are never both up.
+        for i in 0..n {
+            let walked = STRIDE * i as f32 / n as f32;
+            assert!(step(walked, 0.0).1 == 0.0 || step(walked, PI).1 == 0.0, "all six feet up at {walked}");
+        }
     }
 }

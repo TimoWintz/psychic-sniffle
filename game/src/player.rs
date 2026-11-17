@@ -10,6 +10,8 @@ use bevy_egui::input::EguiWantsInput;
 /// Half-width and height of the avatar's collision box. Its transform is at its feet.
 const HALF_WIDTH: f32 = 0.3;
 const HEIGHT: f32 = 1.8;
+/// How many blocks the avatar is lifted to stand on something that rose where it was standing.
+const LIFT_OUT: i32 = 16;
 pub(crate) const WALK_SPEED: f32 = 5.0;
 pub(crate) const RUN_SPEED: f32 = 9.0;
 /// Take-off speed of a jump. The height reached depends on the planet: v^2 / (2 g).
@@ -190,7 +192,15 @@ pub(crate) fn move_player(
     }
     feet = next;
 
-    // Out of the world: back to the start.
+    // Something rose where the avatar stands (the ramp's steps, a crate put down): stand on top of it.
+    // The lowest free place straight above, so an overhang further up is not where it ends up.
+    if collides(&world, feet)
+        && let Some(lifted) = (1..=LIFT_OUT).map(|up| feet.with_y(feet.y.floor() + up as f32)).find(|p| !collides(&world, *p))
+    {
+        feet = lifted;
+        player.velocity.y = 0.0;
+    }
+    // Out of the world, or walled in: back to the start.
     if feet.y < 1.0 || collides(&world, feet) {
         feet = sites.spawn;
         player.velocity = Vec3::ZERO;

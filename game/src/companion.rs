@@ -61,8 +61,7 @@ impl Landmarks {
         let way = &sites.way;
         places.push(("The stone gate".into(), way.stone_gate + Vec3::Y * 2.0));
         places.push(("The north gate".into(), way.keystone));
-        let ramp = way.ramp.iter().map(|(c, _)| c.as_vec3()).sum::<Vec3>() / way.ramp.len().max(1) as f32;
-        places.push(("The ramp".into(), ramp + Vec3::Y));
+        places.push(("The ramp".into(), way.ramp.centre() + Vec3::Y * 0.5));
         places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
         Landmarks(places)
     }

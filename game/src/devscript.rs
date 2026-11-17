@@ -262,9 +262,14 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         WaitIdle,
         Wait(3.0),
         Shot("06_rail_result"),
-        // Stepping away from the console, the way wakes: the light runs up the road, the stone gate
-        // opens for the cart, and by evening the haul track has a console.
-        Station(None),
+        // Stepping away from the console with E, the way wakes (and the E that closed the console does
+        // not skip it): the marker's studs light, the light runs up the road, the stone gate opens
+        // for the cart, and by evening the haul track has a console.
+        Key(KeyCode::KeyE, true),
+        Wait(0.1),
+        Key(KeyCode::KeyE, false),
+        UntilWakeAt { stage: 1, at: 0.8, within: 30.0 },
+        Shot("06_wake_marker_lights"),
         UntilWakeAt { stage: 1, at: 1.0 + wakes[0].wake_starts() * 0.5, within: 30.0 },
         Shot("06_wake_light_runs"),
         UntilWakeAt { stage: 1, at: wakes[0].wake_starts() + 1.8, within: 30.0 },
@@ -348,8 +353,13 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         ExpectSolved(1),
         Shot("06j_chase_result"),
         Station(None),
+        // The crane wakes and lifts the sight off the crawler, round, and down at its foot.
+        UntilWakeAt { stage: 2, at: 0.5, within: 30.0 },
+        Shot("06j1_wake_crane_lifts_the_sight"),
+        UntilWakeAt { stage: 2, at: 1.6, within: 30.0 },
+        Shot("06j1b_wake_crane_swings"),
         UntilWakeAt { stage: 2, at: wakes[1].wake_starts() + 1.2, within: 30.0 },
-        Shot("06j2_wake_the_tower_lights"),
+        Shot("06j2_wake_the_tower_foot_lights"),
         WaitWakeEnd(30.0),
         // Caught: the sight waits at the foot of the transfer crane.
         Watch(Some(sites.crane_foot)),
@@ -438,6 +448,9 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(3.0),
         Shot("11_gravity_result"),
         Station(None),
+        // The tower lights to the top, then the ramp rises.
+        UntilWakeAt { stage: 3, at: 0.9, within: 30.0 },
+        Shot("11_wake_tower_to_the_top"),
         UntilWakeAt { stage: 3, at: wakes[2].wake_starts() + 1.2, within: 30.0 },
         Shot("11_wake_ramp_rises"),
         WaitWakeEnd(30.0),
@@ -515,6 +528,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Station(None),
         UntilWakeAt { stage: 4, at: 0.6, within: 30.0 },
         Shot("16_wake_rims_light"),
+        UntilWakeAt { stage: 4, at: wakes[3].wake_starts() + 1.4, within: 30.0 },
+        Shot("16b_wake_the_seal_sinks"),
         WaitWakeEnd(30.0),
         // The crated beam is down on the platform, and the beam waits on the tilting launcher beside it.
         Watch(Some(sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5)),
@@ -664,13 +679,14 @@ fn way(sites: &Sites) -> Vec<Step> {
     use Step::*;
     let way = &sites.way;
     let mut steps = vec![Start, UntilPlaying { within: 10.0 }, Windows { notebook: false, handbook: false, tutor: false }];
-    let views: [(&'static str, Vec3, f32, f32, f32); 7] = [
+    let views: [(&'static str, Vec3, f32, f32, f32); 8] = [
         ("01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
-        ("02_crane", way.machines[1].lerp(sites.crane_foot, 0.7), 0.6, 0.4, 22.0),
+        ("02_crane", way.crane_pivot.lerp(sites.crane_foot, 0.5), 0.6, 0.4, 16.0),
         ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
         ("04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
         ("05_canyon", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
         ("06_pad", sites.ridge_launch.origin.lerp(sites.shipyard, 0.4), 1.6, 0.6, 50.0),
+        ("06b_seal", way.seal.centre(), 1.2, 0.4, 24.0),
         ("07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
     ];
     let photograph = |steps: &mut Vec<Step>, state: &str| {
@@ -681,8 +697,7 @@ fn way(sites: &Sites) -> Vec<Step> {
         steps.push(Watch(None));
     };
     photograph(&mut steps, "asleep");
-    // Three wakes as they play: the light running, the machine waking, the console going in.
-    // Seconds into each wake: the light running, the machine waking, the console going in.
+    // Three wakes as they play, seconds in: the light running, the machine waking, the console going in.
     for (stage, moments) in [(1, [2.2, 5.6, 7.6, 10.4]), (3, [2.2, 4.6, 6.4, 8.0]), (5, [2.6, 5.0, 6.6, 7.6])] {
         steps.extend([Solve(stage - 1), UntilWoken { stage: stage - 1, within: 240.0 }, WaitWakeEnd(240.0), Solve(stage)]);
         for (i, at) in moments.into_iter().enumerate() {

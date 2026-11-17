@@ -3,7 +3,7 @@
 use crate::island::Sites;
 use crate::player::Player;
 use crate::state::{Game, Mode, Ui};
-use crate::waking::Waking;
+use crate::waking::{Camp, Waking};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use physics_core::materials::Material;
@@ -49,10 +49,18 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let cap = meshes.add(Cuboid::new(0.46, 0.07, 0.46));
     let quartz = Material::Quartz.properties().colour;
     let lamp_material = materials.add(StandardMaterial { base_color: Color::srgb(quartz[0], quartz[1], quartz[2]), unlit: true, ..default() });
-    for foot in &sites.lanterns {
-        commands.spawn((Mesh3d(pole.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 1.15)));
-        commands.spawn((Mesh3d(lamp.clone()), MeshMaterial3d(lamp_material.clone()), Transform::from_translation(*foot + Vec3::Y * 2.45)));
-        commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 2.68)));
+    for (foot, camp) in sites.lanterns.iter().zip(&sites.lantern_camp) {
+        let pieces = [
+            commands.spawn((Mesh3d(pole.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 1.15))).id(),
+            commands.spawn((Mesh3d(lamp.clone()), MeshMaterial3d(lamp_material.clone()), Transform::from_translation(*foot + Vec3::Y * 2.45))).id(),
+            commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 2.68))).id(),
+        ];
+        // A camp's lantern is there once its console is wired in.
+        if let Some(station) = camp {
+            for piece in pieces {
+                commands.entity(piece).insert(Camp(*station));
+            }
+        }
     }
 }
 
@@ -94,10 +102,13 @@ fn colour_beacons(
     waking: Res<Waking>,
     mut beacons: Query<(&Beacon, &MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut shown: Local<Option<usize>>,
 ) {
-    if !game.is_changed() && !waking.is_changed() {
+    // A wake changes the way every frame; the consoles only when it shows the next stage.
+    if !game.is_changed() && *shown == Some(waking.shown) {
         return;
     }
+    *shown = Some(waking.shown);
     for (beacon, handle, mut visibility) in &mut beacons {
         visibility.set_if_neq(if waking.console_shown(beacon.0) { Visibility::Inherited } else { Visibility::Hidden });
         let colour = if game.solved(beacon.0) {

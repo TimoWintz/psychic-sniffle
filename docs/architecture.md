@@ -48,7 +48,7 @@ it had. What the engine does afterwards cannot change the result.
 |---|---|
 | `intro` | title menu and the intro behind it: the placeholder sets for levels III and II, the ship, smoke and dust, the hand-over to the player's view |
 | `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
-| `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast |
+| `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
 | `stations` | station entities, proximity and interaction, the active puzzle |
@@ -58,13 +58,21 @@ it had. What the engine does afterwards cannot change the result.
 | `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's cargo, the light gate's notch on the drop tower, the canyon's jack frame, which raises the launcher) |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
 | `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
-| `shipyard` | ship parts that appear as chapters complete |
+| `shipyard` | ship parts that appear as chapters complete, and the sight the crawler carries |
+| `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved); the wake that plays after a pass (a pure timeline: the light running up the road, the machine waking, the fade while its console goes in), its camera and its letterbox; the quartz on the machines' moving parts |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
-| `devscript` | scripted run for automated screenshots (development only) |
+| `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake |
 
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in
 the world and the number the simulator uses are the same number.
+
+The island is built awake, with the way's quartz lit and the ramp onto the outcrop standing, and
+every island test checks that world. `waking::settle` puts it to the save's stage in `main`, before
+anything is meshed or collides; a test checks that sleeping and waking stage by stage gives back the
+island as built, and that the ledge is out of reach until the ramp rises. The physics engine's static
+collider is built from the sleeping world and not rebuilt, so the avatar (which collides with the
+block grid) walks up a ramp that has risen, but tumbling debris falls through it.
 
 The block grid is not quite fixed: movable crates are blocks too, so they can be stood on and
 measured. When one is picked up or put down, `carry` lists the changed cells and `scenery` meshes
@@ -132,7 +140,7 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
 - `cargo test -p game` — the island against the simulators' assumptions, the intro's timeline (pieces
   land at their wrecks, nothing flies through the ground, no visible jumps, the hand-over ends on the
   player's view).
-- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`) that drives
+- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`, `way`) that drives
   the game and writes screenshots. The tour loads the rail cart, times the crawler and catches it,
   times drops with the light gate at two notches, and carries the canyon's crates into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`

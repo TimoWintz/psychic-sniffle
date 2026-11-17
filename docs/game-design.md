@@ -148,19 +148,28 @@ has a console.
    it, the shipyard floor and the slipway run down to the strait, with the main hull beyond, and the
    north gate stands at the quay's end.
 
-After each pass, the light runs to the next machine, and the castaway wires its console in a short
-fade ("by evening…"). The island visibly fills in from south to north.
+After each pass, once the player has read the result and stepped away from the console (or after a
+few seconds), the way wakes, in a short scene behind letterbox bars:
+
+1. The machine whose job was done lights up.
+2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
+3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
+   cart rolls through, the ramp's steps rise out of the ground, the seal at the ridge sinks, the
+   north gate's beam reaches across the strait).
+4. The screen fades to dusk under a caption ("By evening, a console is wired into the drop
+   tower.") while the castaway wires its console in, and comes back on the player's own view.
+
+Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly
+fills in from south to north. While the ramp sleeps the ledge cannot be reached at all: the outcrop
+is sheer all round, too tall to climb even with this planet's highest jump.
 
 | Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
 | The supply rail | the first crate out of the wreck: our tools, up the road (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
 | Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
 | Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
-| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | both rims light; the crate stays on the platform and the beam waits on the tilting launcher; the stair up the ridge opens (wide enough for the castaway, not for the beam) |
+| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | both rims light; the crate stays on the platform and the beam waits on the tilting launcher; the seal across the road at the ridge's end sinks (it only ever stood in the castaway's way, not the beam's) |
 | Over the ridge | the frame beam itself, on to the shipyard | the beam lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff's frame rises in its cradle at the top of the slipway; Lumen hears the core for the first time |
-
-Most of the waking is still to build: today every machine stands ready from the start, and only the
-beam's progress and the frame show in the world.
 
 ## Pillars
 
@@ -303,7 +312,10 @@ on Lumen's eye) talks to Lumen. The avatar carries one thing at a time, in its h
 inventory.
 
 - **Stations.** While a station is open the engineer stays at its console: the movement keys do
-  nothing, the camera still turns and zooms. `E`, `Esc` or the panel's Leave button steps away.
+  nothing, the camera still turns and zooms. `E`, `Esc` or the panel's Leave button steps away. A
+  station opens once its console is wired in, after the way has woken its machine.
+- **Waking.** While the way wakes, the engineer waits and the camera follows the light; `E` or
+  `Esc` skips to the end.
 - **Ruler.** `R` takes one measurement: two clicks, then the ruler stops taking clicks and its reading
   stays on screen to be noted. `R` again measures anew; `Esc` or the card's close button puts it
   away; `R` or `Esc` before the second click cancels.

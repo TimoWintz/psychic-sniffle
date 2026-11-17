@@ -16,7 +16,7 @@
 
 use crate::avatar::{Activity, AvatarState};
 use crate::carry::{self, Carry, DirtyCells, Slot, Target};
-use crate::waking::Waking;
+use crate::waking::{Timeline, Waking};
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
@@ -195,6 +195,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let at_tower = sites.tower_plate + Vec3::Z * 1.8;
     let (short, long) = (3, game.layout.tower_h - 2);
     let clamp = |notch: u32| Step::CarryAt { feet: at_tower, facing: Vec3::NEG_Z, expect: Expect::Clamp(notch), aim: Some(sites.tower_release.y - notch as f32) };
+    // When things happen in each wake, to photograph them.
+    let wakes: Vec<Timeline> = (1..=crate::state::PUZZLES).map(|stage| Timeline::new(stage, &sites.way)).collect();
     let mut steps = vec![
         Start,
         UntilPlaying { within: 10.0 },
@@ -260,6 +262,16 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         WaitIdle,
         Wait(3.0),
         Shot("06_rail_result"),
+        // Stepping away from the console, the way wakes: the light runs up the road, the stone gate
+        // opens for the cart, and by evening the haul track has a console.
+        Station(None),
+        UntilWakeAt { stage: 1, at: 1.0 + wakes[0].wake_starts() * 0.5, within: 30.0 },
+        Shot("06_wake_light_runs"),
+        UntilWakeAt { stage: 1, at: wakes[0].wake_starts() + 1.8, within: 30.0 },
+        Shot("06_wake_stone_gate_opens"),
+        UntilWakeAt { stage: 1, at: wakes[0].rigging(), within: 30.0 },
+        Shot("06_wake_console_wired_in"),
+        WaitWakeEnd(30.0),
         Windows { notebook: false, handbook: true, tutor: false },
         Wait(0.4),
         Shot("06b_first_page_and_a_locked_one"),
@@ -335,8 +347,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.5),
         ExpectSolved(1),
         Shot("06j_chase_result"),
-        // Caught: the sight waits at the foot of the transfer crane.
         Station(None),
+        UntilWakeAt { stage: 2, at: wakes[1].wake_starts() + 1.2, within: 30.0 },
+        Shot("06j2_wake_the_tower_lights"),
+        WaitWakeEnd(30.0),
+        // Caught: the sight waits at the foot of the transfer crane.
         Watch(Some(sites.crane_foot)),
         // From above, so the crane's mast does not stand between the camera and the unit.
         Look { yaw: 2.6, pitch: 1.1, distance: 9.0 },
@@ -422,6 +437,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         WaitIdle,
         Wait(3.0),
         Shot("11_gravity_result"),
+        Station(None),
+        UntilWakeAt { stage: 3, at: wakes[2].wake_starts() + 1.2, within: 30.0 },
+        Shot("11_wake_ramp_rises"),
+        WaitWakeEnd(30.0),
         // Puzzle 3: a refused entry, a miss, then the calculated shot.
         GoToStation(3),
         Look { yaw: -1.05 + TURN, pitch: 0.45, distance: 30.0 },
@@ -493,8 +512,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(2.5),
         ExpectSolved(3),
         Shot("16_canyon_result"),
-        // The crated beam is down on the platform, and the beam waits on the tilting launcher beside it.
         Station(None),
+        UntilWakeAt { stage: 4, at: 0.6, within: 30.0 },
+        Shot("16_wake_rims_light"),
+        WaitWakeEnd(30.0),
+        // The crated beam is down on the platform, and the beam waits on the tilting launcher beside it.
         Watch(Some(sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5)),
         Look { yaw: -0.6 + TURN, pitch: 0.55, distance: 18.0 },
         Wait(3.0),
@@ -546,6 +568,9 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(3.0),
         Shot("19_ridge_result"),
         Station(None),
+        UntilWakeAt { stage: 5, at: wakes[4].wake_starts() + 2.2, within: 30.0 },
+        Shot("19_wake_north_gate"),
+        WaitWakeEnd(30.0),
         expect_gaze("The shipyard floor"),
         GoTo(sites.shipyard + Vec3::new(9.0, 0.0, 11.0)),
         Look { yaw: -0.8 + TURN, pitch: 0.3, distance: 16.0 },
@@ -570,6 +595,10 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
     vec![
         Start,
         UntilPlaying { within: 10.0 },
+        // The steps onto the outcrop rise once gravity is measured: wake the way that far.
+        Solve(3),
+        UntilWoken { stage: 3, within: 240.0 },
+        WaitWakeEnd(60.0),
         // Start on the grass south of the steps and walk north: up the steps onto the outcrop.
         GoTo((ledge + back * (20.0 + game.layout.ledge_h as f32)).with_y(ground)),
         Look { yaw: north, pitch: 0.5, distance: 16.0 },

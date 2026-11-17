@@ -122,6 +122,9 @@ const FADE: f32 = 0.8;
 const CAPTION: f32 = 1.8;
 /// How long the letterbox bars take to come in, and to go.
 const BARS: f32 = 0.6;
+/// How long a pass's result may be read at its console before the wake starts anyway; stepping away
+/// from the console starts it at once.
+const READ_RESULT: f32 = 8.0;
 /// How far into its wake the stone gate's leaf is down far enough for the cart to roll through.
 const GATE_CLEAR: f32 = 0.35;
 
@@ -156,6 +159,16 @@ impl Timeline {
 
     pub fn length(&self) -> f32 {
         GLOW + self.run + self.wake + self.rig
+    }
+
+    /// When the machine starts to wake, once the light has run.
+    pub fn wake_starts(&self) -> f32 {
+        GLOW + self.run
+    }
+
+    /// When the screen is dark and the caption shows, while the console goes in.
+    pub fn rigging(&self) -> f32 {
+        self.rig_start() + FADE + CAPTION / 2.0
     }
 
     fn rig_start(&self) -> f32 {
@@ -227,9 +240,15 @@ pub struct Waking {
     pub shown: usize,
     /// The wake playing now, if one is.
     pub play: Option<Play>,
+    /// Seconds a wake has been due while the player read the result at the console.
+    waited: f32,
 }
 
 impl Waking {
+    pub fn new(shown: usize) -> Self {
+        Waking { shown, play: None, waited: 0.0 }
+    }
+
     pub fn playing(&self) -> bool {
         self.play.is_some()
     }
@@ -354,7 +373,7 @@ impl Plugin for WakingPlugin {
             let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
             MachineTrim(std::array::from_fn(|machine| materials.add(MachineTrim::look(machine_lit(machine, shown)))))
         };
-        app.insert_resource(Waking { shown, play: None })
+        app.insert_resource(Waking::new(shown))
             .insert_resource(trim)
             .add_systems(Startup, spawn)
             .add_systems(Update, (play.run_if(in_state(Mode::Playing)), pose_parts, light_trim).chain())
@@ -422,8 +441,18 @@ fn play(
             waking.shown = saved;
         }
         if saved <= waking.shown || sim.busy() || sim.watching() {
+            if waking.waited != 0.0 {
+                waking.waited = 0.0;
+            }
             return;
         }
+        // The result can be read first: the wake starts once the player steps away from the console,
+        // or after a while.
+        waking.waited += time.delta_secs();
+        if ui.station.is_some() && waking.waited < READ_RESULT {
+            return;
+        }
+        waking.waited = 0.0;
         waking.play = Some(Play { timeline: Timeline::new(waking.shown + 1, way), t: 0.0 });
         // The panel steps aside and the camera goes to watch.
         ui.station = None;
@@ -598,7 +627,7 @@ mod tests {
     fn the_cart_rolls_through_the_gate_once_its_leaf_is_down() {
         let (_, sites) = island::build(&Ch1Layout::generate(3));
         let timeline = Timeline::new(1, &sites.way);
-        let at = |t: f32| Waking { shown: 0, play: Some(Play { timeline, t }) };
+        let at = |t: f32| Waking { play: Some(Play { timeline, t }), ..Waking::new(0) };
         assert!(!at(0.0).gate_is_open());
         let open = (0..400).map(|i| i as f32 * 0.05).find(|&t| at(t).gate_is_open()).expect("the gate opens");
         assert!((at(open).open(Part::GateLeaf) - 1.0).abs() < 1e-3, "the leaf is down when the cart may pass");

@@ -75,8 +75,7 @@ value never works. All lengths are whole metres so they can be checked by counti
 
 The stations are the machines of the ancient way (see the game design's story): asleep at the start,
 woken one by one as each job is done right. The builders give no numbers; every orange mark is the
-castaway's. Each puzzle's **Wakes** line is the target design; today the machines all stand ready
-from the start.
+castaway's. Each puzzle's **Wakes** line says what its pass wakes (see `game/src/waking.rs`).
 
 ### Puzzle 0 — The supply rail (tutorial)
 
@@ -186,7 +185,7 @@ from the start.
 - **Story.** The frame beam itself, packed in a salvage crate, crosses the canyon: the first real
   shot with the player's g. The platform is beside the tilting launcher. Pass: the crate stays on the
   platform and the beam waits on the tilting launcher.
-- **Wakes.** Both rims; the stair up the ridge opens, wide enough for the castaway but not the beam.
+- **Wakes.** Both rims; the seal across the road at the ridge's end sinks.
 - **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
   horizontally, but its worn dial turns only within a band (`vmin` to `vmax`, found and painted on
   the rating plate by the castaway), and from the bare ledge no speed in the band reaches the strip.

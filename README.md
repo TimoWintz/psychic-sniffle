@@ -40,6 +40,10 @@ E use a station (E or Esc leaves) · F pick up and put down · R measure once wi
 N notebook and calculator · H handbook · T (or click the eye) Lumen. N, H and T expand and reduce panels
 that stay on screen.
 
+The road's machines sleep at the start. Each pass wakes the next one: a light runs up the road's
+quartz to it, it stirs (a gate opens, a ramp of steps rises, a beam reaches across the strait), and
+by evening the castaway has wired a console into it. E or Esc skips the scene.
+
 Some things are done with your hands. The supply rail's cart will not run until you have carried its
 cargo crate onto it. On the haul track the road builders' crawler walks at one steady speed you can only
 measure: time it between two posts, then set the haul cart's speed so it catches the crawler on the

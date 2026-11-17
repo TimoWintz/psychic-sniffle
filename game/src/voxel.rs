@@ -4,11 +4,14 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use physics_core::materials::Material;
+use std::collections::HashSet;
 
 #[derive(Resource, Clone)]
 pub struct VoxelWorld {
     pub size: IVec3,
     cells: Vec<u8>,
+    /// Glowing blocks that are dark for now: the way's quartz while its machine sleeps.
+    dark: HashSet<IVec3>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -22,7 +25,21 @@ pub struct RayHit {
 
 impl VoxelWorld {
     pub fn new(size: IVec3) -> Self {
-        VoxelWorld { size, cells: vec![0; (size.x * size.y * size.z) as usize] }
+        VoxelWorld { size, cells: vec![0; (size.x * size.y * size.z) as usize], dark: HashSet::new() }
+    }
+
+    /// Put out the glow of a block, or light it again. A dark block is drawn with the rest, in a dim
+    /// colour of its own.
+    pub fn set_dark(&mut self, p: IVec3, dark: bool) {
+        if dark {
+            self.dark.insert(p);
+        } else {
+            self.dark.remove(&p);
+        }
+    }
+
+    pub fn is_dark(&self, p: IVec3) -> bool {
+        self.dark.contains(&p)
     }
 
     fn index(&self, p: IVec3) -> Option<usize> {
@@ -148,11 +165,13 @@ impl VoxelWorld {
                 for x in x0..x1 {
                     let p = IVec3::new(x, y, z);
                     let material = self.get(p);
-                    if !material.is_solid() || glows(material) != glow {
+                    let dark = glows(material) && self.dark.contains(&p);
+                    if !material.is_solid() || (glows(material) && !dark) != glow {
                         continue;
                     }
                     // Vertex colours are linear; the tints are sRGB.
-                    let base = Color::srgb_from_array(tint(material, p)).to_linear();
+                    let colour = if dark { DARK_QUARTZ.map(|c| c * (0.9 + 0.2 * hash01(p))) } else { tint(material, p) };
+                    let base = Color::srgb_from_array(colour).to_linear();
                     for face in &FACES {
                         if self.is_solid(p + face.normal) {
                             continue;
@@ -206,6 +225,10 @@ impl VoxelWorld {
 
 /// Brightness of a face corner by occlusion level.
 const AO_LIGHT: [f32; 4] = [0.50, 0.66, 0.82, 1.0];
+
+/// Sleeping quartz: slate with a cold green cast, darker than any rock, so it reads as a channel
+/// waiting to be lit and is never taken for survey paint.
+const DARK_QUARTZ: [f32; 3] = [0.17, 0.24, 0.27];
 
 /// Blocks drawn unlit, so they read as glowing: survey markers and quartz.
 pub fn glows(material: Material) -> bool {
@@ -355,6 +378,19 @@ mod tests {
         let faces = 64 + 4 * 24 + 64;
         assert_eq!(mesh.count_vertices(), faces * 4);
         assert_eq!(slab().exposed_blocks().len(), 8 * 8 * 3 - 6 * 6);
+    }
+
+    #[test]
+    fn dark_quartz_is_drawn_with_the_rest_until_it_is_lit() {
+        let mut world = slab();
+        world.set(IVec3::new(3, 2, 3), Material::Quartz);
+        let glowing = |w: &VoxelWorld| w.mesh(0, 8, 0, 8, true).count_vertices();
+        assert_eq!(glowing(&world), 4, "lit: its top face glows");
+        world.set_dark(IVec3::new(3, 2, 3), true);
+        assert_eq!(glowing(&world), 0, "dark: nothing glows");
+        assert_eq!(world.mesh(0, 8, 0, 8, false).count_vertices(), slab().mesh(0, 8, 0, 8, false).count_vertices());
+        world.set_dark(IVec3::new(3, 2, 3), false);
+        assert_eq!(glowing(&world), 4, "lit again");
     }
 
     #[test]

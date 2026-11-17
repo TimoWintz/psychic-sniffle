@@ -152,7 +152,8 @@ impl Plugin for DevScriptPlugin {
             "walk" => walk(game, sites),
             "intro" => intro(),
             "pose" => pose(game, sites),
-            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose)"),
+            "way" => way(sites),
+            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way)"),
         };
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");
@@ -618,6 +619,27 @@ fn intro() -> Vec<Step> {
         Key(KeyCode::KeyW, false),
         Quit,
     ]
+}
+
+/// The way's machines, one picture each, as they stand in the save the run starts from.
+fn way(sites: &Sites) -> Vec<Step> {
+    use Step::*;
+    let way = &sites.way;
+    let mut steps = vec![Start, UntilPlaying { within: 10.0 }, Windows { notebook: false, handbook: false, tutor: false }];
+    let views: [(&'static str, Vec3, f32, f32, f32); 7] = [
+        ("way_01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
+        ("way_02_crane", way.machines[1].lerp(sites.crane_foot, 0.7), 0.6, 0.4, 22.0),
+        ("way_03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
+        ("way_04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
+        ("way_05_canyon", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
+        ("way_06_pad", sites.ridge_launch.origin.lerp(sites.shipyard, 0.4), 1.6, 0.6, 50.0),
+        ("way_07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
+    ];
+    for (name, at, yaw, pitch, distance) in views {
+        steps.extend([Watch(Some(at + Vec3::Y * 2.0)), Look { yaw, pitch, distance }, Wait(1.2), Shot(name)]);
+    }
+    steps.push(Quit);
+    steps
 }
 
 fn pose(game: &Game, sites: &Sites) -> Vec<Step> {

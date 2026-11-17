@@ -26,6 +26,8 @@ pub enum Material {
     Foliage,
     /// Crystalline silica; the island's quartz glows faintly.
     Quartz,
+    /// Dressed pale stone: the ancient road and its machines.
+    Limestone,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -45,7 +47,7 @@ pub struct Properties {
 }
 
 impl Material {
-    pub const ALL: [Material; 14] = [
+    pub const ALL: [Material; 15] = [
         Material::Air,
         Material::Rock,
         Material::Soil,
@@ -60,6 +62,7 @@ impl Material {
         Material::HullAlloy,
         Material::Foliage,
         Material::Quartz,
+        Material::Limestone,
     ];
 
     pub fn from_id(id: u8) -> Material {
@@ -105,6 +108,7 @@ impl Material {
             Material::HullAlloy => p("Hull alloy", 4500.0, 520.0, 7.0, 1.7e-6, [0.62, 0.70, 0.80], true),
             Material::Foliage => p("Foliage", 650.0, 2500.0, 0.2, INSULATOR, [0.22, 0.55, 0.60], true),
             Material::Quartz => p("Quartz", 2650.0, 740.0, 7.7, INSULATOR, [0.62, 0.96, 0.92], true),
+            Material::Limestone => p("Limestone", 2600.0, 910.0, 2.2, INSULATOR, [0.86, 0.82, 0.72], true),
         }
     }
 }

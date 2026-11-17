@@ -395,6 +395,8 @@ mod tests {
         chapter.puzzles[2].demo.as_mut().unwrap().answer = 7;
         chapter.puzzles[3].done = String::new();
         chapter.puzzles[4].why = "Clear the ridge at 45 degrees.".into();
+        chapter.puzzles[1].rigged = String::new();
+        chapter.puzzles[2].rigged = "By evening, 2 consoles.".into();
         chapter.remarks[0].line.text = "Only 3 more.".into();
         chapter.remarks[1].when = RemarkWhen::After("1.1.9".into());
         chapter.concepts[3].quiz[0].answer = 9;
@@ -405,6 +407,8 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("an answer among them")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("1.1.3: Lumen needs a why and a done line")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("1.1.4: the why and done lines")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.1: its console needs a caption")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.2: the wiring caption must hold no digits")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("Only 3 more.")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("unknown puzzle 1.1.9")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("quiz question 1 needs choices")), "{problems:?}");

@@ -60,14 +60,15 @@ on the horizon.
 Two hands built what stands at the puzzle sites, and they should never be confused.
 
 - **The way.** A road of dressed pale stone runs from the south coast to a gate on the north shore,
-  and its builders' machines stand along it: a cart in a sunk rail, a crawler, a drop tower and a
+  and its builders' machines stand along it: a cart in a groove sunk in stone, a crawler that walks
+  on six stone legs, a drop tower and a
   taller survey mast, two launchers (one in a stone jack frame on the canyon rim, one that tilts), a
   crane arm, and a quay with a slipway down to the strait. Their stone is smooth and pale and its
   edges are worn; quartz runs in channels through the joints. A machine that is **asleep** has dark
   quartz and does not move. An **awake** one glows the island's quartz colour.
 - **The castaway's salvage.** What the player and Lumen add is rough and new: a console wired into
   each machine (Lumen reads through it, the player commits through it), hull plates laid on the turf
-  around it, salvage crates, the light gate, worn paths from one site to the next, and survey orange
+  around it, salvage crates, the light gate, a worn path from each camp to the road, and survey orange
   paint on the old stone wherever a number lives: markers, timing posts, the tower's metre notches,
   the target strip, the rating plate. Orange means "a number lives here", and it is always ours:
   the builders left no numbers.
@@ -137,7 +138,9 @@ is on the north shore, on the builders' old quay, facing the strait and the main
 and over the ridge. The beam is too heavy to carry, but the builders' launchers can throw it, once
 they can aim. The chapter is one route that leads there, the southern stretch of the way, and each
 station is the next machine along it. At the start all of it is asleep and only the first station
-has a console.
+has a console; each other station's camp goes in with its console. The ridge runs on as a wall, the
+spine, from coast to coast (a reef under the water at both ends), and the road crosses it by one
+pass, which a stone seal closes.
 
 1. The road's rail runs east from the wreck. Its first stretch is the supply rail; past a stone gate
    the same rail is the haul track, where the same cart chases the crawler to the transfer crane.
@@ -151,24 +154,26 @@ has a console.
 After each pass, once the player has read the result and stepped away from the console (or after a
 few seconds), the way wakes, in a short scene behind letterbox bars:
 
-1. The machine whose job was done lights up.
+1. The machine whose job was done lights up (and, after the crawler's pass, the crane swings the
+   sight off its back and sets it down at its foot).
 2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
 3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
-   cart rolls through, the ramp's steps rise out of the ground, the seal at the ridge sinks, the
+   cart rolls through, the ramp's steps rise out of the ground, the seal in the pass sinks, the
    north gate's beam reaches across the strait).
 4. The screen fades to dusk under a caption ("By evening, a console is wired into the drop
    tower.") while the castaway wires its console in, and comes back on the player's own view.
 
 Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly
 fills in from south to north. While the ramp sleeps the ledge cannot be reached at all: the outcrop
-is sheer all round, too tall to climb even with this planet's highest jump.
+is sheer all round, too tall to climb even with this planet's highest jump. While the seal sleeps the
+north shore cannot be reached either: nothing climbs the spine, and nothing goes round it.
 
 | Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
 | The supply rail | the first crate out of the wreck: our tools, up the road (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
 | Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
 | Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
-| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | both rims light; the crate stays on the platform and the beam waits on the tilting launcher; the seal across the road at the ridge's end sinks (it only ever stood in the castaway's way, not the beam's) |
+| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | both rims light; the crate stays on the platform and the beam waits on the tilting launcher; the seal in the pass through the spine sinks (it only ever stood in the castaway's way, not the beam's) |
 | Over the ridge | the frame beam itself, on to the shipyard | the beam lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff's frame rises in its cradle at the top of the slipway; Lumen hears the core for the first time |
 
 ## Pillars

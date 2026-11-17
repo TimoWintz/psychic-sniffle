@@ -52,14 +52,14 @@ it had. What the engine does afterwards cannot change the result.
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
 | `stations` | station entities, proximity and interaction, the active puzzle |
-| `sim` | experiment and test playback, hand-off to the physics engine, handbook pages written by what is seen |
+| `sim` | experiment and test playback, hand-off to the physics engine (whose view of the island is built again when the way's blocks come or go), handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
 | `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's cargo, the light gate's notch on the drop tower, the canyon's jack frame, which raises the launcher) |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
 | `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
-| `shipyard` | ship parts that appear as chapters complete, and the sight the crawler carries |
-| `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved); the wake that plays after a pass (a pure timeline: the light running up the road, the machine waking, the fade while its console goes in), its camera and its letterbox; the quartz on the machines' moving parts |
+| `shipyard` | ship parts that appear as chapters complete, and the sight the crawler carries (where it is, `waking` says) |
+| `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved). Each machine's quartz has a wake set (lit when the light reaches it) and a done set (lit when its own job is done); its stonework rises or sinks layer by layer (the ramp, the stone gate's leaf, the seal in the pass through the spine); the castaway's camps are laid once their consoles are wired in. The wake that plays after a pass (a pure timeline: the job's quartz lighting, the crane lifting the sight off after the crawler's pass, the light running up the road, the machine waking, the fade while its console goes in), its camera and its letterbox; the quartz on the machines' moving parts |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
 | `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake |
@@ -70,9 +70,11 @@ the world and the number the simulator uses are the same number.
 The island is built awake, with the way's quartz lit and the ramp onto the outcrop standing, and
 every island test checks that world. `waking::settle` puts it to the save's stage in `main`, before
 anything is meshed or collides; a test checks that sleeping and waking stage by stage gives back the
-island as built, and that the ledge is out of reach until the ramp rises. The physics engine's static
-collider is built from the sleeping world and not rebuilt, so the avatar (which collides with the
-block grid) walks up a ramp that has risen, but tumbling debris falls through it.
+island as built, that the ledge is out of reach until the ramp rises, that the shipyard is out of
+reach until the seal sinks (the spine runs from coast to coast, a reef under the water at both
+ends, and nothing climbs it), and that neither launcher's line is touched by the way at any stage.
+When the way's blocks change for good (behind the fade, or on a new game), `sim` builds the physics
+engine's static collider again, so tumbling debris meets the island the avatar walks on.
 
 The block grid is not quite fixed: movable crates are blocks too, so they can be stood on and
 measured. When one is picked up or put down, `carry` lists the changed cells and `scenery` meshes

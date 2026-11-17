@@ -185,7 +185,8 @@ castaway's. Each puzzle's **Wakes** line says what its pass wakes (see `game/src
 - **Story.** The frame beam itself, packed in a salvage crate, crosses the canyon: the first real
   shot with the player's g. The platform is beside the tilting launcher. Pass: the crate stays on the
   platform and the beam waits on the tilting launcher.
-- **Wakes.** Both rims; the seal across the road at the ridge's end sinks.
+- **Wakes.** Both rims; the seal in the pass through the spine, the ridge's wall from coast to
+  coast, sinks, and the north shore can be reached.
 - **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
   horizontally, but its worn dial turns only within a band (`vmin` to `vmax`, found and painted on
   the rating plate by the castaway), and from the bare ledge no speed in the band reaches the strip.

@@ -5,9 +5,10 @@ Working title: **First Principles**.
 ## Vision
 
 You are stranded on a small voxel planet beside the wreck of your ship, which came down across an
-ancient road whose builders are long gone. Their machines along it are asleep. To leave, you build a new ship
-three times over — a skiff, an orbiter, a starship — and every part of it has to be earned by doing the
-physics that the part depends on. By the time the starship leaves, the player has worked through
+ancient road whose builders are long gone. Their machines along it are asleep, and so is the skiff
+they left on its slipway. To leave, you need a vessel three times over — first their skiff, woken
+part by part, then an orbiter and a starship — and every part has to be earned by doing the physics
+that the part depends on. By the time the starship leaves, the player has worked through
 mechanics, electromagnetism and thermodynamics to first-year university level.
 
 The ship's computer, **Lumen**, survived the crash with its sensors intact and its actuators gone. It
@@ -18,7 +19,7 @@ player's job. What survived on the island is only a backup of it; the rest is ac
 Lumen is on screen as a holographic eye in the lower left corner. It points with a beam of light only
 where that helps: the way to the next station for a while after it opens (and again when you stand at
 a station that is done or locked), the experiment and the job of an unsolved station (and what to
-carry for it: the cargo crate, the light gate, the ledge's crates, then where they go), the yellow pin
+carry for it: the cart's block, the light gate, the ledge's blocks, then where they go), the yellow pin
 to click while measuring, the target while a test runs. Nothing about a solved puzzle draws the beam;
 otherwise the eye just looks about. When the place is off screen, the beam ends in an arrow at the
 edge of the screen. It says short lines in a bubble above the eye when something happens (a test lands,
@@ -37,7 +38,7 @@ in the chapter's file; all of them are spoken, so none holds a digit.
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
 - **Closing.** When the chapter's part is installed, and what woke along the way with it.
 - **Remarks.** A handful of lines about places (the wreck on the road, the shore facing the strait,
-  the canyon rim, the ridge, the old quay under the shipyard), each said once a session when the player comes near. Lumen makes a
+  the canyon rim, the ridge, the skiff on the old quay), each said once a session when the player comes near. Lumen makes a
   remark only when nothing is going on: no station open, no test or experiment running, the ruler
   away, nothing carried, its conversation closed, and nothing said for 40 seconds.
 - **Help.** Once per station a session: after a first miss at the canyon or the ridge, that the
@@ -63,15 +64,19 @@ Two hands built what stands at the puzzle sites, and they should never be confus
   and its builders' machines stand along it: a cart in a groove sunk in stone, a crawler that walks
   on six stone legs, a drop tower and a
   taller survey mast, two launchers (one in a stone jack frame on the canyon rim, one that tilts), a
-  crane arm, and a quay with a slipway down to the strait. Their stone is smooth and pale and its
-  edges are worn; quartz runs in channels through the joints. A machine that is **asleep** has dark
-  quartz and does not move. An **awake** one glows the island's quartz colour.
-- **The castaway's salvage.** What the player and Lumen add is rough and new: a console wired into
-  each machine (Lumen reads through it, the player commits through it), hull plates laid on the turf
-  around it, salvage crates, the light gate, a worn path from each camp to the road, and survey orange
-  paint on the old stone wherever a number lives: markers, timing posts, the tower's metre notches,
-  the target strip, the rating plate. Orange means "a number lives here", and it is always ours:
-  the builders left no numbers.
+  crane arm, and a quay with a slipway down to the strait, where their skiff lies. Beside each machine
+  stands its console, a stone with a quartz face (Lumen reads through it, the player commits through
+  it), and a stone lamp. The blocks the cart carries and the jack frame takes, the casket the helm
+  travels in and the helm itself are theirs too. Their stone is smooth and pale and its edges are
+  worn; quartz runs in channels through the joints. A machine that is **asleep** has dark quartz and
+  does not move, and neither its console nor its lamp glows. An **awake** one glows the island's
+  quartz colour, console and lamp with it.
+- **The castaway's marks.** What the player and Lumen add is little, and all of it is for measuring:
+  the light gate, and survey orange paint on the old stone wherever a number lives: markers, timing
+  posts, the tower's metre notches, the target strip, the rating plate, and the handles painted on
+  what can be carried. Orange means "a number lives here" (or "this moves"), and it is always ours:
+  the builders left no numbers. Apart from that, only the wreck and the scrap thrown clear of it are
+  ours.
 
 The landforms a puzzle needs (the outcrop, the canyon, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
@@ -100,9 +105,9 @@ island, across the southern end of an ancient road. The main hull stays in view 
 northern shore.
 
 **The way.** The road and its machines were built by someone who is not here any more, long ago. The
-machines are asleep. Wired to a console, one does exactly what it is told and works nothing out:
+machines are asleep. Through its console, one does exactly what it is told and works nothing out:
 every number still has to come from the player. When a machine's job is done right (the cart stops on
-the marker, the crate lands in the strip), its quartz lights, and the light runs along the road to
+the marker, the casket lands in the strip), its quartz lights, and the light runs along the road to
 the next machine, which wakes. Why the way answers work done right is never explained. Lumen notices
 the pattern, wonders about it in a line or two, and is honest that it does not know. The way runs
 through the whole tier: each chapter wakes another part of it, the gate on the north shore points at
@@ -117,39 +122,42 @@ in the main hull: its memory, its full instruments and the fabricator's controls
 Lumen looks across at it now and then. Its tone is a colleague's: dry, curious, honest about being
 partial, never mopey.
 
-**Tier 1, the Skiff: cross the strait.** Each chapter adds one part, and one thing Lumen learns about
-this world.
+**Tier 1, the Skiff: cross the strait.** The skiff is the builders', and it lies asleep on its
+slipway on the north shore. Nobody builds it: each chapter wakes one part of it (and more of the way),
+and Lumen learns one thing about this world.
 
 | Chapter | Part | Why the crossing needs it | What Lumen learns |
 |---|---|---|---|
-| 1.1 The Salvage Launcher | frame | a boat starts with a frame, and the beam has to reach the shipyard | local g |
-| 1.2 First Light | lighting and power loop | the backup's cells are fading, and the crossing runs into the night | what the salvaged cells can deliver |
-| 1.3 The Haul | winch, hull plates | the plates lie on the shore and the shipyard is uphill | how these grounds grip |
-| 1.4 The Forge | hull alloy | the plates are torn and must be reforged | how the alloy takes heat |
-| 1.5 The Lift | drive | something has to push the boat across | what the drive can lift and hold |
-| 1.6 Skiff Trial | skiff complete | the crossing itself is the test flight | — |
+| 1.1 The Helm | helm | the skiff has no helm: it sits in a casket on a launcher over the canyon | local g |
+| 1.2 First Light | its lamps and power loop | the skiff's quartz is drained, the backup's cells are fading, and the crossing runs into the night | what the salvaged cells can deliver |
+| 1.3 The Haul | winch, hull stones | its loose hull stones lie on the shore below the quay, and the slipway is uphill | how these grounds grip |
+| 1.4 The Forge | hull stones refired | some stones are cracked, and the builders' kiln must fire them again | how the stone takes heat |
+| 1.5 The Lift | drive | something has to push the skiff across | what the drive can lift and hold |
+| 1.6 Skiff Trial | skiff awake | the crossing itself is the test flight | — |
 
 The tier ends when the skiff reaches the main hull and the backup joins its core. Lumen is whole, but
 the core took damage, and the drive section is still in orbit. The main hull's fabricator builds the
 orbiter in tier 2, and the restored core brings the grapher, tier 2's instrument.
 
-**Chapter 1.1: waking the way.** The frame beam is at the wreck on the south coast; the shipyard
-is on the north shore, on the builders' old quay, facing the strait and the main hull, past the canyon
-and over the ridge. The beam is too heavy to carry, but the builders' launchers can throw it, once
-they can aim. The chapter is one route that leads there, the southern stretch of the way, and each
-station is the next machine along it. At the start all of it is asleep and only the first station
-has a console; each other station's camp goes in with its console. The ridge runs on as a wall, the
+**Chapter 1.1: the helm.** The skiff lies on the builders' old quay on the north shore, facing the
+strait and the main hull. Its helm, a long stone tiller, never reached it: it sits in a stone casket
+on the launcher above the canyon, as if the way was sending it there when everything stopped. The
+casket is too heavy to carry, but the builders' launchers can throw it, once they can aim. The
+chapter is one route from the wreck on the south coast to the quay, the southern stretch of the way,
+and each station is the next machine along it. At the start all of it is asleep; only the first
+console glows. Each other console lights as its machine wakes. The ridge runs on as a wall, the
 spine, from coast to coast (a reef under the water at both ends), and the road crosses it by one
 pass, which a stone seal closes.
 
 1. The road's rail runs east from the wreck. Its first stretch is the supply rail; past a stone gate
    the same rail is the haul track, where the same cart chases the crawler to the transfer crane.
 2. The drop tower and the survey mast stand at the rail's end, under the outcrop.
-3. A ramp climbs north onto the outcrop, where the ledge launcher fires north across the canyon. The
-   crated beam lands on the platform beside the tilting launcher, and a dolly rail takes it aboard.
-4. The tilting launcher fires the beam north over the ridge onto the landing circle on the quay. Past
-   it, the shipyard floor and the slipway run down to the strait, with the main hull beyond, and the
-   north gate stands at the quay's end.
+3. A ramp climbs north onto the outcrop, where the ledge launcher fires the casket north across the
+   canyon. It lands on the platform beside the tilting launcher, and a dolly rail takes the tiller
+   aboard.
+4. The tilting launcher fires the tiller north over the ridge into the landing circle on the quay.
+   Past it, the skiff lies on the quay at the head of the slipway, which runs down to the strait,
+   with the main hull beyond, and the north gate stands at the quay's end.
 
 After each pass, once the player has read the result and stepped away from the console (or after a
 few seconds), the way wakes, in a short scene behind letterbox bars:
@@ -159,9 +167,8 @@ few seconds), the way wakes, in a short scene behind letterbox bars:
 2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
 3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
    cart rolls through, the ramp's steps rise out of the ground, the seal in the pass sinks, the
-   north gate's beam reaches across the strait).
-4. The screen fades to dusk under a caption ("By evening, a console is wired into the drop
-   tower.") while the castaway wires its console in, and comes back on the player's own view.
+   north gate's beam reaches across the strait). Its console's face and its lamp light with it.
+4. The camera glides back to the player's own view, and the letterbox goes.
 
 Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly
 fills in from south to north. While the ramp sleeps the ledge cannot be reached at all: the outcrop
@@ -170,11 +177,11 @@ north shore cannot be reached either: nothing climbs the spine, and nothing goes
 
 | Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
-| The supply rail | the first crate out of the wreck: our tools, up the road (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
+| The supply rail | their cart, and the one console that still glows; the cart will not run empty, so a block of theirs goes on it (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
 | Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
 | Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
-| Across the canyon | the frame beam, crated, has to cross the canyon; the first real shot with the player's g | both rims light; the crate stays on the platform and the beam waits on the tilting launcher; the seal in the pass through the spine sinks (it only ever stood in the castaway's way, not the beam's) |
-| Over the ridge | the frame beam itself, on to the shipyard | the beam lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff's frame rises in its cradle at the top of the slipway; Lumen hears the core for the first time |
+| Across the canyon | the helm, in its casket, has to cross the canyon; the first real shot with the player's g | both rims light; the casket stays on the platform and the tiller waits on the tilting launcher; the seal in the pass through the spine sinks (it only ever stood in the castaway's way, not the helm's) |
+| Over the ridge | the tiller itself, on to the skiff | the tiller lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff takes its helm, which settles into the socket at the stern, and the helm's quartz lights (the rest of the skiff stays dark); Lumen hears the core for the first time |
 
 ## Pillars
 
@@ -182,7 +189,7 @@ north shore cannot be reached either: nothing climbs the spine, and nothing goes
    resistances and heat flows in a puzzle are properties of the world the player can measure, not
    numbers printed in a problem statement.
 2. **Commit, then find out.** The player works out an answer, commits it, and the world runs. Nothing is
-   marked right or wrong by a teacher; the crate either lands on the platform or it does not.
+   marked right or wrong by a teacher; the casket either lands on the platform or it does not.
 3. **Understanding beats guessing.** The game is built so that calculating is the fast route and trial
    and error is the slow, expensive one.
 4. **The tutor explains, the player acts.** Lumen never solves a puzzle and has no way to touch the game.
@@ -213,7 +220,7 @@ Every puzzle runs through the same five steps at a **station** (a workbench in t
 2. **Investigate.** Measure the world. Readings go to the notebook under a short name (`h1`, `t1`).
    Each physics station also has an experiment to **try first**. It shows the idea the puzzle rests
    on: a strobe on the crawler and the haul cart pulling apart at steady speeds, a strobe on the falling
-   test mass, a crate dropped beside one fired off the ledge, two shots
+   test mass, a block dropped beside one fired off the ledge, two shots
    at complementary angles. The player picks what they expect from a few choices (no numbers), then
    watches. Experiments are free and repeatable and give no answer away. Watching one writes its
    pages into the handbook.
@@ -233,18 +240,18 @@ builds it, and the exact simulator judges what was built.
 
 | Pattern | What the player does | Where |
 |---|---|---|
-| Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: crates under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the canyon (built) |
+| Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: blocks under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the canyon (built) |
 | Place to measure | Put an instrument where it measures what is wanted: a light gate clamped at a chosen notch of the drop tower, so the player designs their own measurement and collects pairs of drop and time. | 1.1 Local gravity (built) |
 | Place the catcher | The setting is fixed and read off a plate; carry the target (net, stop, bin) to where the load will end up. | 1.3, the sled: place the stop where it comes to rest under friction (planned; see the curriculum) |
 
 The verb is taught first with nothing at stake: the tutorial's cart will not run until the player
-has carried its cargo crate onto it. That refusal is free, like a value of the wrong kind, and since
+has carried a block onto it. That refusal is free, like a value of the wrong kind, and since
 nothing typed was committed it does not write the tutorial's handbook page.
 
 Placements snap to whole blocks or to fixed notches, so what is built can be counted and measured
 exactly. A placement on its own is a small choice (a handful of stacks), which a few tries find by
 luck, so a built answer comes with a calculated one or a small target: guessing should cost at least
-as many tests as guessing a typed value, and every wrong stack also costs a walk with crates. An
+as many tests as guessing a typed value, and every wrong stack also costs a walk with blocks. An
 instrument that is placed (the light gate) answers nothing itself; what it measures still has to be
 worked into the typed answer.
 
@@ -256,7 +263,7 @@ worked into the typed answer.
   everything the station accepts, in bits. Every answer that is built in the world gets a test that
   plays such a guesser against it across many seeds: it must need well over a station's charges on
   average, and rarely pass within them. At the canyon the same guesser needed 3.9 tests (31 % within three) with the
-  old typed speed, 2.8 (75 %) with crates alone at a fixed speed, and 7.6 (32 %) now that the stack is
+  old typed speed, 2.8 (75 %) with blocks alone at a fixed speed, and 7.6 (32 %) now that the stack is
   built and the speed is calculated for it. The haul track's typed speed has one too: a marker one block
   wide, a coupling point that moves fast with the speed, 6.4 tests (6 % within three).
 - **Commit before test.** Values cannot be adjusted while the simulation runs.
@@ -305,7 +312,7 @@ Unlocked as the curriculum needs them.
 - **Launchers show the blueprint.** As a value is typed, the tilting launcher's arm swings to the
   angle and its gauge fills to the speed, against the launcher's rating. The ledge launcher's gauge
   marks the bottom of its band too and turns red outside it, and the launcher itself rides up its jack
-  frame as crates go in.
+  frame as blocks go in.
   The player's choice is visible in the world before it is committed; the path is never previewed.
 - **Grapher** (tier 2 onward). Plot a notebook series; read slopes and areas.
 
@@ -318,18 +325,18 @@ inventory.
 
 - **Stations.** While a station is open the engineer stays at its console: the movement keys do
   nothing, the camera still turns and zooms. `E`, `Esc` or the panel's Leave button steps away. A
-  station opens once its console is wired in, after the way has woken its machine.
-- **Waking.** While the way wakes, the engineer waits and the camera follows the light; `E` or
-  `Esc` skips to the end.
+  station opens once its console is awake: the way wakes it with its machine.
+- **Waking.** While the way wakes, the engineer waits and the camera follows the light, then glides
+  back; `E` or `Esc` skips to the end.
 - **Ruler.** `R` takes one measurement: two clicks, then the ruler stops taking clicks and its reading
   stays on screen to be noted. `R` again measures anew; `Esc` or the card's close button puts it
   away; `R` or `Esc` before the second click cancels.
-- **Carrying.** Salvage with an orange handle can be moved. `F` picks up what is in front of the
+- **Carrying.** What has an orange handle can be moved. `F` picks up what is in front of the
   avatar; a ghost block shows where it will go, and `F` puts it down there: on the ground, or on top
-  of a crate, at most one block above the feet (so crates can be stacked into steps). Crates are real
-  blocks: they can be stood on and measured, and each stays near where it belongs (the ledge's
-  salvage on the ledge, the cart's cargo beside the rail). Where a station reads a placement,
-  putting the thing into its place is the act: a crate onto the cart or into the jack frame, the
+  of another block, at most one above the feet (so blocks can be stacked into steps). The builders'
+  dressed blocks are real blocks: they can be stood on and measured, and each stays near where it
+  belongs (the ledge's pile on the ledge, the cart's block beside the rail). Where a station reads a
+  placement, putting the thing into its place is the act: a block onto the cart or into the jack frame, the
   light gate onto a notch of the drop tower (the notch is the one the pointer marks on the tower, or
   the one at hand height). The station shows what is placed there, and the save keeps it.
 - **Notebook, handbook, Lumen.** Always on screen. The notebook and the handbook sit in a fixed column
@@ -338,16 +345,17 @@ inventory.
 
 The engineer is a jointed figure of blocks, animated in code. Its stride follows its speed, it
 tucks on a jump and gives at the knees on landing, and it works the panel of an open station. It carries a
-crate in both hands, arms forward. It turns to watch a test in flight, then cheers a pass or hangs its
+block in both hands, arms forward. It turns to watch a test in flight, then cheers a pass or hangs its
 head at a miss. When idle, it glances where
 Lumen is pointing.
 
 ## The ship and progression
 
-The shipyard stands on the builders' quay on the north shore, at the end of the chapter's route, with
+The builders' skiff lies on their quay on the north shore, at the end of the chapter's route, with
 the strait and the main hull beyond it. Progress shows twice over: the way wakes machine by machine
-along the route, and each chapter's capstone adds a part to the ship standing on the quay; a puzzle on the way moves what it delivers one step nearer (the beam, across the
-canyon to the tilting launcher).
+along the route, and each chapter's capstone wakes a part of the skiff on the quay; a puzzle on the
+way moves what it delivers one step nearer (the helm's casket, across the canyon to the tilting
+launcher).
 
 | Stage | Purpose in the story | Unlocks |
 |---|---|---|
@@ -369,5 +377,5 @@ honest when the player is wrong.
 
 ## Out of scope for the slice
 
-Mining or free building (only marked salvage moves, and only where a puzzle has room for it), inventory, multiplayer, sound, saving more than chapter progress, tiers 2 and 3
+Mining or free building (only what we have marked moves, and only where a puzzle has room for it), inventory, multiplayer, sound, saving more than chapter progress, tiers 2 and 3
 content, the relay server for the tutor.

@@ -62,9 +62,9 @@ pub struct Save {
     /// Demonstrations watched, by puzzle id, with the choice made before the first run (if any).
     #[serde(default)]
     pub demos: BTreeMap<String, Option<usize>>,
-    /// What the player has placed at each station, by puzzle id: the cargo crate on the rail cart
+    /// What the player has placed at each station, by puzzle id: the block on the rail cart
     /// (0 or 1), the light gate's notch on the drop tower (its drop below the release point in metres,
-    /// 0 for none), the number of crates under the ledge launcher. Kept between sessions so the world
+    /// 0 for none), the number of blocks under the ledge launcher. Kept between sessions so the world
     /// looks as it was left.
     #[serde(default)]
     pub placed: BTreeMap<String, u32>,

@@ -3,7 +3,7 @@
 //! A demonstration shows the principle a puzzle rests on, in the world, before any calculation. Like a
 //! test, what happens is decided here, in closed form; the game only plays it back. Unlike a test it
 //! costs nothing, judges nothing, and is built so that it gives nothing away: the haul cart runs slower
-//! than the crawler instead of chasing it, the canyon crates fall
+//! than the crawler instead of chasing it, the canyon blocks fall
 //! further than the launcher's drop to the platform, and the ridge slugs land well short of the ridge.
 //!
 //! The question, the choices and what the player should notice are words, kept with the chapter in
@@ -20,9 +20,9 @@ pub const PACE_INTERVALS: u32 = 8;
 pub const PACE_CART: f64 = 0.5;
 /// The haul track's demonstration runs until the crawler is this far past the second timing post.
 pub const PACE_OVERRUN: f64 = 1.0;
-/// Where the canyon's test crates start: this far out over the lip, clear of the wall.
+/// Where the canyon's test blocks start: this far out over the lip, clear of the wall.
 pub const CANYON_DEMO_LIP: f64 = 0.5;
-/// The fired test crate lands this far across the canyon floor, as a fraction of the canyon's width.
+/// The fired test block lands this far across the canyon floor, as a fraction of the canyon's width.
 pub const CANYON_DEMO_REACH: f64 = 0.5;
 /// The two launch angles of the ridge demonstration, in degrees. Equally far either side of 45.
 pub const RIDGE_DEMO_ANGLES: [f64; 2] = [30.0, 60.0];
@@ -51,7 +51,7 @@ pub enum DemoPlayback {
     Pace { cart_speed: f64, crawler_speed: f64, head_start: f64, interval: f64, duration: f64 },
     /// The test mass falls `height` from the drop tower; a flash marks it every `interval` seconds.
     Strobe { height: f64, g: f64, interval: f64, fall_time: f64 },
-    /// Two test crates leave the ledge together: one dropped, one fired sideways.
+    /// Two test blocks leave the ledge together: one dropped, one fired sideways.
     DropAndFire { dropped: Shot, fired: Shot },
     /// Two test slugs at the same speed and complementary angles.
     TwoAngles { flat: Shot, steep: Shot },
@@ -85,7 +85,7 @@ impl Instance {
         self.demo_raised(0)
     }
 
-    /// The demonstration with the launcher raised on `stack` crates: the canyon's test crates leave
+    /// The demonstration with the launcher raised on `stack` crates: the canyon's test blocks leave
     /// from wherever the launcher stands. The other stations ignore it.
     pub fn demo_raised(&self, stack: u32) -> Option<DemoPlayback> {
         let l = &self.layout;
@@ -208,11 +208,11 @@ mod tests {
                 assert_eq!(shot.flight.surface, floor, "seed {seed}: must land on the canyon floor");
             }
             assert!((dropped.flight.t - fired.flight.t).abs() < 1e-9, "seed {seed}");
-            assert!(fired.flight.x > dropped.flight.x + 3.0, "seed {seed}: the fired crate must visibly travel");
+            assert!(fired.flight.x > dropped.flight.x + 3.0, "seed {seed}: the fired block must visibly travel");
             assert!(fired.flight.x < layout.canyon_width as f64 - 1.0, "seed {seed}: it must stay inside the canyon");
             // It falls further than the launcher's drop to the platform, so its time is not the puzzle's.
             let to_platform = fall_time((layout.ledge_h + stack) as f64, layout.g);
-            assert!(fired.flight.t > to_platform * 1.1, "seed {seed}, {stack} crates");
+            assert!(fired.flight.t > to_platform * 1.1, "seed {seed}, {stack} blocks");
         }
     }
 

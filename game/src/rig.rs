@@ -4,7 +4,7 @@
 //! typed in, measured against the launcher's rating. This is the player's own number made visible;
 //! nothing here previews a path or judges anything. The ledge launcher's dial turns only within a
 //! band, marked on its gauge, and the launcher rides on a cradle in a jack frame, on top of however
-//! many crates the player has slid in (see `carry`).
+//! many blocks the player has slid in (see `carry`).
 
 use crate::island::{LaunchSite, Sites};
 use crate::sim::Sim;
@@ -32,7 +32,7 @@ struct Arm {
     axis: Vec3,
 }
 
-/// The ledge launcher's cradle, on top of the crates in the jack frame.
+/// The ledge launcher's cradle, on top of the blocks in the jack frame.
 #[derive(Component)]
 struct Cradle;
 
@@ -70,15 +70,15 @@ pub(crate) fn spawn(
     trim: Res<crate::waking::MachineTrim>,
 ) {
     // The launchers are the builders': stone, with their machine's quartz set in. The gauges are the
-    // castaway's, salvage in dark paint.
+    // castaway's, in dark paint.
     let steel = materials.add(StandardMaterial { base_color: Color::srgb(0.55, 0.57, 0.62), metallic: 0.6, perceptual_roughness: 0.4, ..default() });
     let stone = crate::waking::stone(&mut materials);
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.10, 0.11, 0.14), perceptual_roughness: 0.7, ..default() });
     let (ledge_quartz, ridge_quartz) = (trim.0[3].clone(), trim.0[4].clone());
     let mark = materials.add(StandardMaterial { base_color: Color::srgb(0.92, 0.95, 1.0), unlit: true, ..default() });
 
-    // The tilting launcher's guide arm: two rails hinged at the release point, which the beam rides
-    // up on its way out. They lie along the start of the path the beam flies.
+    // The tilting launcher's guide arm: two rails hinged at the release point, which the tiller rides
+    // up on its way out. They lie along the start of the path the tiller flies.
     let ridge = puzzle_of(&game, PuzzleKind::Ridge);
     let site = sites.ridge_launch;
     let across = site.direction.cross(Vec3::Y).normalize();
@@ -101,7 +101,7 @@ pub(crate) fn spawn(
             }
         });
 
-    // The jack frame at the rim: two uprights either side of the column the crates stack in, as
+    // The jack frame at the rim: two uprights either side of the column the blocks stack in, as
     // tall as the frame holds, and the launcher's cradle riding on the stack.
     // They stand either side of the launch line, so the load leaves between them.
     let ledge = sites.canyon_launch;
@@ -117,7 +117,7 @@ pub(crate) fn spawn(
         commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(ledge_quartz.clone()), Transform::from_translation(at + Vec3::Y * (tall / 2.0 + 0.08))));
     }
     // The cradle caps the top crate: a little wider than a block and standing a little proud of its
-    // top, so its faces never share the crate's planes (which made them flicker).
+    // top, so its faces never share the block's planes (which made them flicker).
     let cradle = meshes.add(Cuboid::new(1.0 + 2.0 * CRADLE_LIP, CRADLE_H, 1.0 + 2.0 * CRADLE_LIP));
     // Behind the load, clear of its back face and wider than it.
     let back_stop = meshes.add(Cuboid::new(0.08, 0.5, 0.96));
@@ -164,12 +164,12 @@ pub(crate) fn spawn(
     }
 }
 
-/// How far the cradle reaches past the top crate's sides, and above its top.
+/// How far the cradle reaches past the top block's sides, and above its top.
 const CRADLE_LIP: f32 = 0.03;
 const CRADLE_PROUD: f32 = 0.02;
 const CRADLE_H: f32 = 0.14;
 
-/// Where the ledge launcher's cradle sits: capping the jack frame's top crate, under the load.
+/// Where the ledge launcher's cradle sits: capping the jack frame's top block, under the load.
 fn cradle_at(sites: &Sites) -> Vec3 {
     sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + Vec3::Y * (CRADLE_PROUD - CRADLE_H / 2.0)
 }

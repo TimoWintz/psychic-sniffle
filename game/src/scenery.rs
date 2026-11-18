@@ -174,7 +174,7 @@ pub(crate) fn spawn(
     });
 }
 
-/// Mesh again the chunks whose blocks have changed (crates picked up and put down), and their
+/// Mesh again the chunks whose blocks have changed (blocks picked up and put down), and their
 /// neighbours, whose faces against the changed blocks may now show or hide.
 fn rebuild_chunks(mut dirty: ResMut<DirtyCells>, world: Res<VoxelWorld>, mut meshes: ResMut<Assets<Mesh>>, chunks: Query<(&TerrainChunk, &Mesh3d)>) {
     if dirty.0.is_empty() {

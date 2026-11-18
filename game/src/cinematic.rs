@@ -11,7 +11,7 @@
 //!   wreck, and the castaway climbs out.
 //!
 //! The section dives steeply into the wreck rather than skidding in: the wreck's walls and the
-//! tutorial's camp beside it leave no clear run to skid along. The model gives way to the voxel wreck
+//! tutorial's station beside it leave no clear run to skid along. The model gives way to the voxel wreck
 //! under the dust of the impact.
 
 use crate::island::SEA_LEVEL;

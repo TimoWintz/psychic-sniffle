@@ -38,7 +38,7 @@ pub struct AskedValue {
     /// What the player has typed in the blueprint so far, if anything.
     pub draft: String,
     /// For a value the player sets by building in the world rather than typing: what stands there
-    /// now ("2 crates in the jack frame").
+    /// now ("2 blocks in the jack frame").
     pub built: Option<String>,
 }
 
@@ -82,7 +82,7 @@ pub struct TutorContext {
     pub how_to_measure: String,
     pub concepts: Vec<ConceptCard>,
     pub experiment: Option<ExperimentLine>,
-    /// What the player has placed at the station in the world, in words ("the cargo crate is on the
+    /// What the player has placed at the station in the world, in words ("the block is on the
     /// cart", "the light gate is clamped 7 m below the release point"), where something can be.
     pub placed: Option<String>,
     pub asked: Vec<AskedValue>,
@@ -135,7 +135,7 @@ impl TutorContext {
         }
         if instance.kind == PuzzleKind::Canyon {
             // One or two stacks work, each with its own speed. A stack is a small whole number, too
-            // common to redact on its own: guard it where it counts crates, and guard the release height
+            // common to redact on its own: guard it where it counts blocks, and guard the release height
             // it gives, in metres. Guard the speeds across all of them, in m/s.
             secrets.clear();
             let layout = &instance.layout;
@@ -145,7 +145,7 @@ impl TutorContext {
                 secrets.push(Secret {
                     low: stack_f - 0.01,
                     high: stack_f + 0.01,
-                    only_before: ["crate", "crates", "more crate", "boxes", "blocks"].map(String::from).to_vec(),
+                    only_before: ["block", "blocks", "more block", "crate", "crates", "more crate", "boxes"].map(String::from).to_vec(),
                 });
                 for height in [stack_f, layout.ledge_h as f64 + stack_f] {
                     secrets.push(Secret {

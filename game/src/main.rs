@@ -13,7 +13,7 @@ mod props;
 mod rig;
 mod ruler;
 mod scenery;
-mod shipyard;
+mod vessel;
 mod sim;
 mod state;
 mod stations;
@@ -54,7 +54,7 @@ fn main() {
             carry::CarryPlugin,
             rig::RigPlugin,
             ruler::RulerPlugin,
-            shipyard::ShipyardPlugin,
+            vessel::VesselPlugin,
             tutor_bridge::TutorPlugin,
             ui::UiPlugin,
             companion::CompanionPlugin,

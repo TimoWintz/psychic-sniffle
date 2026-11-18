@@ -2,7 +2,7 @@
 //!
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
 //!   screenshots. It loads the cart, times the crawler and catches it, times drops with the light gate
-//!   at two notches, and stacks the canyon's crates.
+//!   at two notches, and stacks the canyon's blocks.
 //! - `walk` drives the avatar with key presses: up the steps, off the rim, out of the canyon, a jump.
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
 //!   test, and its reactions to a miss and a pass.
@@ -111,7 +111,7 @@ enum Step {
 /// What a press of F should do.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Expect {
-    /// Pick up a loose crate.
+    /// Pick up a loose block.
     Take,
     TakeGate,
     PutIn(Slot),
@@ -136,7 +136,7 @@ fn carry_at(feet: Vec3, facing: Vec3, expect: Expect) -> Step {
     Step::CarryAt { feet, facing, expect, aim: None }
 }
 
-/// Where to stand to pick up the cargo crate, and to load it onto the cart.
+/// Where to stand to pick up the cart's block, and to load it onto the cart.
 fn by_the_rail(sites: &Sites) -> (Vec3, Vec3) {
     let cell = sites.cargo_cell;
     (Vec3::new(cell.x as f32 - 0.6, cell.y as f32, cell.z as f32 + 0.5), sites.rail_start - Vec3::X * 1.2)
@@ -206,10 +206,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: -0.8, pitch: 0.15, distance: 3.0 },
         Wait(1.2),
         Shot("01b_lumen_points_off_screen"),
-        // The whole route, from the wreck on the south coast to the shipyard on the north shore.
-        // The route's northern half, from the canyon to the shipyard on the north shore, looked at from
+        // The whole route, from the wreck on the south coast to the skiff on the north shore.
+        // The route's northern half, from the canyon to the skiff on the north shore, looked at from
         // high over it so no hill comes between the camera and it (the camera keeps within 80 m).
-        Watch(Some(sites.tower_plate.lerp(sites.shipyard, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
+        Watch(Some(sites.tower_plate.lerp(sites.slipway, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
         Look { yaw: 0.25, pitch: 1.0, distance: 80.0 },
         Wait(1.5),
         Shot("02_island"),
@@ -226,7 +226,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.3),
         ExpectRefusal("Load the cart first"),
         ExpectNotFound("units"),
-        expect_gaze("Cargo crate beside the rail"),
+        expect_gaze("The cart's block beside the rail"),
         Shot("03a_cart_empty"),
         Station(None),
         carry_at(cargo_at, Vec3::X, Expect::Take),
@@ -264,7 +264,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("06_rail_result"),
         // Stepping away from the console with E, the way wakes (and the E that closed the console does
         // not skip it): the marker's studs light, the light runs up the road, the stone gate opens
-        // for the cart, and by evening the haul track has a console.
+        // for the cart, and the haul track's console lights.
         Key(KeyCode::KeyE, true),
         Wait(0.1),
         Key(KeyCode::KeyE, false),
@@ -274,8 +274,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("06_wake_light_runs"),
         UntilWakeAt { stage: 1, at: wakes[0].wake_starts() + 1.8, within: 30.0 },
         Shot("06_wake_stone_gate_opens"),
-        UntilWakeAt { stage: 1, at: wakes[0].rigging(), within: 30.0 },
-        Shot("06_wake_console_wired_in"),
+        UntilWakeAt { stage: 1, at: wakes[0].console_lights() + 0.4, within: 30.0 },
+        Shot("06_wake_console_lights"),
         WaitWakeEnd(30.0),
         Windows { notebook: false, handbook: true, tutor: false },
         Wait(0.4),
@@ -459,7 +459,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: -1.05 + TURN, pitch: 0.45, distance: 30.0 },
         Wait(1.0),
         Station(Some(3)),
-        // A wrong guess, on purpose: the dropped crate first.
+        // A wrong guess, on purpose: the dropped block first.
         Guess(3, 0),
         RunDemo(3),
         Wait(1.5),
@@ -531,11 +531,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         UntilWakeAt { stage: 4, at: wakes[3].wake_starts() + 1.4, within: 30.0 },
         Shot("16b_wake_the_seal_sinks"),
         WaitWakeEnd(30.0),
-        // The crated beam is down on the platform, and the beam waits on the tilting launcher beside it.
+        // The casket is down on the platform, and the tiller waits on the tilting launcher beside it.
         Watch(Some(sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5)),
         Look { yaw: -0.6 + TURN, pitch: 0.55, distance: 18.0 },
         Wait(3.0),
-        Shot("16c_beam_on_the_tilting_launcher"),
+        Shot("16c_tiller_on_the_tilting_launcher"),
         Watch(None),
         // Puzzle 4: 45 degrees strikes the ridge; an angle inside the window clears it.
         GoToStation(4),
@@ -586,11 +586,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         UntilWakeAt { stage: 5, at: wakes[4].wake_starts() + 2.2, within: 30.0 },
         Shot("19_wake_north_gate"),
         WaitWakeEnd(30.0),
-        expect_gaze("The shipyard floor"),
-        GoTo(sites.shipyard + Vec3::new(9.0, 0.0, 11.0)),
+        expect_gaze("The skiff on the slipway"),
+        GoTo(sites.slipway + Vec3::new(9.0, 0.0, 11.0)),
         Look { yaw: -0.8 + TURN, pitch: 0.3, distance: 16.0 },
         Wait(3.5),
-        Shot("20_frame_installed"),
+        Shot("20_helm_in_the_skiff"),
         Windows { notebook: true, handbook: true, tutor: true },
         OpenPage("range"),
         Wait(0.5),
@@ -679,15 +679,16 @@ fn way(sites: &Sites) -> Vec<Step> {
     use Step::*;
     let way = &sites.way;
     let mut steps = vec![Start, UntilPlaying { within: 10.0 }, Windows { notebook: false, handbook: false, tutor: false }];
-    let views: [(&'static str, Vec3, f32, f32, f32); 8] = [
+    let views: [(&'static str, Vec3, f32, f32, f32); 9] = [
         ("01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
         ("02_crane", way.crane_pivot.lerp(sites.crane_foot, 0.5), 0.6, 0.4, 16.0),
         ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
         ("04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
         ("05_canyon", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
-        ("06_pad", sites.ridge_launch.origin.lerp(sites.shipyard, 0.4), 1.6, 0.6, 50.0),
+        ("06_pad", sites.ridge_launch.origin.lerp(sites.slipway, 0.4), 1.6, 0.6, 50.0),
         ("06b_seal", way.seal.centre(), 1.2, 0.4, 24.0),
         ("07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
+        ("08_skiff", sites.slipway, 2.3, 0.45, 20.0),
     ];
     let photograph = |steps: &mut Vec<Step>, state: &str| {
         for (name, at, yaw, pitch, distance) in views {
@@ -697,8 +698,11 @@ fn way(sites: &Sites) -> Vec<Step> {
         steps.push(Watch(None));
     };
     photograph(&mut steps, "asleep");
-    // Three wakes as they play, seconds in: the light running, the machine waking, the console going in.
-    for (stage, moments) in [(1, [2.2, 5.6, 7.6, 10.4]), (3, [2.2, 4.6, 6.4, 8.0]), (5, [2.6, 5.0, 6.6, 7.6])] {
+    // Three wakes as they play: the light running, the machine waking, its console lighting, the
+    // camera on its way home.
+    for stage in [1, 3, 5] {
+        let wake = Timeline::new(stage, way);
+        let moments = [wake.wake_starts() * 0.6, wake.wake_starts() + 0.6, wake.console_lights() + 0.4, wake.length() - 0.5];
         steps.extend([Solve(stage - 1), UntilWoken { stage: stage - 1, within: 240.0 }, WaitWakeEnd(240.0), Solve(stage)]);
         for (i, at) in moments.into_iter().enumerate() {
             let shot: &'static str = Box::leak(format!("way_wake_{stage}_{i}").into_boxed_str());
@@ -746,7 +750,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.1),
         Shot("pose_04_jump"),
         expect_activity(Activity::Idle),
-        // A crate from the ledge's pile, carried.
+        // A block from the ledge's pile, carried.
         carry_at(at_pile, Vec3::X, Expect::Take),
         Look { yaw: 2.3 + TURN, pitch: 0.25, distance: 4.5 },
         Wait(0.8),
@@ -755,7 +759,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.45),
         Shot("pose_10_carrying_walk"),
         Key(KeyCode::KeyS, false),
-        // Hands free again before the console: the crate goes into the jack frame.
+        // Hands free again before the console: the block goes into the jack frame.
         carry_at(at_frame, to_frame, Expect::PutIn(Slot::Frame)),
         Wait(0.5),
         // The cart will not run empty.

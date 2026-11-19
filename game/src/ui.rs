@@ -336,15 +336,15 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 for (i, spec) in specs.iter().enumerate() {
                     if spec.source == InputSource::Placed {
                         // Built in the world, not typed: the blueprint reads it off the jack frame.
-                        let crates = game.placed(puzzle);
+                        let blocks = game.placed(puzzle);
                         ui.horizontal(|ui| {
                             ui.label(format!("{}:", spec.label));
-                            ui.label(RichText::new(format!("{crates} {}", spec.unit)).strong().color(GOOD));
+                            ui.label(RichText::new(format!("{blocks} {}", spec.unit)).strong().color(GOOD));
                         });
-                        let plural = if crates == 1 { "" } else { "s" };
+                        let plural = if blocks == 1 { "" } else { "s" };
                         ui.label(
                             RichText::new(format!(
-                                "    {crates} crate{plural} in the jack frame at the rim. Leave the console and carry crates there (F) to change it."
+                                "    {blocks} block{plural} in the jack frame at the rim. Leave the console and carry blocks there (F) to change it."
                             ))
                             .small()
                             .color(DIM),
@@ -407,7 +407,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     };
                     ui.colored_label(GOOD, format!("Solved. Part quality: {words}."));
                     if game.save.chapter_complete(&game.chapter) {
-                        ui.label(format!("The {} now stands on the shipyard floor.", game.chapter.part.to_lowercase()));
+                        ui.label(format!("The {} is in place.", game.chapter.part.to_lowercase()));
                     }
                 }
                 if progress.attempts.len() > 1 {

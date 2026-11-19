@@ -91,8 +91,8 @@ impl Game {
         (0..self.chapter.puzzles.len()).find(|&i| !self.solved(i))
     }
 
-    /// What is placed at a puzzle's station: the cargo crate on the cart, the light gate's notch,
-    /// the number of crates under the ledge launcher (see `Save::placed`).
+    /// What is placed at a puzzle's station: the cart's block on the cart, the light gate's notch,
+    /// the number of blocks under the ledge launcher (see `Save::placed`).
     pub fn placed(&self, puzzle: usize) -> u32 {
         self.save.placed.get(&self.def(puzzle).id).copied().unwrap_or(0)
     }

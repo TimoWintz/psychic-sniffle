@@ -94,7 +94,7 @@ fn canyon_context(seed: u64) -> (TutorContext, f64) {
 
     let mut save = Save::new(seed);
     save.notebook.set("g", "gravitational acceleration", Quantity::acceleration(layout.g), "calculated");
-    // No crates under the launcher, at the top of the dial: the crate falls short.
+    // No blocks under the launcher, at the top of the dial: the casket falls short.
     let (low, fast) = (Quantity::metres(0.0), Quantity::speed(layout.canyon_speed_max));
     let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low), ("speed".to_string(), fast)])).unwrap();
     save.record(
@@ -163,7 +163,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(system.starts_with(tutor::prompt::POLICY));
     assert!(system.contains("Puzzle: Across the canyon"));
     assert!(system.contains("- g = "), "notebook is included");
-    assert!(system.contains("set by building, not typed; now: 1 crate in the jack frame"), "what is built is included");
+    assert!(system.contains("set by building, not typed; now: 1 block in the jack frame"), "what is built is included");
     assert!(system.contains("currently typed: d1/t"), "the typed speed is included");
     assert!(system.contains("FAIL"), "the failed test is included");
     assert!(system.contains("# PRIVATE — never reveal"));
@@ -348,11 +348,11 @@ fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
         TutorContext::build(&chapter, chapter.puzzle(id).unwrap(), &instance, save, &[])
     };
     let rail = at(PuzzleKind::Rail, "1.1.0", &save);
-    assert_eq!(rail.placed.as_deref(), Some("the cart is empty; the cargo crate stands beside the rail"));
+    assert_eq!(rail.placed.as_deref(), Some("the cart is empty; its block lies beside the rail"));
     let system = tutor::prompt::system_prompt(&rail, tutor::prompt::HelpLevel::Probe);
     assert!(system.contains("In the world at this station now: the cart is empty"), "the empty cart is in the prompt");
     save.placed.insert("1.1.0".into(), 1);
-    assert_eq!(at(PuzzleKind::Rail, "1.1.0", &save).placed.as_deref(), Some("the cargo crate is on the cart"));
+    assert_eq!(at(PuzzleKind::Rail, "1.1.0", &save).placed.as_deref(), Some("the block is on the cart"));
 
     // The light gate's notch is the player's own choice, in plain view: never redacted, even where
     // it is close to g.

@@ -19,7 +19,7 @@ use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use egui::{Align2, Color32, FontId, RichText, pos2, vec2};
+use egui::{Align2, Color32, RichText, vec2};
 use physics_core::materials::Material;
 
 /// How long the picture takes to fade out after Start when the intro is not over the island.
@@ -611,29 +611,15 @@ fn menu(mut contexts: EguiContexts, mut intro: ResMut<Intro>) -> Result {
     };
 
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("intro")));
-    let rgba = |c: [f32; 3], a: f32| Color32::from_rgba_unmultiplied((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8, (a.clamp(0.0, 1.0) * 255.0) as u8);
-    if fade > 0.0 {
-        painter.rect_filled(screen, 0.0, rgba(fade_colour, fade));
-    }
-    if frame.flash > 0.0 && shown > 0.0 {
-        painter.rect_filled(screen, 0.0, rgba([1.0, 0.97, 0.9], frame.flash.min(1.0) * shown));
+    cinematic::paint_veil(&painter, screen, fade, fade_colour);
+    if shown > 0.0 {
+        cinematic::paint_veil(&painter, screen, frame.flash.min(1.0) * shown, [1.0, 0.97, 0.9]);
     }
 
     // Letterbox bars, with the caption in the lower one.
-    let bar = screen.height() * 0.11 * bars;
-    if bar > 0.5 {
-        painter.rect_filled(egui::Rect::from_min_size(screen.min, vec2(screen.width(), bar)), 0.0, Color32::BLACK);
-        let bottom = egui::Rect::from_min_max(pos2(screen.left(), screen.bottom() - bar), screen.max);
-        painter.rect_filled(bottom, 0.0, Color32::BLACK);
-        if let Some(caption) = frame.caption {
-            let alpha = caption.alpha * shown;
-            let gold = Color32::from_rgba_unmultiplied(230, 196, 120, (alpha * 255.0) as u8);
-            let white = Color32::from_rgba_unmultiplied(235, 238, 242, (alpha * 255.0) as u8);
-            let heading = format!("{}  ·  {}", caption.stop.numeral(), caption.stop.title().to_uppercase());
-            painter.text(pos2(screen.center().x, bottom.top() + bar * 0.32), Align2::CENTER_CENTER, heading, FontId::proportional(13.0), gold);
-            painter.text(pos2(screen.center().x, bottom.top() + bar * 0.62), Align2::CENTER_CENTER, caption.line, FontId::proportional(17.0), white);
-        }
-    }
+    let heading = frame.caption.map(|caption| format!("{}  ·  {}", caption.stop.numeral(), caption.stop.title().to_uppercase()));
+    let alpha = frame.caption.map_or(0.0, |caption| caption.alpha * shown);
+    cinematic::paint_letterbox(&painter, screen, bars, heading.as_deref(), frame.caption.map(|c| c.line), alpha);
 
     if shown <= 0.0 {
         return Ok(());

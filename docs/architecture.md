@@ -23,7 +23,7 @@ Nothing depends on `game`.
 | `ballistics` | closed-form projectile motion: position at a time, time and place of landing, height at a distance |
 | `materials` | the materials table (density, specific heat, conductivity, resistivity, colour) |
 | `puzzle` | chapter and puzzle definitions, seeded instance generation, evaluation of committed inputs, worked solutions |
-| `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired crates, the two-angle shots |
+| `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired blocks, the two-angle shots |
 | `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions |
 | `notebook` | named readings; the calculator's variables |
 | `save` | progress record (seed, attempts, completed puzzles, notebook, pages found, quiz questions answered right) |
@@ -48,33 +48,43 @@ it had. What the engine does afterwards cannot change the result.
 |---|---|
 | `intro` | title menu and the intro behind it: the placeholder sets for levels III and II, the ship, smoke and dust, the hand-over to the player's view |
 | `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
-| `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast |
+| `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
-| `stations` | station entities, proximity and interaction, the active puzzle |
-| `sim` | experiment and test playback, hand-off to the physics engine, handbook pages written by what is seen |
+| `stations` | the builders' consoles and lamps (their quartz lit as each machine wakes), proximity and interaction, the active puzzle |
+| `sim` | experiment and test playback, hand-off to the physics engine (whose view of the island is built again when the way's blocks come or go), handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
-| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's cargo, the light gate's notch on the drop tower, the canyon's jack frame, which raises the launcher) |
+| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block, the light gate's notch on the drop tower, the canyon's jack frame, which raises the launcher) |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
 | `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
-| `shipyard` | ship parts that appear as chapters complete |
+| `vessel` | the builders' skiff on its slipway, which takes its helm once the north gate wakes, and the sight the crawler carries (where it is, `waking` says) |
+| `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved). Each machine's quartz has a wake set (lit when the light reaches it) and a done set (lit when its own job is done); its stonework rises or sinks layer by layer (the ramp, the stone gate's leaf, the seal in the pass through the spine); each machine's console and lamps light as it wakes (`stations` draws them). The wake that plays after a pass (a pure timeline: the job's quartz lighting, the crane lifting the sight off after the crawler's pass, the light running up the road, the machine waking and its console lighting, the camera gliding home), its camera and its letterbox; the quartz on the machines' moving parts |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
-| `devscript` | scripted run for automated screenshots (development only) |
+| `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake |
 
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in
 the world and the number the simulator uses are the same number.
 
-The block grid is not quite fixed: movable crates are blocks too, so they can be stood on and
+The island is built awake, with the way's quartz lit and the ramp onto the outcrop standing, and
+every island test checks that world. `waking::settle` puts it to the save's stage in `main`, before
+anything is meshed or collides; a test checks that sleeping and waking stage by stage gives back the
+island as built, that the ledge is out of reach until the ramp rises, that the skiff is out of
+reach until the seal sinks (the spine runs from coast to coast, a reef under the water at both
+ends, and nothing climbs it), and that neither launcher's line is touched by the way at any stage.
+When the way's blocks change for good (as a wake ends, or on a new game), `sim` builds the physics
+engine's static collider again, so tumbling debris meets the island the avatar walks on.
+
+The block grid is not quite fixed: movable blocks are blocks of the world too, so they can be stood on and
 measured. When one is picked up or put down, `carry` lists the changed cells and `scenery` meshes
 those chunks again. A puzzle input can be **placed** rather than typed (`InputSource::Placed`): the
-blueprint then reads it from the world (the crates in the jack frame), and the save keeps it.
+blueprint then reads it from the world (the blocks in the jack frame), and the save keeps it.
 
 ## Building placed puzzles
 
-What a station reads from the world is a `carry::Slot`: `Cart` (one crate), `Tower` (the light gate
-at a notch), `Frame` (a stack of crates). Each holds one number, which is the save's `placed` value
+What a station reads from the world is a `carry::Slot`: `Cart` (one block), `Tower` (the light gate
+at a notch), `Frame` (a stack of blocks). Each holds one number, which is the save's `placed` value
 for its puzzle. Adding a placement is adding a slot:
 
 - `carry::target_for` says what `F` would do from where the avatar stands and faces (and where the
@@ -106,9 +116,9 @@ Rules learned the hard way:
    ridge and the canyon), and put numbers in plain view (plates, the gate's notch) in `known_numbers`.
 6. **Stations freeze the avatar.** Carrying happens with the panel closed, and a commit reads what is
    placed at that moment. Walking away from a console closes its panel.
-7. **Crates are blocks, not entities.** A crate is `Material::Timber` in the voxel world plus a
-   `CrateMark`, put in after `sim::setup` so the physics engine's static collider never contains it.
-   Something that is not a whole block (the light gate, a crate riding the cart) is an entity.
+7. **Movable blocks are blocks, not entities.** One is `Material::Limestone` in the voxel world plus
+   a `CrateMark`, put in after `sim::setup` so the physics engine's static collider never contains it.
+   Something that is not a whole block (the light gate, the block riding the cart) is an entity.
 
 The game starts in `Mode::Menu` (title menu, intro playing). The avatar, camera, stations, panels and
 Lumen only run in `Mode::Playing`, which Start switches to once the camera has glided to the player's
@@ -132,8 +142,8 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
 - `cargo test -p game` — the island against the simulators' assumptions, the intro's timeline (pieces
   land at their wrecks, nothing flies through the ground, no visible jumps, the hand-over ends on the
   player's view).
-- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`) that drives
+- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`, `way`) that drives
   the game and writes screenshots. The tour loads the rail cart, times the crawler and catches it,
-  times drops with the light gate at two notches, and carries the canyon's crates into the jack frame. Headless, it runs under
+  times drops with the light gate at two notches, and carries the canyon's blocks into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`
   installed) and takes about ten minutes.

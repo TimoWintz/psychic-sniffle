@@ -16,7 +16,6 @@ use bevy::prelude::*;
 use physics_core::ballistics::{Flight, Projectile};
 use physics_core::demo::{DemoPlayback, Shot};
 use physics_core::expr::evaluate;
-use physics_core::materials::Material;
 use physics_core::progress::CommittedValue;
 use physics_core::puzzle::{InputSource, Inputs, Outcome, Playback, PuzzleKind};
 use physics_core::units::Quantity;
@@ -99,6 +98,11 @@ impl Sim {
         self.running.is_some()
     }
 
+    /// Whether the camera is still on a test that has ended.
+    pub fn watching(&self) -> bool {
+        self.watch_left > 0.0
+    }
+
     /// The puzzle whose test is running, if one is (a demonstration is not a test).
     pub fn testing(&self) -> Option<usize> {
         match &self.running {
@@ -134,14 +138,14 @@ enum Prop {
     MastMass,
     /// Follows the player's prediction during the mast test.
     Ghost,
-    Crate,
-    Beam,
+    Casket,
+    Tiller,
     /// The rail cart, on the tutorial's stretch of the line.
     Cart,
-    /// The cart's cargo crate, while it is loaded: it rides on the cart.
+    /// The block the cart carries, while it is loaded: it rides on the cart.
     Cargo,
-    /// The same cart once it has delivered the tools and gone on through the depot gate: the haul
-    /// cart, behind its front coupler.
+    /// The same cart once it has carried its block to the marker and gone on through the stone
+    /// gate: the haul cart, behind its front coupler.
     HaulCart,
     /// The survey crawler, ahead of its rear coupler.
     Crawler,
@@ -174,20 +178,21 @@ struct StrobeMark;
 
 #[derive(Resource)]
 struct PropAssets {
-    alloy: Handle<StandardMaterial>,
+    stone: Handle<StandardMaterial>,
     pair: [Handle<StandardMaterial>; 2],
     afterimage: Handle<StandardMaterial>,
     mass: Handle<Mesh>,
-    /// What the ledge launcher and the tilting launcher throw: a crate and the frame beam.
-    crate_mesh: Handle<Mesh>,
-    beam: Handle<Mesh>,
+    /// What the ledge launcher and the tilting launcher throw: the helm's casket and the tiller,
+    /// each a stone body and its quartz, with the quartz's material.
+    casket: (Handle<Mesh>, Handle<Mesh>, Handle<StandardMaterial>),
+    tiller: (Handle<Mesh>, Handle<Mesh>, Handle<StandardMaterial>),
     /// The haul cart's and the crawler's shapes, for their afterimages.
     haul: [Vehicle; 2],
 }
 
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
-const CRATE_SIZE: Vec3 = Vec3::new(0.9, 0.9, 0.9);
-const BEAM_SIZE: Vec3 = Vec3::new(2.4, 0.5, 0.5);
+const CASKET_SIZE: Vec3 = Vec3::new(0.9, 0.9, 0.9);
+pub const TILLER_SIZE: Vec3 = Vec3::new(2.4, 0.5, 0.5);
 const CART_SIZE: Vec3 = Vec3::new(0.9, 0.7, 0.9);
 const CARGO_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
 /// The haul cart and the crawler, as long along the track as the first number. The crawler's body
@@ -208,8 +213,8 @@ fn crawler_centre(sites: &Sites, s: f32) -> Vec3 {
 fn prop_size(prop: Prop) -> Vec3 {
     match prop {
         Prop::TowerMass | Prop::MastMass | Prop::Ghost => MASS_SIZE,
-        Prop::Crate => CRATE_SIZE,
-        Prop::Beam => BEAM_SIZE,
+        Prop::Casket => CASKET_SIZE,
+        Prop::Tiller => TILLER_SIZE,
         Prop::Cart => CART_SIZE,
         Prop::Cargo => CARGO_SIZE,
         Prop::HaulCart => HAUL_CART_SIZE,
@@ -222,27 +227,46 @@ pub struct SimPlugin;
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sim>()
+            .init_resource::<TerrainReshaped>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels, props::step_legs, reshape_terrain).chain());
     }
 }
 
-/// How a prop rests when nothing is happening: where its centre is, and the beam lying along its
+/// The physics engine's view of the island's blocks.
+#[derive(Component)]
+struct TerrainCollider;
+
+/// Set when blocks of the island have come or gone for good (the way's stonework rising or sinking,
+/// a new game putting it back to sleep), so the physics engine's view of the island is built again.
+#[derive(Resource, Default)]
+pub struct TerrainReshaped(pub bool);
+
+fn reshape_terrain(mut commands: Commands, mut reshaped: ResMut<TerrainReshaped>, world: Res<VoxelWorld>, terrain: Single<Entity, With<TerrainCollider>>) {
+    if !reshaped.0 {
+        return;
+    }
+    reshaped.0 = false;
+    commands.entity(*terrain).insert(Collider::voxels(Vec3::ONE, &world.exposed_blocks()));
+}
+
+/// How a prop rests when nothing is happening: where its centre is, and the tiller lying along its
 /// launcher's line.
 fn rest_transform(prop: Prop, sites: &Sites) -> Transform {
     let transform = Transform::from_translation(rest_pose(prop, sites));
-    if prop == Prop::Beam { transform.with_rotation(Quat::from_rotation_arc(Vec3::X, sites.ridge_launch.direction)) } else { transform }
+    if prop == Prop::Tiller { transform.with_rotation(Quat::from_rotation_arc(Vec3::X, sites.ridge_launch.direction)) } else { transform }
 }
 
 /// Whether a prop is in the world when nothing is happening. The cart runs the tutorial's stretch
-/// until it has delivered the tools, then waits past the depot gate as the haul cart; the beam is
-/// on the tilting launcher once the ledge launcher has thrown it across the canyon.
+/// until it has carried its block to the marker, then waits past the stone gate as the haul cart;
+/// the tiller is on the tilting launcher once the ledge launcher has thrown its casket across the
+/// canyon.
 fn shown(prop: Prop, game: &Game) -> bool {
     match prop {
         Prop::Ghost | Prop::Cargo => false,
         Prop::Cart => !solved(game, PuzzleKind::Rail),
         Prop::HaulCart => solved(game, PuzzleKind::Rail),
-        Prop::Beam => solved(game, PuzzleKind::Canyon),
+        Prop::Tiller => solved(game, PuzzleKind::Canyon),
         _ => true,
     }
 }
@@ -257,9 +281,9 @@ fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
     match prop {
         Prop::TowerMass => sites.tower_release + half,
         Prop::MastMass | Prop::Ghost => sites.mast_release + half,
-        // On the ledge launcher's cradle, which rides on the crates in the jack frame.
-        Prop::Crate => sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + half,
-        Prop::Beam => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
+        // On the ledge launcher's cradle, which rides on the blocks in the jack frame.
+        Prop::Casket => sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + half,
+        Prop::Tiller => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
         Prop::Cart => sites.rail_start + half,
         Prop::Cargo => sites.rail_start + Vec3::Y * CART_SIZE.y + half,
         Prop::HaulCart => haul_cart_centre(sites, 0.0),
@@ -274,22 +298,26 @@ pub(crate) fn setup(
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
     game: Res<Game>,
+    trim: Res<crate::waking::MachineTrim>,
 ) {
     let solid = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), perceptual_roughness: 0.6, ..default() })
     };
-    let steel = solid(&mut materials, [0.75, 0.16, 0.12]);
-    let timber = solid(&mut materials, Material::Timber.properties().colour);
-    let timber_cargo = timber.clone();
-    let alloy = solid(&mut materials, Material::HullAlloy.properties().colour);
-    let crawler = solid(&mut materials, [0.92, 0.78, 0.22]);
+    // The carts, the crawler, the test masses, the cart's block, the helm's casket and the tiller
+    // are the builders': their pale stone, the crawler a weathered shade of it.
+    let stone = crate::waking::stone(&mut materials);
+    let crawler = solid(&mut materials, [0.72, 0.68, 0.58]);
     let finishes = Finishes::new(&mut materials);
-    // The carts roll on spoked wheels; the crawler on treads, running west along the haul track.
+    let crawler_quartz = crate::waking::lit_quartz(&mut materials);
+    // The carts roll on stone wheels in the groove; the crawler walks, west along the haul track.
     let rail_cart = props::cart(&mut meshes, CART_SIZE, false);
     let haul_cart = props::cart(&mut meshes, HAUL_CART_SIZE, true);
     let crawler_shape = props::crawler(&mut meshes, CRAWLER_SIZE, sites.haul_direction.x.signum());
-    let crate_mesh = meshes.add(Cuboid::from_size(CRATE_SIZE));
-    let beam = meshes.add(props::i_beam(BEAM_SIZE));
+    // The casket's quartz band and the tiller's core light as their launchers wake.
+    let [casket_body, casket_band] = props::casket(CASKET_SIZE).map(|m| meshes.add(m));
+    let [tiller_shaft, tiller_core] = props::tiller(TILLER_SIZE).map(|m| meshes.add(m));
+    let casket = (casket_body, casket_band, trim.0[3].clone());
+    let tiller = (tiller_shaft, tiller_core, trim.0[4].clone());
     let ghost = materials.add(StandardMaterial {
         base_color: Color::srgba(0.4, 0.8, 1.0, 0.35),
         alpha_mode: AlphaMode::Blend,
@@ -297,14 +325,14 @@ pub(crate) fn setup(
         ..default()
     });
     for (prop, material) in [
-        (Prop::TowerMass, steel.clone()),
-        (Prop::MastMass, steel.clone()),
+        (Prop::TowerMass, stone.clone()),
+        (Prop::MastMass, stone.clone()),
         (Prop::Ghost, ghost),
-        (Prop::Crate, timber),
-        (Prop::Beam, alloy.clone()),
-        (Prop::Cart, steel.clone()),
-        (Prop::Cargo, timber_cargo),
-        (Prop::HaulCart, steel.clone()),
+        (Prop::Casket, stone.clone()),
+        (Prop::Tiller, stone.clone()),
+        (Prop::Cart, stone.clone()),
+        (Prop::Cargo, stone.clone()),
+        (Prop::HaulCart, stone.clone()),
         (Prop::Crawler, crawler),
     ] {
         let vehicle = match prop {
@@ -314,8 +342,8 @@ pub(crate) fn setup(
             _ => None,
         };
         let mesh = match prop {
-            Prop::Crate => crate_mesh.clone(),
-            Prop::Beam => beam.clone(),
+            Prop::Casket => casket.0.clone(),
+            Prop::Tiller => tiller.0.clone(),
             _ => vehicle.map_or_else(|| meshes.add(Cuboid::from_size(prop_size(prop))), |v| v.body.clone()),
         };
         let mut body = commands.spawn((
@@ -326,27 +354,39 @@ pub(crate) fn setup(
             if shown(prop, &game) { Visibility::Visible } else { Visibility::Hidden },
         ));
         if let Some(vehicle) = vehicle {
-            body.with_children(|parts| vehicle.spawn_parts(parts, |paint| finishes.paint(&material, paint), true));
+            // The cart's quartz is the supply rail's machine's, and sleeps and wakes with it. The
+            // crawler never slept: it still walks its rounds, so its quartz is lit.
+            let quartz = if prop == Prop::Crawler { crawler_quartz.clone() } else { trim.0[0].clone() };
+            body.with_children(|parts| {
+                vehicle.spawn_parts(parts, |paint| if paint == props::Paint::Trim { quartz.clone() } else { finishes.paint(&material, paint) }, true)
+            });
+        }
+        if let Some((_, quartz, lit)) = match prop {
+            Prop::Casket => Some(&casket),
+            Prop::Tiller => Some(&tiller),
+            _ => None,
+        } {
+            body.with_child((Mesh3d(quartz.clone()), MeshMaterial3d(lit.clone())));
         }
         if prop == Prop::Cargo {
-            // The orange handle of salvage that can be carried: it comes off the cart again with F.
+            // The orange handle we painted on what can be carried: it comes off the cart again with F.
             let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
             let handle = meshes.add(Cuboid::new(0.5, 0.06, 0.12));
             body.with_child((Mesh3d(handle), MeshMaterial3d(glow), Transform::from_xyz(0.0, CARGO_SIZE.y / 2.0 + 0.03, 0.0)));
         }
         if prop == Prop::Crawler {
-            // The launchers' guidance unit rides on top until the crawler is caught.
-            let [unit, lens] = crate::shipyard::guidance_parts(&mut meshes, &mut materials);
-            let on_top = Transform::from_xyz(0.0, (CRAWLER_SIZE.y + crate::shipyard::GUIDANCE_SIZE.y) / 2.0, 0.0);
+            // The launchers' sight rides on top until the crawler is caught.
+            let [unit, lens] = crate::vessel::sight_parts(&mut meshes, &mut materials);
+            let on_top = Transform::from_xyz(0.0, (CRAWLER_SIZE.y + crate::vessel::SIGHT_SIZE.y) / 2.0, 0.0);
             body.with_children(|crawler| {
-                crawler.spawn((crate::shipyard::GuidanceUnit { riding: true }, unit.0, unit.1, on_top, Visibility::Inherited)).with_child(lens);
+                crawler.spawn((crate::vessel::Sight { riding: true }, unit.0, unit.1, on_top, Visibility::Inherited)).with_child(lens);
             });
         }
     }
 
     // The physics engine's view of the island: every block anything could touch.
     commands.insert_resource(Gravity(Vec3::NEG_Y * game.layout.g as f32));
-    commands.spawn((RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
+    commands.spawn((TerrainCollider, RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
 
     // Loose wreckage, left to the engine: it falls and settles where it will. Bent hull plating,
     // conduit, girder, a thruster bell and a console, thrown clear in the crash.
@@ -368,25 +408,24 @@ pub(crate) fn setup(
                 }
             });
     }
-    // More of it lies where it was thrown clear, or where it was dragged to a camp: still, resting on
-    // the ground, a little larger than the loose pieces. The loose pieces can land on it.
+    // More of it lies where it was thrown clear: still, resting on the ground, a little larger than
+    // the loose pieces. The loose pieces can land on it.
     const SCRAP_SCALE: f32 = 1.35;
     for (j, ground) in sites.scrap.iter().enumerate() {
         let piece = props::debris(&mut meshes, &finishes, j);
         let lift = Vec3::Y * piece.depth(&meshes) * SCRAP_SCALE;
-        commands
-            .spawn((
-                RigidBody::Static,
-                piece.collider,
-                Mesh3d(piece.mesh),
-                MeshMaterial3d(piece.material),
-                Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
-            ))
-            .with_children(|trim| {
-                for (mesh, material, transform) in piece.trim {
-                    trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
-                }
-            });
+        commands.spawn((
+            RigidBody::Static,
+            piece.collider,
+            Mesh3d(piece.mesh),
+            MeshMaterial3d(piece.material),
+            Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
+        ))
+        .with_children(|trim| {
+            for (mesh, material, transform) in piece.trim {
+                trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
+            }
+        });
     }
     let unlit = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), unlit: true, ..default() })
@@ -399,12 +438,12 @@ pub(crate) fn setup(
         ..default()
     });
     commands.insert_resource(PropAssets {
-        alloy,
+        stone,
         pair,
         afterimage,
         mass: meshes.add(Cuboid::from_size(MASS_SIZE)),
-        crate_mesh,
-        beam,
+        casket,
+        tiller,
         haul: [haul_cart, crawler_shape],
     });
 }
@@ -670,8 +709,9 @@ fn finish_demo(game: &mut Game, ui: &mut Ui, puzzle: usize, guess: Option<usize>
 
 /// Give a body to the physics engine with the velocity it has at the judged moment.
 /// Hand a body over to the physics engine: `mesh` inside a box of `size`, moving at `velocity`.
-fn hand_over(commands: &mut Commands, mesh: Handle<Mesh>, size: Vec3, centre: Vec3, velocity: Vec3, material: Handle<StandardMaterial>, after: AfterSettling) {
-    commands.spawn((
+fn hand_over(commands: &mut Commands, mesh: Handle<Mesh>, size: Vec3, centre: Vec3, velocity: Vec3, material: Handle<StandardMaterial>, after: AfterSettling) -> Entity {
+    commands
+        .spawn((
         RigidBody::Dynamic,
         Collider::cuboid(size.x, size.y, size.z),
         LinearVelocity(velocity),
@@ -682,7 +722,8 @@ fn hand_over(commands: &mut Commands, mesh: Handle<Mesh>, size: Vec3, centre: Ve
         MeshMaterial3d(material),
         Transform::from_translation(centre),
         Settling { left: 6.0, after },
-    ));
+        ))
+        .id()
 }
 
 /// Height fallen from rest after `t` seconds, stopping at `limit`.
@@ -865,7 +906,7 @@ fn advance(
             // A short run-up along the rail before release, so the launch reads as a launch.
             const RUN_UP: f32 = 0.35;
             *t += dt;
-            let prop = if game.def(*puzzle).kind == PuzzleKind::Canyon { Prop::Crate } else { Prop::Beam };
+            let prop = if game.def(*puzzle).kind == PuzzleKind::Canyon { Prop::Casket } else { Prop::Tiller };
             let half = Vec3::Y * prop_size(prop).y / 2.0;
             let flight_t = (*t - RUN_UP).clamp(0.0, flight.t as f32) as f64;
             let (x, y) = projectile.pos(flight_t);
@@ -880,23 +921,27 @@ fn advance(
             sim.action = Some(centre);
             let (vx, vy) = projectile.vel(flight_t);
             let velocity = site.direction * vx as f32 + Vec3::Y * vy as f32;
-            for (candidate, mut transform, mut visibility, material) in &mut props {
+            for (candidate, mut transform, mut visibility, _) in &mut props {
                 if *candidate != prop {
                     continue;
                 }
                 transform.translation = centre;
-                if prop == Prop::Beam {
-                    // The beam points along its path.
+                if prop == Prop::Tiller {
+                    // The tiller points along its path.
                     transform.rotation = Quat::from_rotation_arc(Vec3::X, velocity.normalize_or(Vec3::X));
                 }
                 if *t - RUN_UP >= flight.t as f32 && *visibility != Visibility::Hidden {
                     *visibility = Visibility::Hidden;
-                    // A load that lands on its target stays down (the crated beam on the platform beside
-                    // the tilting launcher, the beam on the pad); a miss is returned to its launcher.
+                    // A load that lands on its target stays down (the casket on the platform beside
+                    // the tilting launcher, the tiller in the landing circle, until the skiff takes
+                    // it); a miss is returned to its launcher.
                     let after = if verdict.outcome.pass { AfterSettling::Stay } else { AfterSettling::Restore(prop) };
-                    let material = if prop == Prop::Beam { assets.alloy.clone() } else { material.0.clone() };
-                    let mesh = if prop == Prop::Beam { assets.beam.clone() } else { assets.crate_mesh.clone() };
-                    hand_over(&mut commands, mesh, prop_size(prop), centre, velocity, material, after);
+                    let (body, quartz, lit) = if prop == Prop::Tiller { &assets.tiller } else { &assets.casket };
+                    let load = hand_over(&mut commands, body.clone(), prop_size(prop), centre, velocity, assets.stone.clone(), after);
+                    commands.entity(load).with_child((Mesh3d(quartz.clone()), MeshMaterial3d(lit.clone())));
+                    if prop == Prop::Tiller && verdict.outcome.pass {
+                        commands.entity(load).insert(crate::vessel::Delivered);
+                    }
                 }
             }
             if *t - RUN_UP >= flight.t as f32 {
@@ -973,7 +1018,7 @@ pub fn note_reading(game: &mut Game, gate: u32) {
     }
 }
 
-/// Seconds the cart takes to roll on from the tutorial's marker, through the depot gate, to the haul
+/// Seconds the cart takes to roll on from the tutorial's marker, through the stone gate, to the haul
 /// cart's mark.
 const ROLL_ON: f32 = 3.0;
 
@@ -982,26 +1027,28 @@ const ROLL_ON: f32 = 3.0;
 struct Relayed {
     /// The tutorial's solved state and the canyon's, as last shown; `None` before the first look.
     shown: Option<(bool, bool)>,
-    /// The cart rolling on up the line after delivering the tools: seconds since it set off, and
+    /// The cart rolling on up the line after carrying its block to the marker: seconds since it set off, and
     /// where from.
     rolling: Option<(f32, Vec3)>,
     busy: bool,
 }
 
-/// Keep the line's one cart and the frame beam where the chapter has got them to. When the tutorial
-/// is solved, the cart rolls on through the depot gate to wait for the crawler; when the canyon is,
-/// the beam is on the tilting launcher. Once the world shows a stage it is left alone, so a beam
-/// that has just landed on the pad is not put back on the launcher.
+/// Keep the line's one cart and the tiller where the chapter has got them to. When the tutorial
+/// is solved, the cart rolls on through the stone gate to wait for the crawler; when the canyon is,
+/// the tiller is on the tilting launcher. Once the world shows a stage it is left alone, so a tiller
+/// that has just landed in the circle is not put back on the launcher.
 fn relay(
     time: Res<Time>,
     game: Res<Game>,
     sim: Res<Sim>,
     sites: Res<Sites>,
+    waking: Res<crate::waking::Waking>,
     mut carry: ResMut<Carry>,
     mut relayed: Local<Relayed>,
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
 ) {
-    let (rail, canyon) = (solved(&game, PuzzleKind::Rail), solved(&game, PuzzleKind::Canyon));
+    // The cart rolls on once its block is at the marker and the stone gate has opened for it.
+    let (rail, canyon) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(&sites.way), solved(&game, PuzzleKind::Canyon));
     let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
     if sim.busy() {
         return;
@@ -1034,18 +1081,19 @@ fn relay(
     carry.cart_gone = rail;
     for (prop, mut transform, mut visibility) in &mut props {
         let show = match prop {
-            Prop::Cart | Prop::HaulCart if swap => shown(*prop, &game),
-            Prop::Beam if first || canyon != was_canyon => shown(*prop, &game),
+            Prop::Cart if swap => !rail,
+            Prop::HaulCart if swap => rail,
+            Prop::Tiller if first || canyon != was_canyon => shown(*prop, &game),
             _ => continue,
         };
-        if show && *prop == Prop::Beam {
+        if show && *prop == Prop::Tiller {
             *transform = rest_transform(*prop, &sites);
         }
         visibility.set_if_neq(if show { Visibility::Visible } else { Visibility::Hidden });
     }
 }
 
-/// The cargo crate rides on the cart while it is loaded, until the cart has gone on up the line.
+/// The block rides on the cart while it is loaded, until the cart has gone on up the line.
 fn ride_the_cart(carry: Res<Carry>, mut props: Query<(&Prop, &mut Transform, &mut Visibility)>) {
     let Some(cart) = props.iter().find(|(p, _, _)| **p == Prop::Cart).map(|(_, t, _)| t.translation) else { return };
     let loaded = carry.holds(Slot::Cart) > 0 && !carry.cart_gone;
@@ -1089,14 +1137,14 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
     }
 }
 
-/// Keep the ledge launcher's load on its cradle when crates go into or out of the jack frame.
+/// Keep the ledge launcher's load on its cradle when blocks go into or out of the jack frame.
 fn follow_launcher(sim: Res<Sim>, sites: Res<Sites>, mut props: Query<(&Prop, &mut Transform, &Visibility)>) {
     if !sites.is_changed() || sim.busy() {
         return;
     }
     for (prop, mut transform, visibility) in &mut props {
-        if *prop == Prop::Crate && *visibility != Visibility::Hidden {
-            transform.translation = rest_pose(Prop::Crate, &sites);
+        if *prop == Prop::Casket && *visibility != Visibility::Hidden {
+            transform.translation = rest_pose(Prop::Casket, &sites);
         }
     }
 }

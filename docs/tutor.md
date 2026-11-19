@@ -14,7 +14,7 @@ The guarantee does not rest on instructions to the model.
 - The model is given no tools.
 - The game never parses the tutor's reply for commands. The one thing read from it is a gaze: a
   `[look: NAME]` tag, where NAME must be one of the places listed in the snapshot (survey pins,
-  stations, the wreck, the shipyard). It turns Lumen's on-screen eye toward that place and does nothing
+  stations, the wreck, the skiff). It turns Lumen's on-screen eye toward that place and does nothing
   else. The tag is removed before the text is shown (also while it streams), and a name not on the list
   is ignored, so the tag cannot carry text past the leak filter.
 

@@ -1,6 +1,6 @@
-// Tier 1: the skiff. What the tier is for in the story; its chapters are in tier1_ch*.ron.
+// Tier 1: the builders' skiff. What the tier is for in the story; its chapters are in tier1_ch*.ron.
 Tier(
     number: 1,
     ship: "Skiff",
-    goal: "Build a skiff and cross the strait to the main hull, where the rest of Lumen is.",
+    goal: "Wake the builders' skiff on the north quay and cross the strait to the main hull, where the rest of Lumen is.",
 )

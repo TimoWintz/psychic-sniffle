@@ -13,13 +13,14 @@ mod props;
 mod rig;
 mod ruler;
 mod scenery;
-mod shipyard;
+mod vessel;
 mod sim;
 mod state;
 mod stations;
 mod tutor_bridge;
 mod ui;
 mod voxel;
+mod waking;
 
 use avian3d::prelude::PhysicsPlugins;
 use bevy::prelude::*;
@@ -28,7 +29,10 @@ use state::Game;
 
 fn main() {
     let game = Game::load_or_new();
-    let (world, sites) = island::build(&game.layout);
+    let (mut world, sites) = island::build(&game.layout);
+    // The island is built awake: put the way to the stage the save is at before anything meshes it
+    // or collides with it.
+    waking::settle(&mut world, &sites.way, waking::stage(&game));
 
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -50,10 +54,11 @@ fn main() {
             carry::CarryPlugin,
             rig::RigPlugin,
             ruler::RulerPlugin,
-            shipyard::ShipyardPlugin,
+            vessel::VesselPlugin,
             tutor_bridge::TutorPlugin,
             ui::UiPlugin,
             companion::CompanionPlugin,
+            waking::WakingPlugin,
             devscript::DevScriptPlugin,
         ))
         .run();

@@ -165,11 +165,11 @@ impl Remark {
     }
 }
 
-/// A tier: the ship it builds and why.
+/// A tier: the vessel it wakes and why.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tier {
     pub number: u8,
-    /// The ship this tier builds.
+    /// The vessel this tier wakes and takes across.
     pub ship: String,
     /// One line: what the tier is for in the story.
     pub goal: String,
@@ -181,7 +181,7 @@ pub struct Chapter {
     pub tier: u8,
     pub domain: Domain,
     pub title: String,
-    /// The ship part this chapter's capstone installs.
+    /// The part of the vessel this chapter's capstone wakes.
     pub part: String,
     pub intro: String,
     /// One line for the dock: what the chapter is for in the story.
@@ -321,7 +321,7 @@ pub fn tier_1() -> Tier {
     ron::from_str(include_str!("../../../assets/curriculum/tier1.ron")).expect("assets/curriculum/tier1.ron is valid")
 }
 
-/// Tier 1, chapter 1: The Salvage Launcher.
+/// Tier 1, chapter 1: The Helm.
 pub fn chapter_1_1() -> Chapter {
     Chapter::from_ron(include_str!("../../../assets/curriculum/tier1_ch1.ron"))
         .expect("assets/curriculum/tier1_ch1.ron is valid")

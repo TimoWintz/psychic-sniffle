@@ -15,7 +15,9 @@ can see what you are doing and explain anything, but it cannot press a single bu
 player's job. What survived on the island is only a backup of it; the rest is across the strait (see
 "The story").
 
-Lumen is on screen as a holographic eye in the lower left corner. It points with a beam of light only
+Lumen is on screen as a holographic eye in the lower left corner. While it says a line it comes
+forward to the bottom centre, a ring spreading from it as the line starts, and goes back after; while
+a wake plays it floats above the letterbox. It points with a beam of light only
 where that helps: the way to the next station for a while after it opens (and again when you stand at
 a station that is done or locked), the experiment and the job of an unsolved station (and what to
 carry for it: the cargo crate, the light gate, the ledge's crates, then where they go), the yellow pin

@@ -31,10 +31,18 @@ pub fn paint_veil(painter: &egui::Painter, screen: egui::Rect, fade: f32, colour
     }
 }
 
+/// Full height of each letterbox bar, as a fraction of the screen's height.
+pub const LETTERBOX: f32 = 0.11;
+
+/// Height of each letterbox bar on `screen` when the bars are `bars` of the way in.
+pub fn letterbox_height(screen: egui::Rect, bars: f32) -> f32 {
+    screen.height() * LETTERBOX * bars.clamp(0.0, 1.0)
+}
+
 /// Letterbox bars, `bars` of their full height, with a caption in the lower one: a small gold
 /// heading over a line, both at `alpha`. Returns whether any bar shows.
 pub fn paint_letterbox(painter: &egui::Painter, screen: egui::Rect, bars: f32, heading: Option<&str>, line: Option<&str>, alpha: f32) -> bool {
-    let bar = screen.height() * 0.11 * bars;
+    let bar = letterbox_height(screen, bars);
     if bar <= 0.5 {
         return false;
     }

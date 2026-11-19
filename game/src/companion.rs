@@ -1,6 +1,8 @@
 //! Lumen's on-screen body: a holographic eye at the lower left that looks at things in the world,
-//! points at them with a beam of light, and says short lines. Its conversation panel grows out of the
-//! eye, where its lines appear, so the eye and the panel are one thing on screen.
+//! points at them with a beam of light, and says short lines. While it has something to say it comes
+//! forward to the bottom centre of the screen, its line above it, and goes back to its corner after.
+//! Its conversation panel grows out of the eye, where its lines appear, so the eye and the panel are
+//! one thing on screen. While a wake plays, the eye rises above the letterbox.
 //!
 //! What it looks at comes from the state of the game (the director below), or for a while from a
 //! `[look: NAME]` tag in a tutor reply. Either way it is only a gaze: nothing here changes the game.
@@ -751,6 +753,23 @@ const EYE: f32 = 26.0;
 const EYE_INSET: EVec2 = vec2(58.0, 112.0);
 /// How far the eye rises to float above the ruler's panel while the ruler is out.
 const RULER_LIFT: f32 = 140.0;
+/// How far below its centre the eye reaches on screen: its glow, and how far it bobs.
+const EYE_REACH: f32 = EYE + 18.0 + 3.0;
+/// The least gap between the eye and the top of the letterbox's lower bar.
+const BAR_CLEARANCE: f32 = 12.0;
+/// How much higher the eye floats while it speaks at the bottom centre, clear of the hints there.
+const FORWARD_RISE: f32 = 30.0;
+/// How long the eye takes to come forward or go back, in seconds.
+const FORWARD_SECONDS: f32 = 0.45;
+/// How long the eye stays forward after its last line, so lines in a row do not send it back and forth.
+const FORWARD_LINGER: f32 = 0.6;
+/// How long the ring that marks a new line takes to spread and fade, in seconds.
+const RING_SECONDS: f32 = 0.7;
+/// Width of the station's panel at the right, with its margin: the eye centres on the rest.
+const STATION_PANEL: f32 = 420.0;
+/// Font size of a line in its bubble, and the width it wraps at.
+const LINE_FONT: f32 = 15.0;
+const LINE_WRAP: f32 = 320.0;
 
 #[derive(Default)]
 struct Animation {
@@ -761,28 +780,52 @@ struct Animation {
     iris: EVec2,
     /// How far the eye has risen, in points.
     lift: f32,
+    /// How far the eye has come from its corner toward the bottom centre, from 0 to 1, before easing.
+    forward: f32,
+    /// Seconds the eye stays forward after it last had something to say.
+    linger: f32,
     /// Smoothed end of the beam on screen, and how visible the beam is.
     beam_end: Option<Pos2>,
     beam: f32,
     colour: [f32; 3],
 }
 
-/// Where the eye rests, before it bobs.
-fn eye_rest(ctx: &egui::Context, lift: f32) -> Pos2 {
-    let screen = ctx.content_rect();
-    pos2(screen.left() + EYE_INSET.x, screen.bottom() - EYE_INSET.y - lift)
+/// Where the eye rests, before it bobs: in its corner at `forward` 0, and at the bottom centre of the
+/// screen left of `right_edge` (what the station's panel leaves free) at 1, `lift` points higher.
+fn eye_place(screen: egui::Rect, lift: f32, forward: f32, right_edge: f32) -> Pos2 {
+    let corner = pos2(screen.left() + EYE_INSET.x, screen.bottom() - EYE_INSET.y - lift);
+    let speaking = pos2((screen.left() + right_edge) / 2.0, corner.y - FORWARD_RISE);
+    corner.lerp(speaking, forward.clamp(0.0, 1.0))
 }
 
-/// Bottom left corner of what grows out of the eye: its speech bubble or its panel.
+/// How far the eye rises: above the ruler's panel while the ruler is out, and above the lower
+/// letterbox bar, `bar` points tall, while a wake plays.
+fn lift_for(bar: f32, ruler: bool) -> f32 {
+    let over_bar = if bar > 0.0 { (bar + BAR_CLEARANCE - (EYE_INSET.y - EYE_REACH)).max(0.0) } else { 0.0 };
+    over_bar.max(if ruler { RULER_LIFT } else { 0.0 })
+}
+
+/// Bottom left corner of the panel that grows out of the eye.
 fn bubble_anchor(eye: Pos2) -> Pos2 {
     eye + vec2(-EYE + 2.0, -EYE - 22.0)
 }
 
+/// Where the bubble of a line `size` big goes over the eye: off to its right in the corner, centred
+/// over it at the bottom centre, and always on the screen.
+fn bubble_rect(screen: egui::Rect, eye: Pos2, size: EVec2, forward: f32) -> egui::Rect {
+    let corner = bubble_anchor(eye).x;
+    let centred = eye.x - size.x / 2.0;
+    let x = corner + (centred - corner) * forward.clamp(0.0, 1.0);
+    let x = x.min(screen.right() - 8.0 - size.x).max(screen.left() + 8.0);
+    egui::Rect::from_min_size(pos2(x, eye.y - EYE - 22.0 - size.y), size)
+}
+
 const BUBBLE_FILL: Color32 = Color32::from_rgba_premultiplied(11, 20, 31, 235);
 
-/// The tail that joins a bubble or panel to the eye.
+/// The tail that joins a bubble or panel to the eye, from the bubble's lower edge over the eye.
 fn paint_tail(painter: &egui::Painter, rect: egui::Rect, eye: Pos2, fill: Color32, stroke: Stroke) {
-    let tail = [pos2(rect.left() + 18.0, rect.bottom() - 1.0), pos2(rect.left() + 34.0, rect.bottom() - 1.0), pos2(eye.x - 4.0, eye.y - EYE - 6.0)];
+    let base = eye.x.clamp(rect.left() + 26.0, (rect.right() - 26.0).max(rect.left() + 26.0));
+    let tail = [pos2(base - 8.0, rect.bottom() - 1.0), pos2(base + 8.0, rect.bottom() - 1.0), pos2(eye.x - 4.0, eye.y - EYE - 6.0)];
     painter.add(egui::Shape::convex_polygon(tail.to_vec(), fill, Stroke::NONE));
     painter.line_segment([tail[0], tail[2]], stroke);
     painter.line_segment([tail[1], tail[2]], stroke);
@@ -837,6 +880,7 @@ fn draw(
     mut companion: ResMut<Companion>,
     mut ui_state: ResMut<Ui>,
     ruler: Res<Ruler>,
+    waking: Res<crate::waking::Waking>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
@@ -874,9 +918,20 @@ fn draw(
 
     let screen = ctx.content_rect();
     let zoom = ctx.zoom_factor();
-    let lift = if ruler.in_use() { RULER_LIFT } else { 0.0 };
+    // Above the ruler's panel, and above the letterbox while a wake plays.
+    let bar = waking.play.map_or(0.0, |play| crate::cinematic::letterbox_height(screen, play.timeline.bars(play.t)));
+    let lift = lift_for(bar, ruler.in_use());
     a.lift += (lift - a.lift) * (dt * 6.0).min(1.0);
-    let rest = eye_rest(&ctx, a.lift);
+    // The bars come in fast: the eye keeps up with them, so it is never under one.
+    a.lift = a.lift.max(lift_for(bar, false));
+    // Forward to the bottom centre while there is something to say, back to the corner after.
+    let speaking = !ui_state.tutor_open && !companion.lines.is_empty();
+    a.linger = if speaking { FORWARD_LINGER } else { (a.linger - dt).max(0.0) };
+    let toward = if speaking || (a.linger > 0.0 && !ui_state.tutor_open) { 1.0 } else { 0.0 };
+    a.forward += (toward - a.forward).clamp(-dt / FORWARD_SECONDS, dt / FORWARD_SECONDS);
+    let forward = crate::voxel::smoothstep(0.0, 1.0, a.forward);
+    let right_edge = if ui_state.station.is_some() { screen.right() - STATION_PANEL } else { screen.right() };
+    let rest = eye_place(screen, a.lift, forward, right_edge);
     let centre = rest + vec2(0.0, (t * 1.7).sin() * 3.0);
     let (camera, at) = *camera;
 
@@ -990,13 +1045,17 @@ fn draw(
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-panel-tail")));
         paint_tail(&painter, panel.response.rect, centre, BUBBLE_FILL, stroke);
     } else if let Some(line) = companion.lines.first() {
-        // What Lumen is saying, in a bubble where the panel opens.
+        // What Lumen is saying, in a bubble over the eye.
         let alpha = (line.shown / 0.25).min(1.0) * (line.left / 0.5).min(1.0);
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-says")));
-        let galley = painter.layout(line.text.clone(), egui::FontId::proportional(14.0), tint([235.0, 245.0, 255.0], alpha), 250.0);
+        // A ring spreads from the eye as a line starts, to catch the eye of the player.
+        if line.shown < RING_SECONDS {
+            let k = line.shown / RING_SECONDS;
+            painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
+        }
+        let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
         let size = galley.size() + vec2(20.0, 14.0);
-        let anchor = bubble_anchor(centre);
-        let rect = egui::Rect::from_min_size(anchor - vec2(0.0, size.y), size);
+        let rect = bubble_rect(screen, centre, size, forward);
         let fill = BUBBLE_FILL.gamma_multiply(alpha);
         let stroke = Stroke::new(1.5, tint(colour, 0.8 * alpha));
         painter.rect_filled(rect, 8.0, fill);
@@ -1304,5 +1363,46 @@ mod tests {
         assert_eq!(edge_point(rect, vec2(0.0, -1.0)), pos2(100.0, 0.0));
         let corner = edge_point(rect, vec2(1.0, 1.0).normalized());
         assert!((corner.y - 100.0).abs() < 1e-3 && (corner.x - 150.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn the_eye_comes_forward_to_the_middle_of_what_is_free() {
+        let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
+        let corner = eye_place(screen, 0.0, 0.0, screen.right());
+        assert_eq!(corner, pos2(EYE_INSET.x, 720.0 - EYE_INSET.y));
+        let middle = eye_place(screen, 0.0, 1.0, screen.right());
+        assert_eq!(middle.x, 640.0);
+        assert!(middle.y < corner.y, "it floats a little higher, over the hints");
+        // With a station open, it centres on what the panel leaves.
+        let beside = eye_place(screen, 0.0, 1.0, screen.right() - STATION_PANEL);
+        assert_eq!(beside.x, (1280.0 - STATION_PANEL) / 2.0);
+        assert!(beside.x + EYE_REACH < screen.right() - STATION_PANEL);
+    }
+
+    #[test]
+    fn the_eye_stays_above_the_letterbox() {
+        for (w, h) in [(1280.0, 720.0), (1920.0, 1080.0), (2560.0, 1440.0)] {
+            let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(w, h));
+            let bar = crate::cinematic::letterbox_height(screen, 1.0);
+            for forward in [0.0, 1.0] {
+                let eye = eye_place(screen, lift_for(bar, false), forward, screen.right());
+                assert!(eye.y + EYE_REACH <= screen.bottom() - bar, "{w}x{h}: the eye reaches {} below the bar's top", eye.y + EYE_REACH - (screen.bottom() - bar));
+            }
+        }
+        // With no letterbox the eye stays where it was; the ruler still lifts it.
+        assert_eq!(lift_for(0.0, false), 0.0);
+        assert_eq!(lift_for(0.0, true), RULER_LIFT);
+    }
+
+    #[test]
+    fn a_bubble_stays_on_screen_over_its_eye() {
+        let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
+        let size = vec2(300.0, 60.0);
+        let middle = eye_place(screen, 0.0, 1.0, screen.right());
+        let rect = bubble_rect(screen, middle, size, 1.0);
+        assert!((rect.center().x - middle.x).abs() < 1e-3 && rect.bottom() < middle.y - EYE);
+        let corner = eye_place(screen, 0.0, 0.0, screen.right());
+        let rect = bubble_rect(screen, corner, size, 1.0);
+        assert!(rect.left() >= 8.0, "centred over the corner it would run off the screen");
     }
 }

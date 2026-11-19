@@ -64,6 +64,8 @@ Lumen, the ship's computer, is the eye in the lower left: or what is left of it 
 backup whose core lies in the main hull across the strait. The skiff you build in tier 1 is how the
 two of you get there. Lumen points at what to do next with a beam of light, says why each station
 matters, comments on your tests and, now and then, on where you are, with or without a language model.
+When it has something to say it comes forward to the bottom centre of the screen, and goes back to
+its corner after.
 
 ![Lumen points at the platform after a missed shot](docs/screenshots/lumen.png)
 

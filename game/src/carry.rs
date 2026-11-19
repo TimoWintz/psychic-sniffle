@@ -1,14 +1,14 @@
 //! Carrying: pick something up, carry it, put it down or into the place a station reads.
 //!
-//! Salvage with an orange handle moves. Crates are real blocks of the island: they can be stood on
-//! and measured. Each crate belongs to a yard (the canyon ledge's salvage, or the cargo crate beside
+//! What has an orange handle (our paint) moves. The builders' dressed blocks are real blocks of the
+//! island: they can be stood on and measured. Each block belongs to a yard (the canyon ledge's pile, or the cart's block beside
 //! the supply rail) and is put down only there. The light gate is not a block: it rests on a stand by
 //! the drop tower's station until it is clamped on the tower.
 //!
-//! What a station reads is a [`Slot`]: the cart on the supply rail (one cargo crate), the notches of
-//! the drop tower (the light gate), the jack frame under the ledge launcher (a stack of crates). `F`
+//! What a station reads is a [`Slot`]: the cart on the supply rail (its one block), the notches of
+//! the drop tower (the light gate), the jack frame under the ledge launcher (a stack of blocks). `F`
 //! facing a slot puts in what is carried, or takes it out again. What is in each slot is kept in the
-//! save; loose crates are not: they are back where they started the next time the game starts.
+//! save; loose blocks are not: they are back where they started the next time the game starts.
 
 use crate::island::{Pin, Sites};
 use crate::player::Player;
@@ -22,7 +22,7 @@ use bevy_egui::input::EguiWantsInput;
 use physics_core::materials::Material;
 use physics_core::puzzle::{Ch1Layout, PuzzleKind};
 
-/// How far in front of the avatar's feet a crate is picked up or put down.
+/// How far in front of the avatar's feet a block is picked up or put down.
 const AHEAD: f32 = 1.1;
 /// How close to a slot's foot (or the gate's stand) the avatar must stand to use it.
 const SLOT_REACH: f32 = 1.9;
@@ -30,7 +30,7 @@ const TOWER_REACH: f32 = 2.4;
 const STAND_REACH: f32 = 1.6;
 /// How close, in metres, the pointer's ray must pass to the drop tower's fall line to pick a notch.
 const AIM_REACH: f32 = 1.5;
-/// Where the carried crate is held, in the avatar's frame (its front is −Z).
+/// Where the carried block is held, in the avatar's frame (its front is −Z).
 pub const HELD_AT: Vec3 = Vec3::new(0.0, 1.05, -0.62);
 const HELD_SIZE: f32 = 0.8;
 const HANDLE: Color = Color::srgb(1.0, 0.56, 0.10);
@@ -39,26 +39,26 @@ const GATE_REACH: f32 = 2.0;
 /// The light gate's size while it is carried or on its stand (it folds).
 const GATE_FOLDED: f32 = 0.45;
 
-/// The places loose crates are put down. A crate stays in its own.
+/// The places loose blocks are put down. A block stays in its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Yard {
-    /// The canyon ledge, north of the launcher's rail: the salvage pile.
+    /// The canyon ledge, north of the launcher's rail: the pile of the builders' blocks.
     Ledge,
-    /// Beside the supply rail's start: the cart's cargo crate.
+    /// Beside the supply rail's start: the cart's cart's block.
     Rail,
 }
 
 /// What can be carried.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
-    Crate(Yard),
+    Block(Yard),
     Gate,
 }
 
 /// How a slot holds what is put in it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotKind {
-    /// Crates stacked in a column, one metre each.
+    /// Blocks stacked in a column, one metre each.
     Stack,
     /// One thing, or nothing.
     Single,
@@ -67,7 +67,7 @@ pub enum SlotKind {
 }
 
 /// A place in the world that a station reads. What it holds is the save's `placed` value for its
-/// puzzle: crates in the frame, 0 or 1 on the cart, the gate's notch (its drop below the release
+/// puzzle: blocks in the frame, 0 or 1 on the cart, the gate's notch (its drop below the release
 /// point, 0 for none).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot {
@@ -106,13 +106,13 @@ impl Slot {
     /// What goes in it.
     pub fn takes(self) -> Item {
         match self {
-            Slot::Cart => Item::Crate(Yard::Rail),
+            Slot::Cart => Item::Block(Yard::Rail),
             Slot::Tower => Item::Gate,
-            Slot::Frame => Item::Crate(Yard::Ledge),
+            Slot::Frame => Item::Block(Yard::Ledge),
         }
     }
 
-    /// The most it holds: crates in the frame, the lowest notch on the tower.
+    /// The most it holds: blocks in the frame, the lowest notch on the tower.
     pub fn most(self, sites: &Sites) -> u32 {
         match self {
             Slot::Cart => 1,
@@ -149,9 +149,9 @@ pub fn gate_at(sites: &Sites, notch: u32) -> Vec3 {
 /// What `F` would do now.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// Pick up the loose crate in this cell.
+    /// Pick up the loose block in this cell.
     Take(IVec3),
-    /// Put the crate down in this cell.
+    /// Put the block down in this cell.
     Put(IVec3),
     /// Lift the light gate off its stand.
     TakeGate,
@@ -165,10 +165,10 @@ pub enum Target {
     Blocked(&'static str),
 }
 
-/// The movable things: loose crates, what is in each slot, what is carried.
+/// The movable things: loose blocks, what is in each slot, what is carried.
 #[derive(Resource, Default)]
 pub struct Carry {
-    /// Cells of the crates lying loose (not in a slot, not carried).
+    /// Cells of the blocks lying loose (not in a slot, not carried).
     pub loose: Vec<IVec3>,
     pub holding: Option<Item>,
     /// What each slot holds, by [`Slot`] order.
@@ -177,7 +177,7 @@ pub struct Carry {
     pub target: Option<Target>,
     /// The height on the drop tower's fall line that the pointer marks, when it is near the tower.
     pub aim: Option<f32>,
-    /// Whether the rail cart has delivered the tools and gone on up the line, past the stone gate,
+    /// Whether the rail cart has carried its block to the marker and gone on up the line, past the stone gate,
     /// to wait for the crawler: its slot can no longer be reached.
     pub cart_gone: bool,
 }
@@ -197,11 +197,11 @@ impl Carry {
 #[derive(Resource, Default)]
 pub struct DirtyCells(pub Vec<IVec3>);
 
-/// The orange handle and the physics engine's collider of one movable crate.
+/// The orange handle and the physics engine's collider of one movable block.
 #[derive(Component)]
 struct CrateMark(usize);
 
-/// The crate in the avatar's hands.
+/// The block in the avatar's hands.
 #[derive(Component)]
 struct HeldCrate;
 
@@ -226,7 +226,7 @@ impl Plugin for CarryPlugin {
     }
 }
 
-/// The yard a cell of loose crate lies in.
+/// The yard a cell of loose block lies in.
 fn yard_of(sites: &Sites, cell: IVec3) -> Yard {
     let [low, high] = sites.cargo_yard;
     if cell.cmpge(low).all() && cell.cmple(high).all() { Yard::Rail } else { Yard::Ledge }
@@ -239,8 +239,8 @@ fn yard_corners(sites: &Sites, yard: Yard) -> [IVec3; 2] {
     }
 }
 
-/// Put everything where the save says: as many crates in the jack frame as were left there, the
-/// rest on the pile (the top layer leaves the pile first); the cargo crate on the cart or beside the
+/// Put everything where the save says: as many blocks in the jack frame as were left there, the
+/// rest on the pile (the top layer leaves the pile first); the cart's block on the cart or beside the
 /// rail; the light gate on its notch or its stand.
 #[allow(clippy::too_many_arguments)]
 fn lay_out(
@@ -261,14 +261,14 @@ fn lay_out(
 
     let stack = filled[Slot::Frame.index()];
     let mut pile = sites.crate_pile.clone();
-    // Bottom layer first, so the crates taken away are the top ones.
+    // Bottom layer first, so the blocks taken away are the top ones.
     pile.sort_by_key(|c| (c.y, c.z, c.x));
     pile.truncate(pile.len() - stack as usize);
     if filled[Slot::Cart.index()] == 0 {
         pile.push(sites.cargo_cell);
     }
     for cell in &pile {
-        world.set(*cell, Material::Timber);
+        world.set(*cell, Material::Limestone);
         dirty.0.push(*cell);
     }
     carry.loose = pile;
@@ -280,9 +280,9 @@ fn lay_out(
     let handle = meshes.add(Cuboid::new(0.62, 0.07, 0.14));
     let grip = meshes.add(Cuboid::new(0.5, 0.1, 0.05));
     let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
-    // One mark for every crate that can lie loose or stand in the frame: the ledge's and the cargo.
+    // One mark for every block that can lie loose or stand in the frame: the ledge's and the cargo.
     for i in 0..=Ch1Layout::MAX_STACK as usize {
-        // A handle on top and a grip on each side, so crates stacked in the frame read one by one.
+        // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
         commands
             .spawn((
                 CrateMark(i),
@@ -300,11 +300,11 @@ fn lay_out(
             });
     }
     let body = meshes.add(Cuboid::from_length(HELD_SIZE));
-    let timber = materials.add(StandardMaterial { base_color: colour(Material::Timber), perceptual_roughness: 0.9, ..default() });
+    let stone = materials.add(StandardMaterial { base_color: colour(Material::Limestone), perceptual_roughness: 0.9, ..default() });
     commands.spawn((
         HeldCrate,
         Mesh3d(body),
-        MeshMaterial3d(timber),
+        MeshMaterial3d(stone),
         Transform::default(),
         Visibility::Hidden,
         children![(Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, HELD_SIZE / 2.0 + 0.03, 0.0).with_scale(Vec3::splat(HELD_SIZE)))],
@@ -345,7 +345,7 @@ fn colour(material: Material) -> Color {
     Color::srgb(r, g, b)
 }
 
-/// Make the world show what a slot holds: crates in the jack frame (which raise the launcher and its
+/// Make the world show what a slot holds: blocks in the jack frame (which raise the launcher and its
 /// survey pin), the light gate's pin on its notch. The cart's cargo is shown by `sim`, which moves
 /// the cart.
 pub fn set_slot(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCells, slot: Slot, holds: u32) {
@@ -359,11 +359,11 @@ pub fn set_slot(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCell
     }
 }
 
-/// Fill the jack frame with `stack` crates and raise the launcher (and its survey pin) onto them.
+/// Fill the jack frame with `stack` blocks and raise the launcher (and its survey pin) onto them.
 pub fn set_stack(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCells, stack: u32) {
     for k in 0..=Ch1Layout::MAX_STACK as i32 {
         let cell = sites.canyon_well + IVec3::Y * k;
-        world.set(cell, if k < stack as i32 { Material::Timber } else { Material::Air });
+        world.set(cell, if k < stack as i32 { Material::Limestone } else { Material::Air });
         dirty.0.push(cell);
     }
     sites.canyon_launch.origin.y = (sites.canyon_well.y + stack as i32) as f32;
@@ -371,7 +371,7 @@ pub fn set_stack(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCel
     sites.pins[pin].position = sites.canyon_launch.origin;
 }
 
-/// Whether a cell may take a crate of a yard that is put down: inside the yard, empty, on something
+/// Whether a cell may take a block of a yard that is put down: inside the yard, empty, on something
 /// solid.
 fn can_put(world: &VoxelWorld, sites: &Sites, yard: Yard, cell: IVec3) -> bool {
     let [low, high] = yard_corners(sites, yard);
@@ -415,9 +415,9 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
         let yard = match item {
             Item::Gate if faces(sites.gate_stand, STAND_REACH) => return Some(Target::StowGate),
             Item::Gate => return Some(Target::Blocked("The light gate clamps on the drop tower, or goes back on its stand.")),
-            Item::Crate(yard) => yard,
+            Item::Block(yard) => yard,
         };
-        // On the ground in front, or on top of a crate there.
+        // On the ground in front, or on top of a block there.
         let ahead = (feet + forward * AHEAD).floor().as_ivec3();
         for y in [level, level + 1] {
             let cell = IVec3::new(ahead.x, y, ahead.z);
@@ -428,9 +428,9 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
         let [low, high] = yard_corners(sites, yard);
         let in_yard = (low.x..=high.x).contains(&ahead.x) && (low.z..=high.z).contains(&ahead.z);
         return Some(Target::Blocked(match (in_yard, yard) {
-            (true, _) => "No room to put the crate down here.",
-            (false, Yard::Ledge) => "Crates go on the ledge, west of the launcher's rail.",
-            (false, Yard::Rail) => "The cargo crate goes on the cart, or down beside the start of the rail.",
+            (true, _) => "No room to put the block down here.",
+            (false, Yard::Ledge) => "Blocks go on the ledge, west of the launcher's rail.",
+            (false, Yard::Rail) => "The cart's block goes on the cart, or down beside the start of the rail.",
         }));
     }
     if let Some(slot) = SLOTS.into_iter().find(|s| carry.holds(*s) > 0 && at(*s)) {
@@ -440,7 +440,7 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
     if carry.gate_on_stand() && faces(sites.gate_stand, STAND_REACH) {
         return Some(Target::TakeGate);
     }
-    // The nearest loose crate in front with nothing on top of it, within reach of the hands.
+    // The nearest loose block in front with nothing on top of it, within reach of the hands.
     let reach_point = feet + forward * 0.9;
     carry
         .loose
@@ -527,10 +527,10 @@ pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty
             carry.loose.swap_remove(i);
             world.set(cell, Material::Air);
             dirty.0.push(cell);
-            carry.holding = Some(Item::Crate(yard_of(sites, cell)));
+            carry.holding = Some(Item::Block(yard_of(sites, cell)));
         }
         Target::Put(cell) => {
-            world.set(cell, Material::Timber);
+            world.set(cell, Material::Limestone);
             dirty.0.push(cell);
             carry.loose.push(cell);
             carry.holding = None;
@@ -572,11 +572,11 @@ fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&CrateMar
     }
 }
 
-/// A carried crate rides in front of the avatar, between its hands.
+/// A carried block rides in front of the avatar, between its hands.
 fn hold(carry: Res<Carry>, player: Query<&Transform, (With<Player>, Without<HeldCrate>)>, mut held: Single<(&mut Transform, &mut Visibility), With<HeldCrate>>) {
     let (transform, visibility) = &mut *held;
     let Ok(avatar) = player.single() else { return };
-    **visibility = if matches!(carry.holding, Some(Item::Crate(_))) { Visibility::Inherited } else { Visibility::Hidden };
+    **visibility = if matches!(carry.holding, Some(Item::Block(_))) { Visibility::Inherited } else { Visibility::Hidden };
     transform.translation = avatar.translation + avatar.rotation * HELD_AT;
     transform.rotation = avatar.rotation;
 }
@@ -599,7 +599,7 @@ fn place_gate(carry: Res<Carry>, sites: Res<Sites>, player: Query<&Transform, (W
     };
 }
 
-/// Outline where `F` would act: the crate to lift, the ghost of the one to put down, the notch the
+/// Outline where `F` would act: the block to lift, the ghost of the one to put down, the notch the
 /// light gate would clamp at.
 fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
     let Some(target) = carry.target else { return };
@@ -637,19 +637,19 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
 /// The line the hints bar shows for what `F` would do.
 pub fn hint(carry: &Carry) -> Option<String> {
     Some(match carry.target? {
-        Target::Take(_) => "F — pick up the crate".into(),
-        Target::Put(_) => "F — put the crate down".into(),
+        Target::Take(_) => "F — pick up the block".into(),
+        Target::Put(_) => "F — put the block down".into(),
         Target::TakeGate => "F — take the light gate off its stand".into(),
         Target::StowGate => "F — put the light gate back on its stand".into(),
-        Target::PutIn(Slot::Frame, _) => "F — slide the crate into the jack frame (the launcher goes up a metre)".into(),
-        Target::TakeOut(Slot::Frame, _) => "F — take a crate out of the jack frame (the launcher comes down a metre)".into(),
-        Target::PutIn(Slot::Cart, _) => "F — load the crate onto the cart".into(),
-        Target::TakeOut(Slot::Cart, _) => "F — take the crate off the cart".into(),
+        Target::PutIn(Slot::Frame, _) => "F — slide the block into the jack frame (the launcher goes up a metre)".into(),
+        Target::TakeOut(Slot::Frame, _) => "F — take a block out of the jack frame (the launcher comes down a metre)".into(),
+        Target::PutIn(Slot::Cart, _) => "F — load the block onto the cart".into(),
+        Target::TakeOut(Slot::Cart, _) => "F — take the block off the cart".into(),
         Target::PutIn(Slot::Tower, notch) => {
             format!("F — clamp the gate {notch} m below the release point (point higher or lower on the tower to choose the notch)")
         }
         Target::TakeOut(Slot::Tower, _) => "F — unclamp the light gate".into(),
-        Target::Blocked(why) => format!("{} {why}", if carry.holding == Some(Item::Gate) { "Carrying the light gate." } else { "Carrying a crate." }),
+        Target::Blocked(why) => format!("{} {why}", if carry.holding == Some(Item::Gate) { "Carrying the light gate." } else { "Carrying a block." }),
     })
 }
 
@@ -663,7 +663,7 @@ mod tests {
         let mut loose = sites.crate_pile.clone();
         loose.push(sites.cargo_cell);
         for cell in &loose {
-            world.set(*cell, Material::Timber);
+            world.set(*cell, Material::Limestone);
         }
         let carry = Carry { loose, ..default() };
         (world, sites, carry)
@@ -676,22 +676,22 @@ mod tests {
             let base = sites.canyon_launch.origin;
             let mut dirty = DirtyCells::default();
 
-            // Facing the pile from the yard's west side: the near crate on top comes first.
+            // Facing the pile from the yard's west side: the near block on top comes first.
             let pile_west = sites.crate_pile.iter().map(|c| c.x).min().unwrap();
             let row = sites.crate_pile[0].z;
             let feet = Vec3::new(pile_west as f32 - 0.6, base.y, row as f32 + 0.5);
             let Some(Target::Take(cell)) = target_for(&world, &sites, &carry, feet, Vec3::X, None) else { panic!("seed {seed}: nothing to take") };
-            assert_eq!(cell.y, base.y as i32 + 1, "the top crate is taken first");
+            assert_eq!(cell.y, base.y as i32 + 1, "the top block is taken first");
             assert_eq!(yard_of(&sites, cell), Yard::Ledge);
             world.set(cell, Material::Air);
             carry.loose.retain(|c| *c != cell);
-            carry.holding = Some(Item::Crate(Yard::Ledge));
+            carry.holding = Some(Item::Block(Yard::Ledge));
 
             // At the frame's foot on the launcher's rail, facing it.
             let out = sites.canyon_launch.direction;
             let foot = sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4;
             assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::PutIn(Slot::Frame, 1)), "seed {seed}");
-            // Facing away from it, the crate cannot be put on the rail.
+            // Facing away from it, the block cannot be put on the rail.
             assert!(matches!(target_for(&world, &sites, &carry, foot, -out, None), Some(Target::Blocked(_))), "seed {seed}");
 
             set_stack(&mut world, &mut sites, &mut dirty, 3);
@@ -710,7 +710,7 @@ mod tests {
     #[test]
     fn crates_are_put_down_only_in_their_yard_and_never_on_the_avatar() {
         let (world, sites, mut carry) = laid_out(3);
-        carry.holding = Some(Item::Crate(Yard::Ledge));
+        carry.holding = Some(Item::Block(Yard::Ledge));
         // At the yard's west edge, clear of the pile.
         let [low, high] = sites.crate_yard;
         let feet = Vec3::new(low.x as f32 + 0.5, low.y as f32, high.z as f32 - 1.5);
@@ -718,7 +718,7 @@ mod tests {
         // Facing out of the yard (west, off its edge).
         assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_X, None), Some(Target::Blocked(_))));
         assert!(overlaps_avatar(feet, feet.floor().as_ivec3()));
-        // A ledge crate does not go into the rail's yard, nor onto the cart.
+        // A ledge block does not go into the rail's yard, nor onto the cart.
         let [rail_low, _] = sites.cargo_yard;
         let by_rail = Vec3::new(rail_low.x as f32 + 0.5, rail_low.y as f32, rail_low.z as f32 - 0.6);
         assert!(matches!(target_for(&world, &sites, &carry, by_rail, Vec3::Z, None), Some(Target::Blocked(_))));
@@ -728,20 +728,20 @@ mod tests {
     fn the_cargo_crate_is_loaded_onto_the_cart() {
         for seed in [0, 7, 42, 199] {
             let (mut world, sites, mut carry) = laid_out(seed);
-            // From beside the crate, facing it.
+            // From beside the block, facing it.
             let cell = sites.cargo_cell;
             let feet = Vec3::new(cell.x as f32 - 0.6, cell.y as f32, cell.z as f32 + 0.5);
             assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::X, None), Some(Target::Take(cell)), "seed {seed}");
             world.set(cell, Material::Air);
             carry.loose.retain(|c| *c != cell);
-            carry.holding = Some(Item::Crate(yard_of(&sites, cell)));
-            assert_eq!(carry.holding, Some(Item::Crate(Yard::Rail)));
+            carry.holding = Some(Item::Block(yard_of(&sites, cell)));
+            assert_eq!(carry.holding, Some(Item::Block(Yard::Rail)));
             // Facing the cart from the rail behind it.
             let behind = sites.cart - Vec3::X * 1.2;
             assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X, None), Some(Target::PutIn(Slot::Cart, 1)), "seed {seed}");
             // Back down in its yard instead.
             assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::X, None), Some(Target::Put(cell)), "seed {seed}");
-            // A crate on the cart comes off it again.
+            // A block on the cart comes off it again.
             carry.holding = None;
             carry.filled[Slot::Cart.index()] = 1;
             assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X, None), Some(Target::TakeOut(Slot::Cart, 0)));

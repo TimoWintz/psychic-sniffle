@@ -33,11 +33,13 @@ pub struct OrbitCamera {
     focus: Vec3,
     /// The player's yaw, pitch and distance while a test has borrowed the camera.
     saved: Option<(f32, f32, f32)>,
+    /// The player's yaw, pitch and distance the camera is easing back to, after a wake.
+    returning: Option<(f32, f32, f32)>,
 }
 
 impl Default for OrbitCamera {
     fn default() -> Self {
-        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None }
+        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, returning: None }
     }
 }
 
@@ -51,7 +53,7 @@ impl OrbitCamera {
     /// player's own view is kept and comes back with [`OrbitCamera::release_view`].
     pub fn frame_side_view(&mut self, min: Vec3, max: Vec3, along: Vec3) {
         if self.saved.is_none() {
-            self.saved = Some((self.yaw, self.pitch, self.distance));
+            self.saved = Some(self.returning.take().unwrap_or((self.yaw, self.pitch, self.distance)));
         }
         let size = max - min;
         let width = size.with_y(0.0).length() + 8.0;
@@ -69,7 +71,7 @@ impl OrbitCamera {
     /// keeping the player's own view to come back with [`OrbitCamera::release_view`].
     pub fn borrow(&mut self, pitch: f32, distance: f32) {
         if self.saved.is_none() {
-            self.saved = Some((self.yaw, self.pitch, self.distance));
+            self.saved = Some(self.returning.take().unwrap_or((self.yaw, self.pitch, self.distance)));
         }
         self.pitch = pitch;
         self.distance = distance;
@@ -77,9 +79,17 @@ impl OrbitCamera {
 
     pub fn release_view(&mut self) {
         self.watch = None;
+        self.returning = None;
         if let Some((yaw, pitch, distance)) = self.saved.take() {
             (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
         }
+    }
+
+    /// Like [`OrbitCamera::release_view`], but the camera glides back to the player's own view over
+    /// a moment instead of cutting to it.
+    pub fn ease_home(&mut self) {
+        self.watch = None;
+        self.returning = self.saved.take();
     }
 
     /// Where the camera stands to look at `focus` with this yaw, pitch and distance, when nothing is
@@ -192,7 +202,7 @@ pub(crate) fn move_player(
     }
     feet = next;
 
-    // Something rose where the avatar stands (the ramp's steps, a crate put down): stand on top of it.
+    // Something rose where the avatar stands (the ramp's steps, a block put down): stand on top of it.
     // The lowest free place straight above, so an overhang further up is not where it ends up.
     if collides(&world, feet)
         && let Some(lifted) = (1..=LIFT_OUT).map(|up| feet.with_y(feet.y.floor() + up as f32)).find(|p| !collides(&world, *p))
@@ -222,6 +232,18 @@ fn orbit_camera(
     mut camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let dt = time.delta_secs();
+    let blend = (dt * 6.0).min(1.0);
+    if let Some((yaw, pitch, distance)) = orbit.returning {
+        // The shorter way round to the player's yaw.
+        let turn = (yaw - orbit.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        orbit.yaw += turn * blend;
+        orbit.pitch += (pitch - orbit.pitch) * blend;
+        orbit.distance += (distance - orbit.distance) * blend;
+        if turn.abs() < 1e-3 && (pitch - orbit.pitch).abs() < 1e-3 && (distance - orbit.distance).abs() < 1e-2 {
+            (orbit.yaw, orbit.pitch, orbit.distance) = (yaw, pitch, distance);
+            orbit.returning = None;
+        }
+    }
     if !wants.wants_any_pointer_input() {
         if buttons.pressed(MouseButton::Right) || buttons.pressed(MouseButton::Middle) {
             orbit.yaw -= motion.delta.x * 0.005;
@@ -238,7 +260,6 @@ fn orbit_camera(
     orbit.pitch = orbit.pitch.clamp(-0.3, 1.45);
 
     let target = orbit.watch.unwrap_or(player.translation + Vec3::Y * 1.5);
-    let blend = (dt * 6.0).min(1.0);
     orbit.focus = orbit.focus.lerp(target, blend);
 
     let back = orbit.back();

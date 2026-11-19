@@ -1,6 +1,6 @@
 //! Shapes of the things tests move, and of the loose debris by the wreck: built from primitives so a
 //! cart reads as a cart and scrap as pieces of a ship. Every shape keeps inside the box the
-//! simulation reasons with (a cart's envelope, the beam's size), centred on the entity, so nothing
+//! simulation reasons with (a cart's envelope, the tiller's size), centred on the entity, so nothing
 //! the puzzles measure moves.
 
 use avian3d::prelude::*;
@@ -91,6 +91,42 @@ pub fn merged(pieces: impl IntoIterator<Item = (Mesh, Transform)>) -> Mesh {
         whole.merge(&piece).expect("primitive meshes share their attributes");
     }
     whole
+}
+
+/// The builders' casket the helm travels in, inside `size`: a stone box with a heavier lid, and a
+/// band of quartz round its middle. Returns the stone and the quartz.
+pub fn casket(size: Vec3) -> [Mesh; 2] {
+    let lid = size.y * 0.2;
+    let body = merged([
+        (Cuboid::new(size.x * 0.94, size.y - lid, size.z * 0.94).into(), Transform::from_xyz(0.0, -lid / 2.0, 0.0)),
+        (Cuboid::new(size.x, lid, size.z).into(), Transform::from_xyz(0.0, size.y / 2.0 - lid / 2.0, 0.0)),
+    ]);
+    // Proud of the box's sides, short of the lid's overhang.
+    let band = Cuboid::new(size.x * 0.97, size.y * 0.12, size.z * 0.97).into();
+    [body, merged([(band, Transform::from_xyz(0.0, -lid / 2.0, 0.0))])]
+}
+
+/// The skiff's helm, along x inside `size`: a square stone shaft with a grip at its -x end and the
+/// rudder's blade at its +x end, and quartz running along the shaft's top and set through the
+/// blade. Returns the stone and the quartz.
+pub fn tiller(size: Vec3) -> [Mesh; 2] {
+    let shaft = size.y * 0.5;
+    let blade_x = size.x * 0.32;
+    let blade_thick = size.z * 0.34;
+    let shaft_len = size.x - blade_x * 0.6;
+    let shaft_mid = -size.x / 2.0 + shaft_len / 2.0;
+    let stone = merged([
+        (Cuboid::new(shaft_len, shaft, shaft).into(), Transform::from_xyz(shaft_mid, 0.0, 0.0)),
+        // The grip: a little thicker than the shaft.
+        (Cuboid::new(size.x * 0.12, shaft * 1.25, shaft * 1.25).into(), Transform::from_xyz(-size.x / 2.0 + size.x * 0.06, 0.0, 0.0)),
+        // The blade: as tall as the envelope, thin across it.
+        (Cuboid::new(blade_x, size.y, blade_thick).into(), Transform::from_xyz(size.x / 2.0 - blade_x / 2.0, 0.0, 0.0)),
+    ]);
+    let quartz = merged([
+        (Cuboid::new(shaft_len * 0.7, 0.04, shaft * 0.4).into(), Transform::from_xyz(shaft_mid, shaft / 2.0 + 0.02, 0.0)),
+        (Cuboid::new(blade_x * 0.5, size.y * 0.55, blade_thick + 0.03).into(), Transform::from_xyz(size.x / 2.0 - blade_x / 2.0, 0.0, 0.0)),
+    ]);
+    [stone, quartz]
 }
 
 /// An I-beam along x, as long, tall and wide as `size`: two flanges and a web.

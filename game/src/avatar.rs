@@ -511,7 +511,7 @@ fn animate(
     let gaze = companion.gaze.as_deref().and_then(|name| landmarks.position(name)).filter(|p| p.distance(feet) < GAZE_REACH);
     let target = action.or(console).or(if run < 0.5 { gaze } else { None });
     let typing_now = console.is_some() && action.is_none() && still && state.reaction.is_none();
-    // Hands full: no cheering or slumping, the crate stays held.
+    // Hands full: no cheering or slumping, the block stays held.
     if carry.holding.is_some() {
         state.reaction = None;
     }

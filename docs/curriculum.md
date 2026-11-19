@@ -11,17 +11,17 @@ prerequisite chapters.
 
 ## Tier 1 — Skiff (secondary school; algebra)
 
-The skiff crosses the strait to the main hull, where the rest of Lumen is; each chapter adds the part
-the crossing needs (see "The story" in the game design).
+The builders' skiff crosses the strait to the main hull, where the rest of Lumen is. It lies asleep on
+its slipway; each chapter wakes the part the crossing needs (see "The story" in the game design).
 
 | # | Chapter | Concepts | Maths | Needs | Ship part | Example puzzles |
 |---|---|---|---|---|---|---|
-| 1.1 | M — The Salvage Launcher | position, velocity, relative velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff frame | time a crawler and catch it on a marker; measure local gravity from a timed drop; launch a crate across a canyon; clear a ridge and hit the pad |
-| 1.2 | E — First Light | charge, current, voltage, resistance; Ohm's law; series and parallel; electrical power | linear equations | — | lighting and power loop | size a resistor so a lamp runs at its rating; voltage drop along a long block wire; three lamps, one supply: series or parallel?; choose a fuse |
-| 1.3 | M — The Haul | Newton's three laws; weight; normal force; static and kinetic friction; inclines | vectors in components | 1.1 | haul winch, hull plates delivered | mass of a block stack from density; friction coefficient from the tilt angle at which a sled slips; winch tension up a ramp; pull needed to cover a distance in a set time |
-| 1.4 | T — The Forge | temperature; heat; specific heat; mixing; latent heat | linear equations | 1.2 | hull alloy | energy to bring an ingot to forging temperature; final temperature of a quench bath; energy to melt a charge; heating time with an electric element |
+| 1.1 | M — The Helm | position, velocity, relative velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff's helm | time a crawler and catch it on a marker; measure local gravity from a timed drop; launch a casket across a canyon; clear a ridge and land in the circle |
+| 1.2 | E — First Light | charge, current, voltage, resistance; Ohm's law; series and parallel; electrical power | linear equations | — | skiff's lamps and power loop | size a resistor so a lamp runs at its rating; voltage drop along a long block wire; three lamps, one supply: series or parallel?; choose a fuse |
+| 1.3 | M — The Haul | Newton's three laws; weight; normal force; static and kinetic friction; inclines | vectors in components | 1.1 | haul winch, hull stones up the slipway | mass of a block stack from density; friction coefficient from the tilt angle at which a sled slips; winch tension up a ramp; pull needed to cover a distance in a set time |
+| 1.4 | T — The Forge | temperature; heat; specific heat; mixing; latent heat | linear equations | 1.2 | hull stones refired | energy to bring a stone to firing temperature in the builders' kiln; final temperature of a quench bath; energy to melt a charge; heating time with an electric element |
 | 1.5 | M — The Lift | work; kinetic and potential energy; conservation; power; efficiency | quadratics | 1.3 | skiff drive | counterweight for an elevator; spring compression for a launch speed; motor power to raise a load in a set time; braking distance |
-| 1.6 | Test flight — Skiff Trial | all of tier 1 together | — | 1.1–1.5 | skiff complete | thrust for the required acceleration at the built mass; battery energy for the crossing; motor temperature must stay under its limit |
+| 1.6 | Test flight — Skiff Trial | all of tier 1 together | — | 1.1–1.5 | skiff awake | thrust for the required acceleration at the built mass; battery energy for the crossing; motor temperature must stay under its limit |
 
 ## Tier 2 — Orbiter (upper secondary to early university; vectors, trigonometry, logarithms, first calculus)
 
@@ -68,30 +68,30 @@ Special relativity, an introduction to quantum physics, and statistical mechanic
 
 ---
 
-## Slice specification: 1.1 The Salvage Launcher
+## Slice specification: 1.1 The Helm
 
 Planet gravity `g` is drawn per save from 6.5 to 13.5 m/s², excluding 9.3 to 10.3 so that the familiar
 value never works. All lengths are whole metres so they can be checked by counting blocks.
 
 The stations are the machines of the ancient way (see the game design's story): asleep at the start,
-woken one by one as each job is done right. The builders give no numbers; every orange mark is the
-castaway's. Each puzzle's **Wakes** line says what its pass wakes (see `game/src/waking.rs`).
+woken one by one as each job is done right. Each has its own console, which wakes with it. The
+builders give no numbers; every orange mark is the castaway's. Each puzzle's **Wakes** line says what its pass wakes (see `game/src/waking.rs`).
 
 ### Puzzle 0 — The supply rail (tutorial)
 
-- **Story.** The first crate out of the wreck holds the castaway's tools; nothing hard, this is how
-  every station works. Pass: the marker lit when the cart stopped on it, and Lumen did nothing.
+- **Story.** The builders' cart, and the one console on the island that still glows; nothing hard,
+  this is how every station works. Pass: the marker lit when the cart stopped on it, and Lumen did nothing.
 - **Wakes.** The marker's quartz, then the stone gate at the end of the stretch, which opens; the cart
   goes on through as the haul cart.
 - **Purpose.** Teach the station loop before any physics: brief, ruler, notebook, blueprint, units,
   commit, result, charges. It needs no mathematics; the answer is the measurement itself.
 - **Brief.** The builders' cart, on a straight, level rail sunk into the road beside the wreck,
   drives exactly as far as it is told and stops. Load it, then send it to the orange marker.
-- **Carrying.** The cart starts empty and will not run so. Its cargo crate stands beside the rail
-  start; the player picks it up (`F`) and puts it on the cart (`F`), which teaches the verb the
+- **Carrying.** The cart starts empty and will not run so. A block of the builders' stone lies
+  beside the rail start; the player picks it up (`F`) and puts it on the cart (`F`), which teaches the verb the
   canyon needs, with nothing at stake. Committing with an empty cart is refused for free ("load the
   cart first"), before anything typed is read, so it is not the first commit that writes the page.
-  The crate rides with the cart on every run and stays on it; it can be taken off again and put
+  The block rides with the cart on every run and stays on it; it can be taken off again and put
   back down beside the rail, and the save keeps whether it is loaded.
 - **Investigate.** Ruler: the cart's starting point to the marker centre (both pinned, on the near
   side of the rail so the cart does not hide them). The distance is a whole number of metres, 9 to 17,
@@ -182,64 +182,66 @@ castaway's. Each puzzle's **Wakes** line says what its pass wakes (see `game/src
 
 ### Puzzle 3 — Across the canyon
 
-- **Story.** The frame beam itself, packed in a salvage crate, crosses the canyon: the first real
-  shot with the player's g. The platform is beside the tilting launcher. Pass: the crate stays on the
-  platform and the beam waits on the tilting launcher.
+- **Story.** The skiff's helm, a stone tiller in the builders' own casket, waits on the ledge
+  launcher, as if the way was sending it when it fell asleep. It crosses the canyon: the first real
+  shot with the player's g. The platform is beside the tilting launcher. Pass: the casket stays on
+  the platform and the tiller waits on the tilting launcher.
 - **Wakes.** Both rims; the seal in the pass through the spine, the ridge's wall from coast to
   coast, sinks, and the north shore can be reached.
-- **Brief.** Land a salvage crate on the strip across the canyon. The ledge launcher fires
+- **Brief.** Land the helm's casket on the strip across the canyon. The ledge launcher fires
   horizontally, but its worn dial turns only within a band (`vmin` to `vmax`, found and painted on
   the rating plate by the castaway), and from the bare ledge no speed in the band reaches the strip.
-  The launcher rides in a stone jack frame at the rim; every crate slid into its sockets raises it
-  one metre.
+  The launcher rides in a stone jack frame at the rim; every one of the builders' dressed blocks
+  slid into its sockets raises it one metre.
 - **Investigate.** Ruler: horizontal distance from the release point to the strip's centre, and the
   drop to it (the release point's pin rises with the launcher). The rating plate on the station gives
   the band, with a button to note it (`vmin`, `vmax`).
-- **Try it first.** "One crate dropped, one fired sideways, at the same moment: which reaches the
-  canyon floor first?" Both at once. The test crates leave from wherever the launcher stands. The fired
-  crate is slow enough to land mid-canyon; both fall the launcher's height plus the canyon's depth, not
+- **Try it first.** "One block dropped, one fired sideways, at the same moment: which reaches the
+  canyon floor first?" Both at once. The test blocks leave from wherever the launcher stands. The fired
+  block is slow enough to land mid-canyon; both fall the launcher's height plus the canyon's depth, not
   the drop to the strip, so the time is not the puzzle's. Writes *Horizontal and vertical motion are
   independent*.
-- **Build, then compute.** Work out which release heights the band allows, carry crates (`F`) from
+- **Build, then compute.** Work out which release heights the band allows, carry blocks (`F`) from
   the pile of eight on the ledge into the frame, then type the speed for the height built. The
-  blueprint shows the frame's crates beside the typed speed, and the save keeps them. A speed outside
+  blueprint shows the frame's blocks beside the typed speed, and the save keeps them. A speed outside
   the band is refused before launch and costs nothing, so a wrong stack shows up for free once the
   speed for it has been worked out.
-- **Pass.** The crate lands on the strip (one block long, so centre ± 0.5 m).
+- **Pass.** The casket lands on the strip (one block long, so centre ± 0.5 m).
 - **Relations.** `v = d / sqrt(2H/g)` for a release height `H`; the band allows
-  `g d² / (2 vmax²) ≤ H ≤ g d² / (2 vmin²)`; crates = `H −` the ledge's height, in whole metres.
+  `g d² / (2 vmax²) ≤ H ≤ g d² / (2 vmin²)`; blocks = `H −` the ledge's height, in whole metres.
 - **Design of the numbers.** The ledge is 3 to 5 m above the strip and the strip 22 to 42 m out. The
   band is placed halfway between the speeds that neighbouring stacks need, so that one or two stacks
-  between 1 and 6 crates are inside it, and no stack's speed is within 1.5 % of either end: a
+  between 1 and 6 blocks are inside it, and no stack's speed is within 1.5 % of either end: a
   player's own `g` (good to about 0.5 %) never tips a stack in or out. Both ends are rounded to
   0.1 m/s on the plate. The longest shot the dial allows, from a full frame, still comes down on the
   flat ground beyond the canyon. These numbers are drawn after all the others, so the rest of an older
   save's island stays as it was.
 - **Guessing.** A player who guesses but uses every miss well (halving the band on the side the miss
-  points to, and moving a crate when it runs out) needs 7.6 tests on average and is done within three
-  in about a third of saves. The old typed-speed canyon took 3.9 (a third within three); the first crate
+  points to, and moving a block when it runs out) needs 7.6 tests on average and is done within three
+  in about a third of saves. The old typed-speed canyon took 3.9 (a third within three); the first stacking
   version, with a fixed speed, 2.8 (three quarters within three). A test in `puzzle.rs` keeps it so.
 
 ### Puzzle 4 — Over the ridge (capstone)
 
-- **Story.** The one that matters: the frame beam, come across the canyon, over the ridge to the
-  shipyard on the builders' old quay on the north shore.
+- **Story.** The one that matters: the tiller, come across the canyon, over the ridge to the skiff on
+  the builders' old quay on the north shore.
 - **Wakes.** The landing circle, then the north gate, whose light points across the strait at the main
   hull. In the closing, Lumen hears the core for the first time: faint, but there.
-- **Brief.** Launch the frame beam over the ridge onto the shipyard pad. The launcher has a maximum
+- **Brief.** Launch the tiller over the ridge into the landing circle on the quay. The launcher has a maximum
   speed.
-- **Investigate.** Ruler: distance to the pad, distance to the ridge, height of the ridge.
+- **Investigate.** Ruler: distance to the circle, distance to the ridge, height of the ridge.
 - **Try it first.** "Two slugs at the same speed, 30 and 60 degrees: which lands further away?" The
   same place, at 0.6 of the distance to the ridge, well short of it. Writes *Splitting a launch into
   components* and *Range on level ground*.
 - **Predict.** Enter the launch angle and the launch speed.
-- **Pass.** The beam passes over the ridge without touching it and lands on the pad (5 m long, so
-  centre ± 2.5 m). The tracked point is the beam's underside; the brief tells the player to leave margin.
+- **Pass.** The tiller passes over the ridge without touching it and lands in the circle (5 m long, so
+  centre ± 2.5 m). The tracked point is the tiller's underside; the brief tells the player to leave margin.
 - **Design of the numbers.** The ridge is placed so that 45° does not clear it, and the speed limit
   rules out very steep shots, leaving a window of roughly ten degrees. The player must reason about
   both constraints before computing the speed.
 - **Relations.** `x = v cosθ · t`, `y = v sinθ · t − ½ g t²`; on level ground `R = v² sin 2θ / g`.
-- **Reward.** The skiff's frame rises on the shipyard floor, at the top of the old slipway.
+- **Reward.** Once the north gate has woken, the skiff takes its helm: the tiller settles into the
+  socket at its stern and the helm's quartz lights. The rest of the skiff stays dark.
 
 ### Handbook pages: Earth pictures and quizzes
 
@@ -270,6 +272,6 @@ target.
 - It needs a friction simulator in `physics_core`, tested against closed form; the row of slots, as
   another `carry::Slot` (the cart, the tower's notches and the jack frame are the ones built); and a
   guesser test (see "What makes guessing a bad strategy").
-- A row of slots alone is a handful of options, the trap the first crate canyon fell into: a guesser
+- A row of slots alone is a handful of options, the trap the first stacking canyon fell into: a guesser
   found it in 2.8 tests. So make the slots fine and the target tight, or combine the placement with a
   calculated value: the friction coefficient, measured first from the tilt at which the sled slips.

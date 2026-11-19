@@ -49,14 +49,14 @@ impl Landmarks {
             places.push((station_name(game, i), console.as_vec3() + Vec3::new(0.5, 1.3, 0.5)));
         }
         let pile = sites.crate_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.crate_pile.len().max(1) as f32;
-        places.push((SALVAGE_CRATES.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
+        places.push((LEDGE_BLOCKS.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
         places.push((JACK_FRAME.into(), sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
-        places.push((CARGO_CRATE.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
+        places.push((CART_BLOCK.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
         places.push((RAIL_CART.into(), sites.rail_start + Vec3::Y * 0.8));
         places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
         places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
-        places.push(("The shipyard floor".into(), sites.shipyard + Vec3::Y * 1.0));
+        places.push(("The skiff on the slipway".into(), sites.slipway + Vec3::Y * 1.0));
         places.push((MAIN_HULL.into(), crate::intro::Mainland::wreck() + Vec3::Y * 6.0));
         places.push((SHORE.into(), sites.shore + Vec3::Y * 1.0));
         // The way: its gates and the ramp, and the light that runs along it while a machine wakes.
@@ -84,11 +84,11 @@ impl Landmarks {
     }
 }
 
-/// The crates on the canyon ledge, and the frame at the rim they go into.
-const SALVAGE_CRATES: &str = "Salvage crates on the ledge";
+/// The blocks on the canyon ledge, and the frame at the rim they go into.
+const LEDGE_BLOCKS: &str = "Blocks on the ledge";
 const JACK_FRAME: &str = "Jack frame under the ledge launcher";
-/// The supply rail's cargo crate where it stands at the start, and the cart it goes on.
-const CARGO_CRATE: &str = "Cargo crate beside the rail";
+/// The block for the supply rail's cart where it lies at the start, and the cart it goes on.
+const CART_BLOCK: &str = "The cart's block beside the rail";
 const RAIL_CART: &str = "Rail cart";
 /// The light gate on its stand, and the drop tower it clamps on.
 const LIGHT_GATE: &str = "Light gate on its stand";
@@ -146,9 +146,9 @@ fn guide(kind: PuzzleKind) -> Guide {
             demo_watch: Some("Ledge launcher: release point"),
         },
         PuzzleKind::Ridge => Guide {
-            measure: ["Tilting launcher: release point", "Shipyard pad: centre"],
+            measure: ["Tilting launcher: release point", "Landing circle: centre"],
             study: "Ridge: top, near edge",
-            target: "Shipyard pad: centre",
+            target: "Landing circle: centre",
             demo: Some("Tilting launcher: release point"),
             demo_watch: Some("Ridge: foot, near side"),
         },
@@ -338,7 +338,7 @@ struct Facts {
     carrying: Option<Item>,
     /// The light is running up the road to wake a machine.
     light_running: bool,
-    /// Nothing is placed at the focused puzzle's station: no crate in the jack frame, no cargo on
+    /// Nothing is placed at the focused puzzle's station: no block in the jack frame, no cargo on
     /// the cart, no gate on the tower.
     slot_empty: bool,
     /// The drop tower's experiment has been watched but nothing has been timed with the light gate.
@@ -375,8 +375,8 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     }
     // Something in hand goes where the puzzle at hand reads it.
     match (f.carrying, unsolved) {
-        (Some(Item::Crate(Yard::Ledge)), Some(PuzzleKind::Canyon)) => return Some(JACK_FRAME.into()),
-        (Some(Item::Crate(Yard::Rail)), Some(PuzzleKind::Rail)) => return Some(RAIL_CART.into()),
+        (Some(Item::Block(Yard::Ledge)), Some(PuzzleKind::Canyon)) => return Some(JACK_FRAME.into()),
+        (Some(Item::Block(Yard::Rail)), Some(PuzzleKind::Rail)) => return Some(RAIL_CART.into()),
         (Some(Item::Gate), Some(PuzzleKind::Gravity)) => return Some(TOWER_NOTCHES.into()),
         _ => {}
     }
@@ -389,8 +389,8 @@ fn choose_gaze(f: &Facts) -> Option<String> {
             return Some(place.into());
         }
         match kind {
-            PuzzleKind::Canyon if f.slot_empty => return Some(SALVAGE_CRATES.into()),
-            PuzzleKind::Rail if f.slot_empty => return Some(CARGO_CRATE.into()),
+            PuzzleKind::Canyon if f.slot_empty => return Some(LEDGE_BLOCKS.into()),
+            PuzzleKind::Rail if f.slot_empty => return Some(CART_BLOCK.into()),
             PuzzleKind::Gravity if f.gate_pending && f.slot_empty => return Some(LIGHT_GATE.into()),
             // A gate on the tower and nothing timed with it yet: run the experiment.
             PuzzleKind::Gravity if f.gate_pending => return guide(kind).demo.map(Into::into),
@@ -406,7 +406,7 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     }
     match &f.next_station {
         Some(station) => Some(station.clone()),
-        None if f.next.is_none() => Some("The shipyard floor".into()),
+        None if f.next.is_none() => Some("The skiff on the slipway".into()),
         None => None,
     }
 }
@@ -503,7 +503,7 @@ fn direct(
                     companion.say_spoken(&first, true);
                 }
                 Some(n) => companion.say(format!("Welcome back. Next: {}", lowercase_first(&game.def(n).task))),
-                None => companion.say("Welcome back. The frame stands on the shipyard floor."),
+                None => companion.say("Welcome back. The skiff has its helm."),
             }
             companion.beckon_left = BECKON_SECONDS + companion.talking_for();
         }
@@ -552,13 +552,13 @@ fn direct(
                 } else {
                     match kind {
                         PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => {
-                            Some((Nudge::Build, "The cart will not run empty. Its cargo crate stands beside the rail: F picks it up, F again puts it on the cart."))
+                            Some((Nudge::Build, "The cart will not run empty. A block of theirs lies beside the rail: F picks it up, F again puts it on the cart."))
                         }
                         PuzzleKind::Gravity if gate_pending(&game, p) && carry.gate_on_stand() => {
                             Some((Nudge::Build, "The light gate on the stand times the fall to any notch of the tower you clamp it at. Try a short drop and a long one."))
                         }
                         PuzzleKind::Canyon if carry.holds(Slot::Frame) == 0 => {
-                            Some((Nudge::Build, "Its dial only turns so far. The crates on the ledge fit the frame at the rim and raise the launcher."))
+                            Some((Nudge::Build, "Its dial only turns so far. The blocks on the ledge fit the frame at the rim and raise the launcher."))
                         }
                         _ => None,
                     }
@@ -1163,12 +1163,12 @@ mod tests {
     #[test]
     fn at_the_canyon_the_beam_shows_the_crates_and_then_the_frame() {
         let open = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
-        assert_eq!(choose_gaze(&open).as_deref(), Some(SALVAGE_CRATES));
+        assert_eq!(choose_gaze(&open).as_deref(), Some(LEDGE_BLOCKS));
         let built = Facts { slot_empty: false, ..open.clone() };
         assert_eq!(choose_gaze(&built).as_deref(), Some("Platform: centre"));
-        let carrying = Facts { station_open: false, carrying: Some(Item::Crate(Yard::Ledge)), ..open.clone() };
+        let carrying = Facts { station_open: false, carrying: Some(Item::Block(Yard::Ledge)), ..open.clone() };
         assert_eq!(choose_gaze(&carrying).as_deref(), Some(JACK_FRAME));
-        // The experiment comes first, before any crates.
+        // The experiment comes first, before any blocks.
         let fresh = Facts { demo_pending: true, ..open };
         assert_eq!(choose_gaze(&fresh).as_deref(), Some("Ledge launcher: release point"));
     }
@@ -1176,8 +1176,8 @@ mod tests {
     #[test]
     fn at_the_rail_the_beam_shows_the_cargo_and_then_the_cart() {
         let open = Facts { focus_kind: Some(PuzzleKind::Rail), station_open: true, slot_empty: true, beckon: false, ..walking_to(0) };
-        assert_eq!(choose_gaze(&open).as_deref(), Some(CARGO_CRATE));
-        let carrying = Facts { station_open: false, carrying: Some(Item::Crate(Yard::Rail)), ..open.clone() };
+        assert_eq!(choose_gaze(&open).as_deref(), Some(CART_BLOCK));
+        let carrying = Facts { station_open: false, carrying: Some(Item::Block(Yard::Rail)), ..open.clone() };
         assert_eq!(choose_gaze(&carrying).as_deref(), Some(RAIL_CART));
         let loaded = Facts { slot_empty: false, ..open };
         assert_eq!(choose_gaze(&loaded).as_deref(), Some("Rail marker: centre"));
@@ -1195,8 +1195,8 @@ mod tests {
         let fitted = Facts { slot_empty: false, ..pending };
         assert_eq!(choose_gaze(&fitted).as_deref(), Some("Drop tower: release point"));
         assert_eq!(choose_gaze(&open).as_deref(), Some("Drop tower: release point"), "with a gate reading, the job");
-        // A crate in hand at the drop tower is not the gate.
-        let wrong = Facts { station_open: false, carrying: Some(Item::Crate(Yard::Rail)), ..open };
+        // A block in hand at the drop tower is not the gate.
+        let wrong = Facts { station_open: false, carrying: Some(Item::Block(Yard::Rail)), ..open };
         assert_ne!(choose_gaze(&wrong).as_deref(), Some(TOWER_NOTCHES));
     }
 
@@ -1206,7 +1206,7 @@ mod tests {
         let (_, sites) = island::build(&layout);
         let game = Game::for_test(7);
         let landmarks = Landmarks::new(&sites, &game);
-        for place in [SALVAGE_CRATES, JACK_FRAME, CARGO_CRATE, RAIL_CART, LIGHT_GATE, TOWER_NOTCHES] {
+        for place in [LEDGE_BLOCKS, JACK_FRAME, CART_BLOCK, RAIL_CART, LIGHT_GATE, TOWER_NOTCHES] {
             assert!(landmarks.position(place).is_some(), "{place}");
         }
         assert!(landmarks.position("Light gate").is_none(), "the gate's pin is away until it is clamped");
@@ -1273,15 +1273,15 @@ mod tests {
         let telling = Facts { line_look: Some(MAIN_HULL.into()), ..walking_to(0) };
         assert_eq!(choose_gaze(&telling).as_deref(), Some(MAIN_HULL));
         let at_work = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, slot_empty: true, ..telling.clone() };
-        assert_eq!(choose_gaze(&at_work).as_deref(), Some(SALVAGE_CRATES));
+        assert_eq!(choose_gaze(&at_work).as_deref(), Some(LEDGE_BLOCKS));
         assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Rail), ..telling }).as_deref(), Some("Rail marker: centre"));
     }
 
     #[test]
-    fn walking_looks_at_the_next_station_and_the_end_at_the_shipyard() {
+    fn walking_looks_at_the_next_station_and_the_end_at_the_skiff() {
         assert_eq!(choose_gaze(&walking_to(2)).as_deref(), Some("Station 2"));
         let done = Facts { next: None, next_station: None, beckon: true, ..Facts::default() };
-        assert_eq!(choose_gaze(&done).as_deref(), Some("The shipyard floor"));
+        assert_eq!(choose_gaze(&done).as_deref(), Some("The skiff on the slipway"));
     }
 
     #[test]

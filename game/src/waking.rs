@@ -9,10 +9,11 @@
 //! - its job is done when `i < k`: its **done** quartz is lit (the marker's studs, the crane, the
 //!   tower to the top, both rims, the landing circle);
 //! - the stretch of inlay from machine `i` to the next is lit when `i < k`;
-//! - console `i` is wired in, with the castaway's camp around it, when `i ≤ k`;
+//! - console `i` (each machine has its own, a stone of the builders' with a quartz face) and the
+//!   lamps beside it are awake when `i ≤ k`: the first is the only one awake at the start;
 //! - the stone gate's leaf is down from stage 1, the ramp onto the outcrop stands from stage 3, the
 //!   seal in the pass through the spine is down from stage 4, and the north gate's beam shines at
-//!   stage 5;
+//!   stage 5, when the skiff takes its helm;
 //! - the launchers' sight is off the crawler and at the crane's foot from stage 2, and set on the
 //!   ledge launcher from stage 3.
 //!
@@ -24,11 +25,10 @@ use crate::carry::DirtyCells;
 use crate::companion::Landmarks;
 use crate::island::{MACHINES, Sites, Stonework, Way};
 use crate::player::OrbitCamera;
-use crate::shipyard::{SIGHT_SIZE, Sight};
+use crate::vessel::{SIGHT_SIZE, Sight};
 use crate::sim::{Sim, TerrainReshaped};
 use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::voxel::{DARK_QUARTZ, VoxelWorld};
-use avian3d::prelude::ColliderDisabled;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -53,8 +53,9 @@ pub fn run_lit(run: usize, stage: usize) -> bool {
     run < stage
 }
 
-pub fn console_shown(station: usize, stage: usize) -> bool {
-    station <= stage
+/// Whether machine `i`'s console and lamps are awake (the north gate's lamps for `i` = 5).
+pub fn console_awake(machine: usize, stage: usize) -> bool {
+    machine <= stage
 }
 
 pub fn beam_shines(stage: usize) -> bool {
@@ -116,20 +117,8 @@ pub fn shape(world: &mut VoxelWorld, work: &Stonework, moved: f32, changes: &mut
     stand_layers(world, work, if work.rises { gone } else { all - gone }, changes);
 }
 
-/// Lay a camp, or lift it again.
-fn camp(world: &mut VoxelWorld, cells: &[crate::island::CampCell], laid: bool, changes: &mut Changes) {
-    for c in cells {
-        let want = if laid { c.laid } else { c.under };
-        if world.get(c.cell) != want {
-            world.set(c.cell, want);
-            changes.cells.push(c.cell);
-            changes.reshaped = true;
-        }
-    }
-}
-
 /// Put the world in the state of a stage at once: the quartz lit or dark, the stonework standing or
-/// sunk, the camps laid or not.
+/// sunk.
 pub fn settle(world: &mut VoxelWorld, way: &Way, stage: usize) -> Changes {
     let mut changes = Changes::default();
     for machine in 0..MACHINES {
@@ -141,9 +130,6 @@ pub fn settle(world: &mut VoxelWorld, way: &Way, stage: usize) -> Changes {
     }
     for work in [&way.ramp, &way.leaf, &way.seal] {
         stand_layers(world, work, if work.stands(stage) { layers(work) } else { 0 }, &mut changes);
-    }
-    for (station, cells) in way.camps.iter().enumerate() {
-        camp(world, cells, console_shown(station, stage), &mut changes);
     }
     changes
 }
@@ -158,8 +144,8 @@ pub enum Phase {
     /// The next machine wakes: its quartz lights and its parts move (the gate's leaf sinks, the
     /// ramp rises, the seal sinks, the north gate's beam reaches out).
     Wake,
-    /// A fade to dusk while the castaway wires its console in, with a caption.
-    Rig,
+    /// Its console has lit with it; the camera glides back to the player's own view.
+    Home,
     Done,
 }
 
@@ -170,10 +156,12 @@ const GLOW_LIFT: f32 = 3.2;
 const RUN_SPEED: f32 = 14.0;
 const RUN_TIME: (f32, f32) = (2.0, 5.0);
 const WAKE: f32 = 2.5;
-/// At the first wake the cart rolls on through the opened gate before the fade.
+/// At the first wake the cart rolls on through the opened gate before the camera goes home.
 const WAKE_FIRST: f32 = 4.6;
-const FADE: f32 = 0.8;
-const CAPTION: f32 = 1.8;
+/// How far into its wake a machine's console lights.
+const CONSOLE_LIGHTS: f32 = 0.45;
+/// How long the camera takes to glide back to the player's view.
+const HOME: f32 = 1.2;
 /// How long the letterbox bars take to come in, and to go.
 const BARS: f32 = 0.6;
 /// How long a pass's result may be read at its console before the wake starts anyway; stepping away
@@ -195,7 +183,7 @@ pub struct Timeline {
     glow: f32,
     run: f32,
     wake: f32,
-    rig: f32,
+    home: f32,
 }
 
 impl Timeline {
@@ -208,13 +196,12 @@ impl Timeline {
             glow: if sight_lifted(stage) && !sight_lifted(stage - 1) { GLOW_LIFT } else { GLOW },
             run: (run_length / RUN_SPEED).clamp(RUN_TIME.0, RUN_TIME.1),
             wake: if stage == 1 { WAKE_FIRST } else { WAKE },
-            // Past the last machine there is no console to wire in: the chapter's closing follows.
-            rig: if stage < PUZZLES { 2.0 * FADE + CAPTION } else { 0.0 },
+            home: HOME,
         }
     }
 
     pub fn length(&self) -> f32 {
-        self.glow + self.run + self.wake + self.rig
+        self.glow + self.run + self.wake + self.home
     }
 
     /// When the machine starts to wake, once the light has run.
@@ -222,19 +209,20 @@ impl Timeline {
         self.glow + self.run
     }
 
-    /// When the screen is dark and the caption shows, while the console goes in.
-    pub fn rigging(&self) -> f32 {
-        self.rig_start() + FADE + CAPTION / 2.0
+    /// When the waking machine's console lights.
+    pub fn console_lights(&self) -> f32 {
+        self.wake_starts() + CONSOLE_LIGHTS * self.wake
     }
 
-    fn rig_start(&self) -> f32 {
+    /// When the machine has woken and the camera starts home.
+    fn home_starts(&self) -> f32 {
         self.glow + self.run + self.wake
     }
 
     /// The phase at `t`, and how far through it (0 to 1).
     pub fn phase(&self, t: f32) -> (Phase, f32) {
         let mut start = 0.0;
-        for (phase, length) in [(Phase::Glow, self.glow), (Phase::Run, self.run), (Phase::Wake, self.wake), (Phase::Rig, self.rig)] {
+        for (phase, length) in [(Phase::Glow, self.glow), (Phase::Run, self.run), (Phase::Wake, self.wake), (Phase::Home, self.home)] {
             if t < start + length {
                 return (phase, ((t - start) / length).clamp(0.0, 1.0));
             }
@@ -258,27 +246,10 @@ impl Timeline {
         ((t - self.glow - self.run) / self.wake).clamp(0.0, 1.0)
     }
 
-    /// How dark the screen is, from 0 to 1, while the console is wired in.
-    pub fn veil(&self, t: f32) -> f32 {
-        if self.rig == 0.0 {
-            return 0.0;
-        }
-        let r = t - self.rig_start();
-        (r / FADE).min((self.rig - r) / FADE).clamp(0.0, 1.0)
-    }
-
-    /// The caption's opacity: it shows while the screen is dark.
-    pub fn caption(&self, t: f32) -> f32 {
-        if self.rig == 0.0 {
-            return 0.0;
-        }
-        let r = t - self.rig_start() - FADE * 0.6;
-        (r / 0.4).min((CAPTION + FADE * 0.8 - r) / 0.4).clamp(0.0, 1.0)
-    }
-
-    /// Whether the console is in: from the moment the screen is dark, or the wake's end.
-    pub fn rigged(&self, t: f32) -> bool {
-        t >= self.rig_start() + FADE.min(self.rig)
+    /// Whether the machine has woken and the world shows its stage: from the moment the camera
+    /// starts home.
+    pub fn woke(&self, t: f32) -> bool {
+        t >= self.home_starts()
     }
 
     /// How far the letterbox bars are in, from 0 to 1.
@@ -297,7 +268,7 @@ pub struct Play {
 /// What the world shows of the way.
 #[derive(Resource, Debug)]
 pub struct Waking {
-    /// The stage the world shows: up to the console being wired in.
+    /// The stage the world shows: up to the machine that is waking, until it has woken.
     pub shown: usize,
     /// The wake playing now, if one is.
     pub play: Option<Play>,
@@ -316,8 +287,10 @@ impl Waking {
         self.play.is_some()
     }
 
-    pub fn console_shown(&self, station: usize) -> bool {
-        console_shown(station, self.shown)
+    /// Whether machine `i`'s console and lamps are awake: once the world shows its stage, or as its
+    /// wake reaches them.
+    pub fn console_awake(&self, machine: usize) -> bool {
+        console_awake(machine, self.shown) || self.play.is_some_and(|p| p.timeline.stage == machine && p.t >= p.timeline.console_lights())
     }
 
     /// How far stonework has come through its move: 1 once the world shows it moved, and during the
@@ -339,8 +312,8 @@ impl Waking {
     }
 
     #[cfg(test)]
-    fn rigged_now(&self) -> bool {
-        self.play.is_some_and(|p| p.timeline.rigged(p.t))
+    fn woke_now(&self) -> bool {
+        self.play.is_some_and(|p| p.timeline.woke(p.t))
     }
 
     /// Whether a machine's moving quartz glows: once it has woken, or as the wake reaches it.
@@ -379,7 +352,7 @@ impl Waking {
         }
         let past_lift = self.play.is_some_and(|p| sight_lifted(p.timeline.stage) && self.lift().is_none());
         if sight_fitted(self.shown) {
-            Some(rest_on(crate::shipyard::fitted_at(sites)))
+            Some(rest_on(crate::vessel::fitted_at(sites)))
         } else if sight_lifted(self.shown) || past_lift {
             Some(rest_on(sites.crane_foot))
         } else {
@@ -446,11 +419,6 @@ enum Part {
     HookLine,
 }
 
-/// Something the castaway put at a station's camp (its lantern, its scrap): there once its console
-/// is wired in.
-#[derive(Component, Clone, Copy, Debug)]
-pub struct Camp(pub usize);
-
 /// How far the north gate's beam reaches towards the main hull.
 const BEAM_LENGTH: f32 = 260.0;
 /// The crane's arm: how far it reaches from the mast's middle, and how far behind it.
@@ -469,7 +437,7 @@ pub fn stone(materials: &mut Assets<StandardMaterial>) -> Handle<StandardMateria
 pub struct MachineTrim(pub [Handle<StandardMaterial>; MACHINES]);
 
 impl MachineTrim {
-    fn look(lit: bool) -> StandardMaterial {
+    pub fn look(lit: bool) -> StandardMaterial {
         if lit {
             let q = Material::Quartz.properties().colour;
             StandardMaterial { base_color: Color::srgb(q[0], q[1], q[2]), unlit: true, ..default() }
@@ -499,8 +467,8 @@ impl Plugin for WakingPlugin {
         app.insert_resource(Waking::new(shown))
             .insert_resource(trim)
             .add_systems(Startup, spawn)
-            .add_systems(Update, (play.run_if(in_state(Mode::Playing)), pose_parts, light_trim, show_camps).chain())
-            .add_systems(EguiPrimaryContextPass, veil.after(crate::ui::style).run_if(in_state(Mode::Playing)));
+            .add_systems(Update, (play.run_if(in_state(Mode::Playing)), pose_parts, light_trim).chain())
+            .add_systems(EguiPrimaryContextPass, letterbox.after(crate::ui::style).run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -622,15 +590,15 @@ fn play(
         Phase::Glow if waking.lift().is_some() => Some(way.crane_pivot - Vec3::Y * 1.5),
         Phase::Glow | Phase::Run => head,
         Phase::Wake => Some(wake_focus(k, &sites)),
-        Phase::Rig | Phase::Done => orbit.watch,
+        Phase::Home | Phase::Done => orbit.watch,
     };
-    if timeline.rigged(t) && waking.shown < k {
-        // Dark, or done: the console is in, and the player's own view comes back behind the fade.
+    if timeline.woke(t) && waking.shown < k {
+        // Woken (or skipped): the world shows the stage, and the camera glides back to the player.
         let changes = settle(&mut world, way, k);
         reshaped.0 |= changes.reshaped;
         dirty.0.extend(changes.cells);
         waking.shown = k;
-        orbit.release_view();
+        if skip { orbit.release_view() } else { orbit.ease_home() }
     }
     if phase == Phase::Done {
         waking.play = None;
@@ -638,16 +606,13 @@ fn play(
     }
 }
 
-/// The fade to dusk and the letterbox while a wake plays, with the caption for the console.
-fn veil(mut contexts: EguiContexts, waking: Res<Waking>, game: Res<Game>) -> Result {
+/// The letterbox while a wake plays.
+fn letterbox(mut contexts: EguiContexts, waking: Res<Waking>) -> Result {
     let Some(play) = waking.play else { return Ok(()) };
     let ctx = contexts.ctx_mut()?.clone();
     let screen = ctx.content_rect();
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("waking")));
-    let (timeline, t) = (play.timeline, play.t);
-    crate::cinematic::paint_veil(&painter, screen, timeline.veil(t), [0.03, 0.035, 0.06]);
-    let caption = game.chapter.puzzles.get(timeline.stage).map(|def| def.rigged.as_str()).filter(|c| !c.is_empty());
-    crate::cinematic::paint_letterbox(&painter, screen, timeline.bars(t), None, caption, timeline.caption(t));
+    crate::cinematic::paint_letterbox(&painter, screen, play.timeline.bars(play.t), None, None, 0.0);
     Ok(())
 }
 
@@ -704,24 +669,6 @@ fn pose_parts(waking: Res<Waking>, sites: Res<Sites>, mut parts: Query<(&Part, &
     }
 }
 
-/// The castaway's lanterns and scrap at each camp are there once its console is wired in; until
-/// then the scrap is not there to collide with either.
-fn show_camps(mut commands: Commands, waking: Res<Waking>, mut last: Local<Option<usize>>, mut things: Query<(Entity, &Camp, &mut Visibility)>) {
-    if *last == Some(waking.shown) {
-        return;
-    }
-    *last = Some(waking.shown);
-    for (entity, camp, mut visibility) in &mut things {
-        let laid = waking.console_shown(camp.0);
-        visibility.set_if_neq(if laid { Visibility::Inherited } else { Visibility::Hidden });
-        if laid {
-            commands.entity(entity).remove::<ColliderDisabled>();
-        } else {
-            commands.entity(entity).insert(ColliderDisabled);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -731,9 +678,9 @@ mod tests {
 
     #[test]
     fn the_rules_at_each_stage() {
-        // Stage 0: everything asleep, only the first console in.
+        // Stage 0: everything asleep, only the first console awake.
         assert!((0..MACHINES).all(|m| !wake_lit(m, 0) && !done_lit(m, 0)));
-        assert!(console_shown(0, 0) && !console_shown(1, 0));
+        assert!(console_awake(0, 0) && !console_awake(1, 0));
         // The first pass: the supply rail's job is done; the light runs to the haul track, which wakes.
         assert!(done_lit(0, 1) && wake_lit(1, 1) && !done_lit(1, 1) && !wake_lit(2, 1));
         assert!(run_lit(0, 1) && !run_lit(1, 1));
@@ -775,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn a_wake_runs_in_order_and_ends_with_the_console_in() {
+    fn a_wake_runs_in_order_and_its_console_lights_in_plain_view() {
         for seed in 0..20 {
             let (_, sites) = island::build(&Ch1Layout::generate(seed));
             let way = &sites.way;
@@ -793,12 +740,7 @@ mod tests {
                     }
                     t += 0.05;
                 }
-                let expected: Vec<Phase> = if stage < PUZZLES {
-                    vec![Phase::Glow, Phase::Run, Phase::Wake, Phase::Rig, Phase::Done]
-                } else {
-                    vec![Phase::Glow, Phase::Run, Phase::Wake, Phase::Done]
-                };
-                assert_eq!(seen, expected, "seed {seed}: stage {stage}");
+                assert_eq!(seen, vec![Phase::Glow, Phase::Run, Phase::Wake, Phase::Home, Phase::Done], "seed {seed}: stage {stage}");
                 // The light starts at the machine whose job was done and ends at the one it wakes.
                 let run = &way.runs[stage - 1];
                 let (from, to) = (run.at(timeline.lit_to(0.0)), run.at(timeline.lit_to(length)));
@@ -811,14 +753,14 @@ mod tests {
                     assert!(lit >= last - 1e-4, "seed {seed}: the light ran back");
                     last = lit;
                 }
-                // The console goes in while the screen is dark; past the last machine, at the end.
-                let rigged = (0..=200).map(|i| length * i as f32 / 200.0).find(|&t| timeline.rigged(t)).expect("the console goes in");
-                if stage < PUZZLES {
-                    assert!(timeline.veil(rigged + 0.01) > 0.95, "seed {seed}: stage {stage}: the console appears in plain view");
-                    assert!(timeline.caption(rigged + 0.5) > 0.5, "seed {seed}: no caption");
-                } else {
-                    assert_eq!(timeline.veil(length * 0.99), 0.0);
-                }
+                // The console lights while its machine wakes, under the letterbox, before the camera
+                // goes home.
+                let lights = timeline.console_lights();
+                assert_eq!(timeline.phase(lights).0, Phase::Wake, "seed {seed}: stage {stage}");
+                assert!(!timeline.woke(lights) && timeline.woke(length), "seed {seed}: stage {stage}");
+                let w = |t: f32| Waking { play: Some(Play { timeline, t }), ..Waking::new(stage - 1) };
+                assert!(!w(lights - 0.05).console_awake(stage) && w(lights + 0.05).console_awake(stage), "seed {seed}: stage {stage}");
+                assert!(timeline.bars(lights) == 1.0, "seed {seed}: stage {stage}");
                 assert!(timeline.bars(0.0) == 0.0 && timeline.bars(length / 2.0) == 1.0 && timeline.bars(length) == 0.0);
             }
         }
@@ -837,7 +779,7 @@ mod tests {
         assert!(sites.way.leaf.cells.iter().all(|&(c, _)| world.is_solid(c)), "the leaf stands while the gate sleeps");
         shape(&mut world, &sites.way.leaf, at(open).moved(&sites.way.leaf), &mut Changes::default());
         assert!(sites.way.leaf.cells.iter().all(|&(c, _)| !world.is_solid(c)), "the leaf is down when the cart may pass");
-        assert!(!at(open).rigged_now(), "the cart rolls before the fade");
+        assert!(!at(open).woke_now(), "the cart rolls before the camera goes home");
     }
 
     #[test]
@@ -866,7 +808,7 @@ mod tests {
         let w = Waking::new(2);
         assert!(w.sight(&sites).is_some_and(|at| at.distance(to) < 1e-4));
         let w = Waking::new(3);
-        assert!(w.sight(&sites).is_some_and(|at| at.distance(rest_on(crate::shipyard::fitted_at(&sites))) < 1e-4));
+        assert!(w.sight(&sites).is_some_and(|at| at.distance(rest_on(crate::vessel::fitted_at(&sites))) < 1e-4));
     }
 
     /// Every cell of the world, and which are dark.
@@ -898,11 +840,6 @@ mod tests {
             }
             for work in [&sites.way.leaf, &sites.way.seal] {
                 assert!(work.cells.iter().all(|&(c, m)| world.get(c) == m), "seed {seed}: the gate or the seal is open asleep");
-            }
-            // Camps after the first are not there until their consoles go in.
-            for (station, camp) in sites.way.camps.iter().enumerate() {
-                assert!(!camp.is_empty(), "seed {seed}: station {station} has no camp");
-                assert!(camp.iter().all(|c| world.get(c.cell) == if station == 0 { c.laid } else { c.under }), "seed {seed}: station {station}'s camp");
             }
             for stage in 1..=PUZZLES {
                 settle(&mut world, &sites.way, stage);
@@ -978,17 +915,17 @@ mod tests {
     /// The seal stands in the castaway's way: the spine runs from coast to coast, and nothing goes
     /// round it, over it, or along the sea bed past it, until the canyon is crossed.
     #[test]
-    fn the_shipyard_is_out_of_reach_until_the_seal_sinks() {
+    fn the_skiff_is_out_of_reach_until_the_seal_sinks() {
         for seed in 0..24 {
             let layout = Ch1Layout::generate(seed);
             let (mut world, sites) = island::build(&layout);
             let climb = climb(&layout);
             let spawn = sites.spawn.floor().as_ivec3();
-            let yard = (sites.shipyard + Vec3::Y * 0.5).floor().as_ivec3();
+            let yard = (sites.slipway + Vec3::Y * 0.5).floor().as_ivec3();
             settle(&mut world, &sites.way, 3);
-            assert!(!reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the shipyard can be reached before the seal sinks (climb {climb})");
+            assert!(!reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the skiff can be reached before the seal sinks (climb {climb})");
             settle(&mut world, &sites.way, 4);
-            assert!(reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the pass does not lead to the shipyard");
+            assert!(reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the pass does not lead to the skiff");
         }
     }
 }

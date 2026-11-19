@@ -123,10 +123,6 @@ pub struct PuzzleDef {
     /// Lumen's line when the puzzle is passed: what it got us, and what it leads to. Spoken.
     #[serde(default)]
     pub done: String,
-    /// The caption over the fade when the castaway wires this station's console into its machine,
-    /// once the light has woken it. The first station's console is in from the start.
-    #[serde(default)]
-    pub rigged: String,
 }
 
 /// A line Lumen says, with a place its eye holds while it says it (a landmark's name).
@@ -169,11 +165,11 @@ impl Remark {
     }
 }
 
-/// A tier: the ship it builds and why.
+/// A tier: the vessel it wakes and why.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tier {
     pub number: u8,
-    /// The ship this tier builds.
+    /// The vessel this tier wakes and takes across.
     pub ship: String,
     /// One line: what the tier is for in the story.
     pub goal: String,
@@ -185,7 +181,7 @@ pub struct Chapter {
     pub tier: u8,
     pub domain: Domain,
     pub title: String,
-    /// The ship part this chapter's capstone installs.
+    /// The part of the vessel this chapter's capstone wakes.
     pub part: String,
     pub intro: String,
     /// One line for the dock: what the chapter is for in the story.
@@ -260,12 +256,6 @@ impl Chapter {
             if has_digit(&puzzle.why) || has_digit(&puzzle.done) {
                 problems.push(format!("puzzle {}: the why and done lines are spoken and must hold no digits", puzzle.id));
             }
-            if i > 0 && puzzle.rigged.trim().is_empty() {
-                problems.push(format!("puzzle {}: its console needs a caption for when it is wired in", puzzle.id));
-            }
-            if has_digit(&puzzle.rigged) {
-                problems.push(format!("puzzle {}: the wiring caption must hold no digits", puzzle.id));
-            }
             if let Some(demo) = &puzzle.demo {
                 if demo.choices.len() < 2 || demo.answer >= demo.choices.len() {
                     problems.push(format!("puzzle {}: the demonstration needs choices and an answer among them", puzzle.id));
@@ -331,7 +321,7 @@ pub fn tier_1() -> Tier {
     ron::from_str(include_str!("../../../assets/curriculum/tier1.ron")).expect("assets/curriculum/tier1.ron is valid")
 }
 
-/// Tier 1, chapter 1: The Salvage Launcher.
+/// Tier 1, chapter 1: The Helm.
 pub fn chapter_1_1() -> Chapter {
     Chapter::from_ron(include_str!("../../../assets/curriculum/tier1_ch1.ron"))
         .expect("assets/curriculum/tier1_ch1.ron is valid")
@@ -395,8 +385,6 @@ mod tests {
         chapter.puzzles[2].demo.as_mut().unwrap().answer = 7;
         chapter.puzzles[3].done = String::new();
         chapter.puzzles[4].why = "Clear the ridge at 45 degrees.".into();
-        chapter.puzzles[1].rigged = String::new();
-        chapter.puzzles[2].rigged = "By evening, 2 consoles.".into();
         chapter.remarks[0].line.text = "Only 3 more.".into();
         chapter.remarks[1].when = RemarkWhen::After("1.1.9".into());
         chapter.concepts[3].quiz[0].answer = 9;
@@ -407,8 +395,6 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("an answer among them")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("1.1.3: Lumen needs a why and a done line")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("1.1.4: the why and done lines")), "{problems:?}");
-        assert!(problems.iter().any(|p| p.contains("1.1.1: its console needs a caption")), "{problems:?}");
-        assert!(problems.iter().any(|p| p.contains("1.1.2: the wiring caption must hold no digits")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("Only 3 more.")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("unknown puzzle 1.1.9")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("quiz question 1 needs choices")), "{problems:?}");

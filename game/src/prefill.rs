@@ -182,7 +182,8 @@ mod tests {
             assert!(write_readings(&mut game, &sites));
             assert!(!write_readings(&mut game, &sites), "readings already noted are not noted again");
 
-            game.save.placed.insert(game.def(0).id.clone(), 1);
+            let cart = game.def(0).id.clone();
+            game.save.placed.insert(cart, 1);
             commit(&mut game, &mut ui, 0);
 
             assert!(formula(&game, 1).is_none(), "the chase waits for the stopwatch");
@@ -192,11 +193,13 @@ mod tests {
             assert!(formula(&game, 2).is_none(), "gravity waits for the light gate");
             note_reading(&mut game, 0);
             note_reading(&mut game, 3);
-            note_reading(&mut game, game.layout.tower_h - 2);
-            game.save.placed.insert(game.def(2).id.clone(), game.layout.tower_h - 2);
+            let long = game.layout.tower_h - 2;
+            note_reading(&mut game, long);
+            game.save.placed.insert(game.def(2).id.clone(), long);
             commit(&mut game, &mut ui, 2);
 
-            game.save.placed.insert(game.def(3).id.clone(), *game.layout.canyon_stacks().start());
+            let stack = *game.layout.canyon_stacks().start();
+            game.save.placed.insert(game.def(3).id.clone(), stack);
             commit(&mut game, &mut ui, 3);
             commit(&mut game, &mut ui, 4);
         }

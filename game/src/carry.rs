@@ -637,18 +637,18 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
 /// The line the hints bar shows for what `F` would do.
 pub fn hint(carry: &Carry) -> Option<String> {
     Some(match carry.target? {
-        Target::Take(_) => "F — pick up the block".into(),
-        Target::Put(_) => "F — put the block down".into(),
-        Target::TakeGate => "F — take the light gate off its stand".into(),
-        Target::StowGate => "F — put the light gate back on its stand".into(),
-        Target::PutIn(Slot::Frame, _) => "F — slide the block into the jack frame (the launcher goes up a metre)".into(),
-        Target::TakeOut(Slot::Frame, _) => "F — take a block out of the jack frame (the launcher comes down a metre)".into(),
-        Target::PutIn(Slot::Cart, _) => "F — load the block onto the cart".into(),
-        Target::TakeOut(Slot::Cart, _) => "F — take the block off the cart".into(),
+        Target::Take(_) => "F: pick up the block".into(),
+        Target::Put(_) => "F: put the block down".into(),
+        Target::TakeGate => "F: take the light gate off its stand".into(),
+        Target::StowGate => "F: put the light gate back on its stand".into(),
+        Target::PutIn(Slot::Frame, _) => "F: slide the block into the jack frame (the launcher goes up a metre)".into(),
+        Target::TakeOut(Slot::Frame, _) => "F: take a block out of the jack frame (the launcher comes down a metre)".into(),
+        Target::PutIn(Slot::Cart, _) => "F: load the block onto the cart".into(),
+        Target::TakeOut(Slot::Cart, _) => "F: take the block off the cart".into(),
         Target::PutIn(Slot::Tower, notch) => {
-            format!("F — clamp the gate {notch} m below the release point (point higher or lower on the tower to choose the notch)")
+            format!("F: clamp the gate {notch} m below the release point (point higher or lower on the tower to choose the notch)")
         }
-        Target::TakeOut(Slot::Tower, _) => "F — unclamp the light gate".into(),
+        Target::TakeOut(Slot::Tower, _) => "F: unclamp the light gate".into(),
         Target::Blocked(why) => format!("{} {why}", if carry.holding == Some(Item::Gate) { "Carrying the light gate." } else { "Carrying a block." }),
     })
 }

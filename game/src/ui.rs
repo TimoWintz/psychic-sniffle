@@ -231,16 +231,16 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
 
 fn hints(ctx: &egui::Context, game: &Game, ui_state: &Ui, ruler: &Ruler, carry: &Carry) {
     let prompt = if ruler.active {
-        Some("Measuring: left-click two points. R or Esc cancels.".to_string())
+        Some("Left-click two points to measure between them. R or Esc cancels.".to_string())
     } else if let Some(line) = crate::carry::hint(carry).filter(|_| ui_state.station.is_none()) {
         Some(line)
     } else {
         match (ui_state.near_station, ui_state.station) {
-            (_, Some(_)) => Some("At the station. E or Esc to leave.".to_string()),
-            (Some(near), None) if game.unlocked(near) => Some(format!("E — use station: {}", game.def(near).title)),
+            (_, Some(_)) => Some("You're at the station. Press E or Esc to leave.".to_string()),
+            (Some(near), None) if game.unlocked(near) => Some(format!("Press E to use the station: {}", game.def(near).title)),
             (Some(near), None) => {
                 let needs: Vec<&str> = game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| p.title.as_str()).collect();
-                Some(format!("Station locked. Solve first: {}", needs.join(", ")))
+                Some(format!("This station is still asleep. Solve {} first.", needs.join(", ")))
             }
             _ => None,
         }
@@ -274,7 +274,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
     let specs = instance.inputs();
     ui_state.drafts[puzzle].resize(specs.len(), String::new());
 
-    egui::Window::new(format!("Station — {}", def.title))
+    egui::Window::new(format!("Station: {}", def.title))
         .id(egui::Id::new("station"))
         .collapsible(false)
         .resizable(false)
@@ -285,7 +285,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
         .show(ctx, |ui| {
             ui.set_width(400.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("You stay at the console while it is open.").small().color(DIM));
+                ui.label(RichText::new("You'll stay at the console while this is open.").small().color(DIM));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Leave (E)").clicked() {
                         ui_state.station = None;
@@ -365,9 +365,9 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     }
                 }
                 let hint = match def.kind {
-                    PuzzleKind::Rail => Some("Numbers need units: 12 m, not 12. Notebook names work: d1"),
+                    PuzzleKind::Rail => Some("Give every number its unit, as in 12 m. You can also type a notebook name, such as d1."),
                     _ if specs.iter().all(|s| s.source == InputSource::Placed) => None,
-                    _ => Some("Numbers need units. Notebook names and functions work: (d1 + d2) / 2, sin(30 deg)"),
+                    _ => Some("Give every number its unit. Notebook names and functions work too, as in (d1 + d2) / 2 or sin(30 deg)."),
                 };
                 if let Some(hint) = hint {
                     ui.label(RichText::new(hint).small().color(DIM));
@@ -387,7 +387,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     };
                 });
                 if let Some(refusal) = &ui_state.refusal {
-                    ui.colored_label(WARN, format!("Not launched (no charge used). {refusal}"));
+                    ui.colored_label(WARN, format!("Not launched, and no charge was used. {refusal}"));
                 }
                 if sim.testing() == Some(puzzle) {
                     ui.label(RichText::new("Test running…").italics());
@@ -479,7 +479,7 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         } else if !watched && ui_state.guess[puzzle].is_none() {
             ui.label(RichText::new("Make a guess first. It costs nothing.").small().color(DIM));
         } else {
-            ui.label(RichText::new("Free, as often as you like.").small().color(DIM));
+            ui.label(RichText::new("It's free, so run it as often as you like.").small().color(DIM));
         }
     });
     if watched && !running {
@@ -686,7 +686,7 @@ fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
 
 fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f32) {
     if game.save.notebook.entries.is_empty() {
-        ui.label(RichText::new("Nothing measured yet. Readings from the ruler and the stopwatch are kept here.").color(DIM));
+        ui.label(RichText::new("Nothing measured yet. Readings from the ruler and the stopwatch will show up here.").color(DIM));
     }
     let mut remove = None;
     // The calculator under the entries needs about this much.
@@ -765,11 +765,11 @@ pub fn tutor_body(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, lumen: &mut
     if !lumen.tutor.is_online() {
         ui.colored_label(WARN, "Lumen is offline.");
         ui.label(lumen.tutor.status());
-        ui.label(RichText::new("To connect a language model, add a [tutor] section to settings.toml (see docs/tutor.md). The handbook (H) works without it.").color(DIM));
+        ui.label(RichText::new("To talk with Lumen, connect a language model by adding a [tutor] section to settings.toml (see docs/tutor.md). The handbook (H) works without one.").color(DIM));
         return;
     }
     ui.label(RichText::new(format!("Looking at: {} · {}", game.def(puzzle).title, lumen.tutor.status())).small().color(DIM));
-    ui.label(RichText::new("Lumen can see this puzzle and explain. It cannot act in the world.").small().color(DIM));
+    ui.label(RichText::new("Lumen can see this puzzle and explain it, but it can't do anything in the world.").small().color(DIM));
     let conversation = &lumen.conversations[puzzle];
     let mut send = false;
     egui::ScrollArea::vertical().id_salt("lumen-conversation").max_height(room).stick_to_bottom(true).show(ui, |ui| {

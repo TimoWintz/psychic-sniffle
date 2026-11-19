@@ -304,6 +304,66 @@ impl Chapter {
         problems
     }
 
+    /// Lines that break the writing rules in `docs/writing.md` that a program can check. These are
+    /// kept apart from [`Chapter::problems`], so a slip of style never stops a chapter from loading.
+    /// Tests require every chapter in `assets/curriculum` to have none.
+    pub fn style_problems(&self) -> Vec<String> {
+        let mut spoken: Vec<(String, &str)> = Vec::new();
+        for line in &self.opening {
+            spoken.push(("opening".into(), &line.text));
+        }
+        for line in &self.closing {
+            spoken.push(("closing".into(), &line.text));
+        }
+        for remark in &self.remarks {
+            spoken.push((format!("remark at {}", remark.near), &remark.line.text));
+        }
+        for puzzle in &self.puzzles {
+            spoken.push((format!("puzzle {} why", puzzle.id), &puzzle.why));
+            spoken.push((format!("puzzle {} done", puzzle.id), &puzzle.done));
+            if let Some(demo) = &puzzle.demo {
+                spoken.push((format!("puzzle {} reveal", puzzle.id), &demo.reveal));
+            }
+        }
+
+        let mut shown: Vec<(String, &str)> = vec![("intro".into(), &self.intro), ("goal".into(), &self.goal)];
+        for concept in &self.concepts {
+            shown.push((format!("page {} title", concept.id), &concept.title));
+            shown.push((format!("page {} card", concept.id), &concept.card));
+            shown.push((format!("page {} hint", concept.id), &concept.hint));
+            if let Some(illustration) = &concept.illustration {
+                shown.push((format!("page {} caption", concept.id), &illustration.caption));
+            }
+            for (n, question) in concept.quiz.iter().enumerate() {
+                shown.push((format!("page {} quiz question {}", concept.id, n + 1), &question.question));
+                shown.push((format!("page {} quiz explanation {}", concept.id, n + 1), &question.explain));
+                for choice in &question.choices {
+                    shown.push((format!("page {} quiz choice", concept.id), choice));
+                }
+            }
+        }
+        for puzzle in &self.puzzles {
+            shown.push((format!("puzzle {} task", puzzle.id), &puzzle.task));
+            shown.push((format!("puzzle {} brief", puzzle.id), &puzzle.brief));
+            shown.push((format!("puzzle {} investigate", puzzle.id), &puzzle.investigate));
+            if let Some(demo) = &puzzle.demo {
+                shown.push((format!("puzzle {} demo question", puzzle.id), &demo.question));
+                for choice in &demo.choices {
+                    shown.push((format!("puzzle {} demo choice", puzzle.id), choice));
+                }
+            }
+        }
+
+        let mut problems = Vec::new();
+        for (place, text) in &spoken {
+            problems.extend(spoken_style(text).into_iter().map(|p| format!("{place}: {p}")));
+        }
+        for (place, text) in spoken.iter().chain(&shown) {
+            problems.extend(text_style(text).into_iter().map(|p| format!("{place}: {p}")));
+        }
+        problems
+    }
+
     /// Every landmark the chapter's lines name, for the game to check against its places.
     pub fn places_named(&self) -> Vec<&str> {
         let looks = self.opening.iter().chain(&self.closing).chain(self.remarks.iter().map(|r| &r.line)).filter_map(|l| l.look.as_deref());
@@ -314,6 +374,62 @@ impl Chapter {
 /// Lumen's scripted lines never contain a number, so they cannot give an answer away.
 fn has_digit(text: &str) -> bool {
     text.chars().any(|c| c.is_ascii_digit())
+}
+
+/// Phrases Lumen says as one word: it talks like a person, with contractions. See `docs/writing.md`.
+const UNCONTRACTED: [&str; 21] = [
+    "i am", "i have not", "i do not", "i did not", "i will", "i would", "do not", "does not", "did not", "is not",
+    "are not", "was not", "cannot", "can not", "will not", "would not", "it is", "that is", "we are", "you are",
+    "let us",
+];
+
+/// Words and phrases that mark text as machine-written, wherever they appear. See `docs/writing.md`.
+const STOCK: [&str; 18] = [
+    "delve", "tapestry", "testament", "crucial", "pivotal", "seamless", "seamlessly", "vibrant", "showcase",
+    "underscore", "embark", "journey", "realm", "moreover", "furthermore", "additionally", "not just",
+    "it's worth",
+];
+
+/// The longest line Lumen says, in words: its lines play in a bubble, one after another.
+const LONGEST_SPOKEN: usize = 60;
+
+/// The text's words, lower case, with apostrophes kept inside them.
+fn words(text: &str) -> Vec<String> {
+    text.replace('’', "'")
+        .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+        .map(|w| w.trim_matches('\'').to_lowercase())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Whether the words of `phrase` appear in a row among `words`.
+fn has_phrase(words: &[String], phrase: &str) -> bool {
+    let wanted: Vec<&str> = phrase.split(' ').collect();
+    words.windows(wanted.len()).any(|w| w.iter().zip(&wanted).all(|(a, b)| a == b))
+}
+
+/// What breaks the rules for a line Lumen says.
+fn spoken_style(text: &str) -> Vec<String> {
+    let found = words(text);
+    let mut problems: Vec<String> =
+        UNCONTRACTED.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("\"{p}\" should be a contraction")).collect();
+    if text.matches(':').count() > 1 {
+        problems.push("more than one colon in a spoken line".into());
+    }
+    if found.len() > LONGEST_SPOKEN {
+        problems.push(format!("{} words is too long for one spoken line", found.len()));
+    }
+    problems
+}
+
+/// What breaks the rules for any text the player reads or hears.
+fn text_style(text: &str) -> Vec<String> {
+    let found = words(text);
+    let mut problems: Vec<String> = STOCK.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("stock phrase \"{p}\"")).collect();
+    if text.contains('—') || text.contains('–') || text.contains(" -- ") {
+        problems.push("a dash: use a comma, a full stop or brackets".into());
+    }
+    problems
 }
 
 /// Tier 1: the skiff.
@@ -399,6 +515,57 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("unknown puzzle 1.1.9")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("quiz question 1 needs choices")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("quiz question 2 needs an explanation")), "{problems:?}");
+    }
+
+    /// Every chapter file in `assets/curriculum`, by name, so a new chapter is checked as soon as
+    /// it is added.
+    fn every_chapter() -> Vec<(String, Chapter)> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/curriculum");
+        let mut chapters: Vec<(String, Chapter)> = std::fs::read_dir(&dir)
+            .expect("assets/curriculum can be read")
+            .map(|entry| entry.expect("a directory entry").path())
+            .filter(|path| path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.contains("_ch") && n.ends_with(".ron")))
+            .map(|path| {
+                let source = std::fs::read_to_string(&path).expect("a chapter file can be read");
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                let chapter = Chapter::from_ron(&source).unwrap_or_else(|e| panic!("{name} is valid: {e}"));
+                (name, chapter)
+            })
+            .collect();
+        chapters.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(!chapters.is_empty(), "no chapter files found in {}", dir.display());
+        chapters
+    }
+
+    #[test]
+    fn every_chapter_follows_the_writing_rules() {
+        // docs/writing.md: the rules a program can check. The rest is for whoever writes the lines.
+        for (name, chapter) in every_chapter() {
+            assert_eq!(chapter.style_problems(), Vec::<String>::new(), "{name} breaks docs/writing.md");
+        }
+    }
+
+    #[test]
+    fn style_slips_are_caught() {
+        let mut chapter = chapter_1_1();
+        chapter.puzzles[0].why = "That is the cart. I do not know who built it.".into();
+        chapter.puzzles[1].done = "The sight: lifted. The crane: awake. The tower: next.".into();
+        chapter.remarks[0].line.text = "word ".repeat(LONGEST_SPOKEN + 1);
+        chapter.concepts[0].card = "Units — a crucial idea.".into();
+        chapter.puzzles[2].brief = "Let's delve into the tower.".into();
+        let problems = chapter.style_problems();
+        assert!(problems.iter().any(|p| p.contains("1.1.0 why: \"i do not\"")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.0 why: \"that is\"")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.1 done: more than one colon")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("too long for one spoken line")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("page units card: stock phrase \"crucial\"")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("page units card: a dash")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.2 brief: stock phrase \"delve\"")), "{problems:?}");
+        // Contractions are only asked of Lumen: the handbook and the briefs may spell words out.
+        chapter.concepts[1].card = "It is a speed, and that is all.".into();
+        assert!(!chapter.style_problems().iter().any(|p| p.contains("page velocity")));
+        // A word that only contains a stock word is fine.
+        assert!(text_style("The journeyman's showcases").is_empty());
     }
 
     #[test]

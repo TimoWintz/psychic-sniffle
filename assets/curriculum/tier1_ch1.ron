@@ -12,7 +12,7 @@ Chapter(
         Spoken(text: "Lumen here, the ship's computer. Some of me: a backup, on this section's cells. I can see, but I have no hands. Those are yours."),
         Spoken(text: "That is the main hull, across the strait. The rest of me is in it, and what we need to leave. Neither of us is swimming there.", look: Some("The main hull, across the strait")),
         Spoken(text: "And we came down across a road. Pale stone, quartz in the joints, machines along it, all asleep. Not ours, and older than anything I know. One console by their cart still glows."),
-        Spoken(text: "At the far end, on the north shore, is a boat of theirs on a slipway. Its helm sits in a casket on a launcher over the canyon, as if they were sending it when everything stopped. If their machines still work, they can finish the job.", look: Some("The skiff on the slipway")),
+        Spoken(text: "Across the bay, on the north shore, is a boat of theirs on a slipway. Its helm sits in a casket on a launcher over the canyon, as if they were sending it when everything stopped. If their machines still work, they can finish the job.", look: Some("The skiff on the slipway")),
     ],
     closing: [
         Spoken(text: "The helm is in, and it lit. Come and see the skiff.", look: Some("The skiff on the slipway")),

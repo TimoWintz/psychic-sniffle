@@ -36,8 +36,8 @@ pub struct OrbitCamera {
     /// The yaw, pitch and distance the camera is gliding to: the player's own after a wake or a
     /// station (then `saved` is empty), or a station's view.
     easing: Option<(f32, f32, f32)>,
-    /// The camera is on a side view (a test, or a station's puzzle): it tilts up over terrain in
-    /// the way instead of moving in.
+    /// The camera is on a side view (a test, or a station's puzzle), which may stand further back
+    /// than the player zooms out.
     side_view: bool,
 }
 
@@ -53,8 +53,6 @@ const FURTHEST: f32 = 80.0;
 /// How far back a side view may stand, to fit a whole test (the ridge's is about 95 m): further than
 /// the player zooms out, and well inside the fog.
 pub(crate) const SIDE_VIEW_FURTHEST: f32 = 120.0;
-/// The steepest a watched view is tilted to see over terrain in the way.
-const STEEPEST_WATCH: f32 = 1.1;
 
 /// Tangent of half the camera's vertical field of view (Bevy's default is 45 degrees).
 const TAN_HALF_FOV: f32 = 0.4142;
@@ -68,6 +66,8 @@ impl OrbitCamera {
     /// station's view); without, it cuts to it (a test).
     pub fn frame_side_view(&mut self, min: Vec3, max: Vec3, along: Vec3, glide: bool) {
         self.keep_home();
+        // Either corner may come first.
+        let (min, max) = (min.min(max), min.max(max));
         let size = max - min;
         let width = size.with_y(0.0).length() + 8.0;
         let height = size.y + 6.0;
@@ -138,13 +138,8 @@ impl OrbitCamera {
 
     /// Direction from what the camera looks at back to the camera.
     fn back(&self) -> Vec3 {
-        back_at(self.yaw, self.pitch)
+        Quat::from_euler(EulerRot::YXZ, self.yaw, -self.pitch, 0.0) * Vec3::Z
     }
-}
-
-/// Direction from what the camera looks at back to the camera, for a yaw and a pitch.
-fn back_at(yaw: f32, pitch: f32) -> Vec3 {
-    Quat::from_euler(EulerRot::YXZ, yaw, -pitch, 0.0) * Vec3::Z
 }
 
 pub struct PlayerPlugin;
@@ -309,20 +304,8 @@ fn orbit_camera(
 
     // A focus that is itself inside terrain (a fixed test view can be) is left alone.
     let open_focus = !world.is_solid(orbit.focus.floor().as_ivec3());
-    // A side view (a test, a station's puzzle) is seen from higher up when terrain is in the way,
-    // rather than from close in, where the hill in between would hide what it shows. The view keeps
-    // the tilt it needed. Not while it glides, which sets the tilt itself. Judged from where the view
-    // looks, not from the focus on its way there.
-    let (yaw, distance) = (orbit.yaw, orbit.distance);
-    let blocked = |pitch: f32| world.raycast(target, back_at(yaw, pitch), distance).is_some();
-    if orbit.side_view && orbit.watch.is_some() && orbit.easing.is_none() && !world.is_solid(target.floor().as_ivec3()) && blocked(orbit.pitch) {
-        let start = orbit.pitch;
-        if let Some(clear) = (1..).map(|k| start + 0.05 * k as f32).take_while(|p| *p <= STEEPEST_WATCH).find(|p| !blocked(*p)) {
-            orbit.pitch = clear;
-        }
-    }
     let back = orbit.back();
-    // Pull the camera in if terrain is still between it and what it looks at.
+    // Pull the camera in if terrain is between it and what it looks at.
     let reach = match world.raycast(orbit.focus, back, orbit.distance) {
         Some(hit) if open_focus => (hit.distance - 0.4).max(1.0),
         _ => orbit.distance,

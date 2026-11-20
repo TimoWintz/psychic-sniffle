@@ -587,10 +587,12 @@ fn handle_requests(
                 }
                 Playback::Flight { projectile, flight } => {
                     let site = if instance.kind == PuzzleKind::Canyon { sites.canyon_launch } else { sites.ridge_launch };
+                    // The box holds the release, the top of the arc and the landing. A launch that
+                    // climbs has its top halfway along, so all three are needed.
                     let (_, apex_x, apex_y) = projectile.apex();
-                    let highest = site.at(apex_x, apex_y, ground);
-                    let end = site.at(flight.x, flight.y, ground);
-                    orbit.frame_side_view(site.at(0.0, projectile.y0, ground).min(end), highest.max(end), site.direction, false);
+                    let points = [site.at(0.0, projectile.y0, ground), site.at(apex_x, apex_y, ground), site.at(flight.x, flight.y, ground)];
+                    let (low, high) = points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+                    orbit.frame_side_view(low, high, site.direction, false);
                     Running::Flight { puzzle, t: 0.0, projectile, flight, site, verdict: Verdict { values, outcome } }
                 }
                 Playback::Chase { cart_speed, crawler_speed, head_start, t } => {

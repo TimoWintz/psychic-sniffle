@@ -461,7 +461,7 @@ mod tests {
         assert_eq!(chapter.puzzles.len(), 5);
         assert_eq!(
             chapter.puzzles.iter().map(|p| p.kind).collect::<Vec<_>>(),
-            [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge]
+            [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Channel, PuzzleKind::Ridge]
         );
         // The tutorial comes first and everything else waits for it.
         assert_eq!(chapter.puzzles[0].id, "1.1.0");

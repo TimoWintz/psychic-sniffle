@@ -96,7 +96,7 @@ for its puzzle. Adding a placement is adding a slot:
   tutor) and `Instance::unready` refuses a test until something is in place. `sim::judge_commit`
   runs that check before anything typed is read, so such a refusal writes no handbook page.
 - Things that move with what is placed follow `Sites` changing: `ruler::follow_pins` (pins by index,
-  such as `Sites::canyon_release_pin` and `Sites::gate_pin`; a pin at `Pin::AWAY` is not in the world),
+  such as `Sites::channel_release_pin` and `Sites::gate_pin`; a pin at `Pin::AWAY` is not in the world),
   `sim::follow_launcher`, `rig::ride_the_stack`. Lumen's director (`companion::choose_gaze`) is pure
   and tested; its `Facts` say what is carried and whether the puzzle's slot is empty.
 
@@ -106,7 +106,7 @@ Rules learned the hard way:
    `puzzle.rs` (`tests_by_guessing`); see "What makes guessing a bad strategy" in the game design.
 2. **Old saves keep their numbers.** New layout numbers are drawn after the ones already drawn at the
    end of `Ch1Layout::generate`; draws no longer used stay in place, discarded. Extend
-   `older_saves_keep_every_number_but_the_canyons` with any number you touch.
+   `older_saves_keep_every_number_but_the_channels` with any number you touch.
 3. **Leave room for the player's own measurement.** Later puzzles use the player's `g`, good to about
    0.5 %. Nothing that decides pass or fail may sit closer than that to an edge (`BAND_MARGIN`, 1.5 %,
    is the ledge launcher's).

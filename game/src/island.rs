@@ -108,16 +108,16 @@ pub struct Sites {
     pub mast_plate: Vec3,
     /// The ledge launcher. Its origin rises with the blocks stacked under it (see `carry`); the
     /// island is built with none.
-    pub canyon_launch: LaunchSite,
+    pub channel_launch: LaunchSite,
     /// Lowest cell of the jack frame under the ledge launcher, at the rim; blocks stack up from it.
-    pub canyon_well: IVec3,
+    pub channel_well: IVec3,
     /// Cells of the pile of blocks on the ledge: where the movable blocks lie at the start.
     pub crate_pile: Vec<IVec3>,
     /// Corners (inclusive) of the space where blocks may be put down: the ledge west of the
     /// launcher's rail, up to three blocks high. Off the launch lines, clear of the station.
     pub crate_yard: [IVec3; 2],
     /// Index in `pins` of the ledge launcher's release point, which moves with the launcher.
-    pub canyon_release_pin: usize,
+    pub channel_release_pin: usize,
     pub ridge_launch: LaunchSite,
     /// Console block of each station, in puzzle order.
     pub stations: [IVec3; PUZZLES],
@@ -166,7 +166,7 @@ const UNCLIMBABLE: i32 = 3;
 /// Each machine's quartz comes in two sets. Its **wake** set lights when the light running up the
 /// road reaches it and it wakes (the stone gate's caps, the tower's foot, the breech, the north
 /// gate); its **done** set lights when its own job is done right (the marker's studs, the crane, the
-/// tower to the top, both rims of the canyon, the landing circle).
+/// tower to the top, both banks of the channel, the landing circle).
 #[derive(Clone, Debug)]
 pub struct Way {
     /// Where each machine stands, where the light running up the road ends: the five consoles, then
@@ -304,7 +304,7 @@ const RIDGE_X: i32 = 108;
 const PAD_Z: i32 = 60;
 /// How far east of the tilting launcher's line the ledge launcher's line runs: far enough that the
 /// ridge stays off the channel shot's level run, near enough that the tiller lands beside the launcher.
-const CANYON_OFFSET: i32 = 9;
+const CHANNEL_OFFSET: i32 = 9;
 /// Where the builders' bridge crosses the channel, across the ledge launcher's line: west of it, clear
 /// of the outcrop, and behind the shot from the side view's camera, which looks from the east.
 const BRIDGE_C: i32 = -13;
@@ -365,7 +365,7 @@ impl Frame {
 
 /// Where the chapter's route lies for a layout. It is anchored at the landing circle and laid back
 /// south from it, so the skiff always stands on the north shore and the seed's distances decide
-/// how far south the canyon, the outcrop and the railway reach.
+/// how far south the channel, the outcrop and the railway reach.
 struct Route {
     /// Row of the railway, and the block the rail cart starts on (it runs east).
     line_z: i32,
@@ -374,8 +374,8 @@ struct Route {
     haul_x: i32,
     tower: IVec3,
     mast: IVec3,
-    /// The ledge launcher's line: column (0, 0) is the canyon's first column past the rim.
-    canyon: Frame,
+    /// The ledge launcher's line: column (0, 0) is the channel's first column past the near bank.
+    channel: Frame,
     /// The tilting launcher's line.
     ridge: Frame,
 }
@@ -386,16 +386,16 @@ impl Route {
         // The platform's centre is two blocks behind the tilting launcher's release point, where the
         // beam waits for it.
         let rim = ridge_first + 2 + layout.platform_centre.floor() as i32;
-        let canyon_x = RIDGE_X + CANYON_OFFSET;
-        // The line ends at a buffer three blocks short of the canyon's line, under the outcrop.
-        let rail_x = canyon_x - 72;
+        let channel_x = RIDGE_X + CHANNEL_OFFSET;
+        // The line ends at a buffer three blocks short of the channel's line, under the outcrop.
+        let rail_x = channel_x - 72;
         Route {
             line_z: rim + LINE_BACK,
             rail_x,
             haul_x: rail_x + Ch1Layout::RAIL_LENGTH as i32 + 3,
-            tower: IVec3::new(canyon_x - 10, GROUND, rim + 30),
-            mast: IVec3::new(canyon_x - 19, GROUND, rim + 30),
-            canyon: Frame::north(IVec2::new(canyon_x, rim)),
+            tower: IVec3::new(channel_x - 10, GROUND, rim + 30),
+            mast: IVec3::new(channel_x - 19, GROUND, rim + 30),
+            channel: Frame::north(IVec2::new(channel_x, rim)),
             ridge: Frame::north(IVec2::new(RIDGE_X, ridge_first)),
         }
     }
@@ -470,12 +470,12 @@ struct Plan {
 
 impl Plan {
     fn new(layout: &Ch1Layout, route: &Route) -> Self {
-        let (canyon, ridge) = (&route.canyon, &route.ridge);
+        let (channel, ridge) = (&route.channel, &route.ridge);
         let line = route.line_z;
-        let rim = canyon.origin.y;
+        let rim = channel.origin.y;
         let line_end = route.haul_x + Ch1Layout::HAUL_LENGTH as i32 + 4;
         let pad = layout.pad_centre.floor() as i32;
-        let width = layout.canyon_width as i32;
+        let width = layout.channel_width as i32;
         let zones = vec![
             // Landing site: wreck, spawn, the rail's start and its station.
             Rect::new(route.rail_x - 22, line - 14, route.rail_x + 4, line + 3),
@@ -485,12 +485,12 @@ impl Plan {
             Rect::new(route.mast.x - 5, route.tower.z - 4, route.tower.x + 8, line - 2),
             // Ramp foot, outcrop, and the ledge launcher's line out past the channel to the end of its
             // level run.
-            canyon.rect(-LEDGE_DEPTH - 18, -6, Ch1Layout::CANYON_RUN as i32 + 10, 6),
+            channel.rect(-LEDGE_DEPTH - 18, -6, Ch1Layout::CHANNEL_RUN as i32 + 10, 6),
             // Both banks of the channel, from the bridge to past the launch line. The channel itself
             // is cut out of them afterwards.
-            canyon.rect(-4, BRIDGE_C - 6, width + 4, 12),
+            channel.rect(-4, BRIDGE_C - 6, width + 4, 12),
             // The platform, the dolly rail, the tilting launcher and its station.
-            Rect::new(RIDGE_X - 3, ridge.origin.y - 2, canyon.origin.x + 3, ridge.origin.y + 8),
+            Rect::new(RIDGE_X - 3, ridge.origin.y - 2, channel.origin.x + 3, ridge.origin.y + 8),
             // The tilting launcher's line: ridge, landing circle, quay and on to the end of its level run.
             ridge.rect(-6, -6, pad + 43, 6),
             ridge.rect(layout.ridge_x as i32 - 4, -12, layout.ridge_x as i32 + 5, 8),
@@ -502,7 +502,7 @@ impl Plan {
         let corridors = vec![
             Rect::new(route.rail_x - 8, line, line_end + 4, WORLD_SIZE.z),
             Rect::new(route.mast.x - 6, rim + 20, route.tower.x + 10, line),
-            canyon.rect(-6, 0, Ch1Layout::CANYON_RUN as i32 + 6, 90),
+            channel.rect(-6, 0, Ch1Layout::CHANNEL_RUN as i32 + 6, 90),
             ridge.rect(-6, 0, pad + 43, 90),
         ];
         let views = vec![Rect::new(route.rail_x - 6, line + 2, line_end + 4, WORLD_SIZE.z)];
@@ -714,45 +714,45 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let gate_stand = Vec3::new(tower.x as f32 + 3.5, ground, tower.z as f32 + 3.5);
 
     // --- Puzzle 3: ledge, channel, platform ---------------------------------------------------
-    let canyon_frame = route.canyon;
+    let channel_frame = route.channel;
     let ledge_top = GROUND + layout.ledge_h as i32;
-    outcrop(&mut world, &canyon_frame, layout.ledge_h as i32);
-    channel(&mut world, &canyon_frame, layout);
-    let (bridge_cells, cables) = bridge(&mut world, &canyon_frame, layout.canyon_width as i32);
+    outcrop(&mut world, &channel_frame, layout.ledge_h as i32);
+    channel(&mut world, &channel_frame, layout);
+    let (bridge_cells, cables) = bridge(&mut world, &channel_frame, layout.channel_width as i32);
     // Launcher rail along the launch line, ending at the rim.
-    canyon_frame.fill(&mut world, (-4, 0, ledge_top - 1), (-1, 0, ledge_top - 1), Material::Steel);
-    let canyon_launch = canyon_frame.launch(ledge_top as f32);
+    channel_frame.fill(&mut world, (-4, 0, ledge_top - 1), (-1, 0, ledge_top - 1), Material::Steel);
+    let channel_launch = channel_frame.launch(ledge_top as f32);
     // Landing platform: marker blocks set flush into the far plateau, as long along the launch line as
     // the layout says (one block) and three wide across it.
     let platform_mid = layout.platform_centre.floor() as i32;
     let reach = (layout.platform_half - 0.5).round() as i32;
-    canyon_frame.fill(&mut world, (platform_mid - reach, -1, GROUND - 1), (platform_mid + reach, 1, GROUND - 1), Material::Marker);
+    channel_frame.fill(&mut world, (platform_mid - reach, -1, GROUND - 1), (platform_mid + reach, 1, GROUND - 1), Material::Marker);
     // Both banks light when the casket lands: quartz either side of the jack frame on the ledge, and
     // in front of and behind the platform on the far bank (the dolly rail leaves it sideways).
-    let mut canyon_quartz = Vec::new();
+    let mut channel_quartz = Vec::new();
     for c in [-2, 2] {
-        canyon_quartz.push(canyon_frame.cell(-1, c, ledge_top - 1));
+        channel_quartz.push(channel_frame.cell(-1, c, ledge_top - 1));
     }
     for a in [platform_mid - reach - 1, platform_mid + reach + 1] {
         for c in -1..=1 {
-            canyon_quartz.push(canyon_frame.cell(a, c, GROUND - 1));
+            channel_quartz.push(channel_frame.cell(a, c, GROUND - 1));
         }
     }
-    for &q in &canyon_quartz {
+    for &q in &channel_quartz {
         world.set(q, Material::Quartz);
     }
-    stakes.extend(corners(canyon_frame.rect(platform_mid - reach, -1, platform_mid + reach, 1), ground));
-    let canyon_release_pin = pins.len();
-    pins.push(Pin { position: canyon_launch.origin, label: "Ledge launcher: release point" });
-    pins.push(Pin { position: canyon_launch.at(layout.platform_centre, 0.0, ground), label: "Platform: centre" });
-    let station2 = canyon_frame.cell(-6, 3, ledge_top);
+    stakes.extend(corners(channel_frame.rect(platform_mid - reach, -1, platform_mid + reach, 1), ground));
+    let channel_release_pin = pins.len();
+    pins.push(Pin { position: channel_launch.origin, label: "Ledge launcher: release point" });
+    pins.push(Pin { position: channel_launch.at(layout.platform_centre, 0.0, ground), label: "Platform: centre" });
+    let station2 = channel_frame.cell(-6, 3, ledge_top);
     // The jack frame stands on the last block of the launcher's rail, at the rim. The pile of blocks
     // lies on the ledge west of the rail, two blocks high: the blocks themselves are put there when
     // the game starts (see `carry`), since they move.
-    let canyon_well = canyon_frame.cell(-1, 0, ledge_top);
+    let channel_well = channel_frame.cell(-1, 0, ledge_top);
     let crate_pile: Vec<IVec3> =
-        (0..Ch1Layout::MAX_STACK as i32).map(|i| canyon_frame.cell(-4 + (i / 2) % 2, -3 + i / 4, ledge_top + i % 2)).collect();
-    let yard = canyon_frame.rect(-(LEDGE_DEPTH - 1), -4, -2, -1);
+        (0..Ch1Layout::MAX_STACK as i32).map(|i| channel_frame.cell(-4 + (i / 2) % 2, -3 + i / 4, ledge_top + i % 2)).collect();
+    let yard = channel_frame.rect(-(LEDGE_DEPTH - 1), -4, -2, -1);
     let crate_yard = [IVec3::new(yard.min.x, ledge_top, yard.min.y), IVec3::new(yard.max.x, ledge_top + 2, yard.max.y)];
 
     // --- Puzzle 4: tilting launcher, ridge, pad -----------------------------------------------
@@ -770,7 +770,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     stakes.extend(corners(ridge_frame.rect(pad_mid - 2, -2, pad_mid + 2, 2), ground));
     ridge_frame.fill(&mut world, (-3, 0, GROUND - 1), (-1, 0, GROUND - 1), Material::Steel);
     // The dolly rail: the tiller, landed on the platform, rides it to the launcher's breech.
-    let platform_cell = canyon_frame.cell(platform_mid, 0, GROUND - 1);
+    let platform_cell = channel_frame.cell(platform_mid, 0, GROUND - 1);
     let breech = ridge_frame.cell(-2, 0, GROUND - 1);
     debug_assert_eq!(platform_cell.z, breech.z, "the platform is level with the breech");
     world.fill(IVec3::new(breech.x + 1, GROUND - 1, breech.z), IVec3::new(platform_cell.x - 2, GROUND - 1, breech.z), Material::Steel);
@@ -863,19 +863,19 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // round the outcrop and over the bridge to the north island, the platform and the tilting
     // launcher; round the ridge's east end, across the quay and down the slipway to the north gate.
     // Quartz runs down its middle, one stretch from each machine to the next.
-    let ramp_foot = canyon_frame.col(-LEDGE_DEPTH - layout.ledge_h as i32 - 2, 0);
-    let ledge_end = canyon_frame.col(-6, 0);
-    let width = layout.canyon_width as i32;
-    let (near_end, far_end) = (canyon_frame.col(-4, BRIDGE_C), canyon_frame.col(width + 3, BRIDGE_C));
+    let ramp_foot = channel_frame.col(-LEDGE_DEPTH - layout.ledge_h as i32 - 2, 0);
+    let ledge_end = channel_frame.col(-6, 0);
+    let width = layout.channel_width as i32;
+    let (near_end, far_end) = (channel_frame.col(-4, BRIDGE_C), channel_frame.col(width + 3, BRIDGE_C));
     let ridge_row = route.ridge_row(layout);
     let launcher = ridge_frame.col(-3, 2);
     let approach = launcher.y + 7;
     // The spine: the ridge carried on as a wall from coast to coast, so the only way north is the
     // pass, which the seal closes. It loops north round the ledge launcher's line where that line's
     // level run reaches past the ridge, and crosses it only beyond the run's end.
-    let run_end = (canyon_launch.origin.z - Instance::new(PuzzleKind::Canyon, layout).profile().expect("the canyon has a profile").heights.len() as f32).floor() as i32;
+    let run_end = (channel_launch.origin.z - Instance::new(PuzzleKind::Channel, layout).profile().expect("the channel has a profile").heights.len() as f32).floor() as i32;
     let pocket_top = (run_end - 2).min(ridge_row);
-    let spine_cells = spine(&mut world, ridge_row, pocket_top, canyon_frame.origin.x, ridge_frame.col(layout.ridge_x as i32, 0).x);
+    let spine_cells = spine(&mut world, ridge_row, pocket_top, channel_frame.origin.x, ridge_frame.col(layout.ridge_x as i32, 0).x);
     let prelude = road(&mut world, &[(wreck.x + 9, row - 3), (rail_x + 2, row - 2)]);
     let runs = [
         road(&mut world, &[(rail_x + 2, row - 2), (hx - 1, row - 2)]),
@@ -946,7 +946,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let mut ramp = Stonework { stage: 3, rises: true, ..default() };
     for a in (-LEDGE_DEPTH - layout.ledge_h as i32 - 1)..-LEDGE_DEPTH {
         for c in -2..=2 {
-            let col = canyon_frame.col(a, c);
+            let col = channel_frame.col(a, c);
             for y in GROUND..world.surface(col.x, col.y) {
                 ramp.cells.push((IVec3::new(col.x, y, col.y), world.get(IVec3::new(col.x, y, col.y))));
             }
@@ -965,7 +965,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let way = Way {
         machines: std::array::from_fn(|i| if i < PUZZLES { stations[i].as_vec3() + Vec3::new(0.5, 0.0, 0.5) } else { north_gate }),
         wake: [Vec::new(), gate_quartz, tower_foot, Vec::new(), breech_quartz, north_quartz],
-        done: [first_done, crane_quartz, by_height(tower_rest), canyon_quartz, circle_quartz, Vec::new()],
+        done: [first_done, crane_quartz, by_height(tower_rest), channel_quartz, circle_quartz, Vec::new()],
         runs,
         ramp,
         leaf,
@@ -996,11 +996,11 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         gate_pin,
         mast_release,
         mast_plate,
-        canyon_launch,
-        canyon_well,
+        channel_launch,
+        channel_well,
         crate_pile,
         crate_yard,
-        canyon_release_pin,
+        channel_release_pin,
         ridge_launch,
         stations,
         pins,
@@ -1170,7 +1170,7 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
     }
 }
 
-/// The outcrop that carries the ledge launcher, on the canyon's near rim: a sheer-sided mesa with a
+/// The outcrop that carries the ledge launcher, on the channel's near bank: a sheer-sided mesa with a
 /// gully ramp of stone steps up the back of it, climbing towards the rim from the railway's end.
 fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
     // The railway's end and the drop tower lie behind it, so the mesa is shallower on the west.
@@ -1217,7 +1217,7 @@ fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
 /// banks wandering further away from those, sheer down to a bed of sand and rock too deep to wade.
 /// Fallen rock and quartz lie on the bed under the water.
 fn channel(world: &mut VoxelWorld, frame: &Frame, layout: &Ch1Layout) {
-    let width = layout.canyon_width as i32;
+    let width = layout.channel_width as i32;
     // Across the whole world: the frame fires north, so its columns run east with `c`.
     for c in -frame.origin.x..WORLD_SIZE.x - frame.origin.x {
         let cf = c as f32;
@@ -1339,13 +1339,13 @@ fn ridge(world: &mut VoxelWorld, frame: &Frame, along: i32, height: i32) {
 /// highest ground beside it everywhere by more than can be climbed, from either side. It leaves alone the tilting launcher's line (the ridge
 /// itself, exactly as built) and has one pass, three blocks wide, between two standing stones of
 /// the builders' limestone, which the seal closes while it sleeps. Where the ledge launcher's line
-/// (`canyon_x`) runs north past the ridge, the wall loops round it, crossing it at `pocket_top`, so
+/// (`channel_x`) runs north past the ridge, the wall loops round it, crossing it at `pocket_top`, so
 /// that line's level run stays clear. Returns the columns it stands on.
-fn spine(world: &mut VoxelWorld, row: i32, pocket_top: i32, canyon_x: i32, ridge_x: i32) -> HashSet<IVec2> {
+fn spine(world: &mut VoxelWorld, row: i32, pocket_top: i32, channel_x: i32, ridge_x: i32) -> HashSet<IVec2> {
     let mut path: Vec<IVec2> = Vec::new();
     let pocket = pocket_top < row;
     for x in 0..WORLD_SIZE.x {
-        let in_pocket = pocket && (canyon_x - 1..=canyon_x + 1).contains(&x);
+        let in_pocket = pocket && (channel_x - 1..=channel_x + 1).contains(&x);
         let in_pass = (PASS_X - 1..=PASS_X + 1).contains(&x);
         if x != ridge_x && !in_pocket && !in_pass {
             path.push(IVec2::new(x, row));
@@ -1353,10 +1353,10 @@ fn spine(world: &mut VoxelWorld, row: i32, pocket_top: i32, canyon_x: i32, ridge
     }
     if pocket {
         for z in pocket_top..row {
-            path.push(IVec2::new(canyon_x - 2, z));
-            path.push(IVec2::new(canyon_x + 2, z));
+            path.push(IVec2::new(channel_x - 2, z));
+            path.push(IVec2::new(channel_x + 2, z));
         }
-        path.extend((canyon_x - 1..=canyon_x + 1).map(|x| IVec2::new(x, pocket_top)));
+        path.extend((channel_x - 1..=channel_x + 1).map(|x| IVec2::new(x, pocket_top)));
     }
     let columns: HashSet<IVec2> = path.iter().copied().collect();
     // How high each column stands. One that is already too tall to step onto from the ground beside
@@ -1622,18 +1622,18 @@ mod tests {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
 
-            let canyon = Instance::new(PuzzleKind::Canyon, &layout).profile().unwrap();
-            assert_eq!(columns(&world, &sites.canyon_launch, canyon.heights.len()), canyon.heights, "seed {seed}: canyon");
+            let channel = Instance::new(PuzzleKind::Channel, &layout).profile().unwrap();
+            assert_eq!(columns(&world, &sites.channel_launch, channel.heights.len()), channel.heights, "seed {seed}: channel");
             // Asleep or awake, nothing of the way stands in either launcher's line: the spine loops
             // round the ledge launcher's level run, and the seal is east of it.
             let ridge = Instance::new(PuzzleKind::Ridge, &layout).profile().unwrap();
             let mut sleeping = world.clone();
             for stage in 0..=crate::state::PUZZLES {
                 crate::waking::settle(&mut sleeping, &sites.way, stage);
-                assert_eq!(columns(&sleeping, &sites.canyon_launch, canyon.heights.len()), canyon.heights, "seed {seed}: canyon at stage {stage}");
+                assert_eq!(columns(&sleeping, &sites.channel_launch, channel.heights.len()), channel.heights, "seed {seed}: channel at stage {stage}");
                 assert_eq!(columns(&sleeping, &sites.ridge_launch, ridge.heights.len()), ridge.heights, "seed {seed}: ridge at stage {stage}");
             }
-            assert_eq!(sites.canyon_launch.origin.y, (GROUND + layout.ledge_h as i32) as f32);
+            assert_eq!(sites.channel_launch.origin.y, (GROUND + layout.ledge_h as i32) as f32);
 
             let ridge = Instance::new(PuzzleKind::Ridge, &layout).profile().unwrap();
             assert_eq!(columns(&world, &sites.ridge_launch, ridge.heights.len()), ridge.heights, "seed {seed}: ridge");
@@ -1659,16 +1659,16 @@ mod tests {
             let ground = GROUND as f32;
             let below = |p: Vec3| world.get((p - Vec3::Y * 0.5).floor().as_ivec3());
 
-            let (canyon, ridge) = (sites.canyon_launch, sites.ridge_launch);
-            let platform = canyon.at(layout.platform_centre, 0.0, ground);
+            let (channel, ridge) = (sites.channel_launch, sites.ridge_launch);
+            let platform = channel.at(layout.platform_centre, 0.0, ground);
             let pad = ridge.at(layout.pad_centre, 0.0, ground);
             for offset in [-layout.platform_half + 0.1, 0.0, layout.platform_half - 0.1] {
-                assert_eq!(below(platform + canyon.direction * offset as f32), Material::Marker, "seed {seed}");
+                assert_eq!(below(platform + channel.direction * offset as f32), Material::Marker, "seed {seed}");
             }
             for offset in [-layout.pad_half + 0.1, 0.0, layout.pad_half - 0.1] {
                 assert_eq!(below(pad + ridge.direction * offset as f32), Material::Marker, "seed {seed}");
             }
-            assert_ne!(below(platform + canyon.direction * (layout.platform_half as f32 + 0.1)), Material::Marker);
+            assert_ne!(below(platform + channel.direction * (layout.platform_half as f32 + 0.1)), Material::Marker);
 
             // Each console stands on solid ground with open space beside it.
             for console in sites.stations {
@@ -1707,7 +1707,7 @@ mod tests {
             assert!(sites.shore.z < sites.slipway.z, "seed {seed}: the shore is not north of the skiff");
 
             // The tiller lands beside the tilting launcher, and the dolly rail between them is flush.
-            let platform = sites.canyon_launch.at(layout.platform_centre, 0.0, GROUND as f32);
+            let platform = sites.channel_launch.at(layout.platform_centre, 0.0, GROUND as f32);
             let breech = sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5;
             assert!((platform.z - breech.z).abs() < 0.01, "seed {seed}: the platform is not level with the breech");
             assert!(platform.distance(breech) < 10.0, "seed {seed}");
@@ -1786,9 +1786,9 @@ mod tests {
         for seed in 0..100 {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
-            let (bridge, launch) = (&sites.way.bridge, sites.canyon_launch);
+            let (bridge, launch) = (&sites.way.bridge, sites.channel_launch);
             let deck: Vec<IVec3> = bridge.cells.iter().map(|&(c, _)| c).filter(|c| c.y == GROUND - 1).collect();
-            assert_eq!(deck.len(), 3 * layout.canyon_width as usize, "seed {seed}: the deck spans the channel, three wide");
+            assert_eq!(deck.len(), 3 * layout.channel_width as usize, "seed {seed}: the deck spans the channel, three wide");
             // Asleep, the deck's columns are deep water; awake, the deck is flush with both banks, and
             // nothing but water is under it.
             let mut asleep = world.clone();
@@ -1820,12 +1820,12 @@ mod tests {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
             let ledge_top = GROUND + layout.ledge_h as i32;
-            let out = sites.canyon_launch.direction.as_ivec3();
+            let out = sites.channel_launch.direction.as_ivec3();
             // The jack frame's column is clear all the way up, and stands on the ledge at the rim.
-            assert!(world.is_solid(sites.canyon_well - IVec3::Y), "seed {seed}");
-            assert!(!world.is_solid(sites.canyon_well + out - IVec3::Y), "seed {seed}: the rim must be the next block out");
+            assert!(world.is_solid(sites.channel_well - IVec3::Y), "seed {seed}");
+            assert!(!world.is_solid(sites.channel_well + out - IVec3::Y), "seed {seed}: the rim must be the next block out");
             for k in 0..=Ch1Layout::MAX_STACK as i32 + 2 {
-                assert!(!world.is_solid(sites.canyon_well + IVec3::Y * k), "seed {seed}: the frame's column is blocked at {k}");
+                assert!(!world.is_solid(sites.channel_well + IVec3::Y * k), "seed {seed}: the frame's column is blocked at {k}");
             }
             // The pile lies on the ledge's flat top, every cell free, inside the yard.
             assert_eq!(sites.crate_pile.len(), Ch1Layout::MAX_STACK as usize);
@@ -1851,8 +1851,8 @@ mod tests {
         for seed in 0..200 {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
-            let ledge = sites.canyon_launch.origin;
-            let back = -sites.canyon_launch.direction;
+            let ledge = sites.channel_launch.origin;
+            let back = -sites.channel_launch.direction;
             // Columns walking up the ramp from 30 blocks back to the rim.
             let column = |k: i32| {
                 let p = ledge + back * (k as f32 - 0.5);

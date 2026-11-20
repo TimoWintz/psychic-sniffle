@@ -308,13 +308,13 @@ fn rest_transform(prop: Prop, sites: &Sites) -> Transform {
 /// Whether a prop is in the world when nothing is happening. The cart runs the tutorial's stretch
 /// until it has carried its block to the marker, then waits past the stone gate as the haul cart;
 /// the tiller is on the tilting launcher once the ledge launcher has thrown its casket across the
-/// canyon.
+/// channel.
 fn shown(prop: Prop, game: &Game) -> bool {
     match prop {
         Prop::Ghost | Prop::Cargo => false,
         Prop::Cart => !solved(game, PuzzleKind::Rail),
         Prop::HaulCart => solved(game, PuzzleKind::Rail),
-        Prop::Tiller => solved(game, PuzzleKind::Canyon),
+        Prop::Tiller => solved(game, PuzzleKind::Channel),
         _ => true,
     }
 }
@@ -330,7 +330,7 @@ fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
         Prop::TowerMass => sites.tower_release + half,
         Prop::MastMass | Prop::Ghost => sites.mast_release + half,
         // On the ledge launcher's cradle, which rides on the blocks in the jack frame.
-        Prop::Casket => sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + half,
+        Prop::Casket => sites.channel_launch.origin - sites.channel_launch.direction * 0.5 + half,
         Prop::Tiller => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
         Prop::Cart => sites.rail_start + half,
         Prop::Cargo => sites.rail_start + Vec3::Y * CART_SIZE.y + half,
@@ -604,7 +604,7 @@ fn handle_requests(
                     Running::Pace { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, run }
                 }
                 DemoPlayback::DropAndFire { dropped, fired } => {
-                    let site = sites.canyon_launch;
+                    let site = sites.channel_launch;
                     let low = site.at(0.0, dropped.flight.y, ground);
                     orbit.frame_side_view(low, site.at(fired.flight.x, dropped.projectile.y0, ground), site.direction, false);
                     let mesh = meshes.add(Cuboid::from_length(0.4));
@@ -637,7 +637,7 @@ fn handle_requests(
                     Running::MastDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, verdict: Verdict { values, outcome } }
                 }
                 Playback::Flight { projectile, flight } => {
-                    let site = if instance.kind == PuzzleKind::Canyon { sites.canyon_launch } else { sites.ridge_launch };
+                    let site = if instance.kind == PuzzleKind::Channel { sites.channel_launch } else { sites.ridge_launch };
                     // The box holds the release, the top of the arc and the landing. A launch that
                     // climbs has its top halfway along, so all three are needed.
                     let (_, apex_x, apex_y) = projectile.apex();
@@ -970,7 +970,7 @@ fn advance(
             // A short run-up along the rail before release, so the launch reads as a launch.
             const RUN_UP: f32 = 0.35;
             *t += dt;
-            let prop = if game.def(*puzzle).kind == PuzzleKind::Canyon { Prop::Casket } else { Prop::Tiller };
+            let prop = if game.def(*puzzle).kind == PuzzleKind::Channel { Prop::Casket } else { Prop::Tiller };
             let half = Vec3::Y * prop_size(prop).y / 2.0;
             let flight_t = (*t - RUN_UP).clamp(0.0, flight.t as f32) as f64;
             let (x, y) = projectile.pos(flight_t);
@@ -1089,7 +1089,7 @@ const ROLL_ON: f32 = 3.0;
 /// What the relay of the chapter has done so far, as the world shows it.
 #[derive(Default)]
 struct Relayed {
-    /// The tutorial's solved state and the canyon's, as last shown; `None` before the first look.
+    /// The tutorial's solved state and the channel's, as last shown; `None` before the first look.
     shown: Option<(bool, bool)>,
     /// The cart rolling on up the line after carrying its block to the marker: seconds since it set off, and
     /// where from.
@@ -1098,7 +1098,7 @@ struct Relayed {
 }
 
 /// Keep the line's one cart and the tiller where the chapter has got them to. When the tutorial
-/// is solved, the cart rolls on through the stone gate to wait for the crawler; when the canyon is,
+/// is solved, the cart rolls on through the stone gate to wait for the crawler; when the channel is,
 /// the tiller is on the tilting launcher. Once the world shows a stage it is left alone, so a tiller
 /// that has just landed in the circle is not put back on the launcher.
 fn relay(
@@ -1112,14 +1112,14 @@ fn relay(
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
 ) {
     // The cart rolls on once its block is at the marker and the stone gate has opened for it.
-    let (rail, canyon) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(&sites.way), solved(&game, PuzzleKind::Canyon));
+    let (rail, channel) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(&sites.way), solved(&game, PuzzleKind::Channel));
     let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
     if sim.busy() {
         return;
     }
     let first = relayed.shown.is_none();
-    let (was_rail, was_canyon) = relayed.shown.unwrap_or((rail, canyon));
-    relayed.shown = Some((rail, canyon));
+    let (was_rail, was_channel) = relayed.shown.unwrap_or((rail, channel));
+    relayed.shown = Some((rail, channel));
     let start = rest_pose(Prop::HaulCart, &sites);
     if rail && !was_rail {
         let from = props.iter().find(|(p, _, _)| **p == Prop::Cart).map_or(start, |(_, t, _)| t.translation);
@@ -1147,7 +1147,7 @@ fn relay(
         let show = match prop {
             Prop::Cart if swap => !rail,
             Prop::HaulCart if swap => rail,
-            Prop::Tiller if first || canyon != was_canyon => shown(*prop, &game),
+            Prop::Tiller if first || channel != was_channel => shown(*prop, &game),
             _ => continue,
         };
         if show && *prop == Prop::Tiller {

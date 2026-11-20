@@ -54,7 +54,7 @@ impl Landmarks {
         }
         let pile = sites.crate_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.crate_pile.len().max(1) as f32;
         places.push((LEDGE_BLOCKS.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
-        places.push((JACK_FRAME.into(), sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
+        places.push((JACK_FRAME.into(), sites.channel_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
         places.push((CART_BLOCK.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
         places.push((RAIL_CART.into(), sites.rail_start + Vec3::Y * 0.8));
         places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
@@ -146,7 +146,7 @@ fn guide(kind: PuzzleKind) -> Guide {
             demo: Some("Drop tower: release point"),
             demo_watch: Some("Drop tower: landing plate"),
         },
-        PuzzleKind::Canyon => Guide {
+        PuzzleKind::Channel => Guide {
             measure: ["Ledge launcher: release point", "Platform: centre"],
             study: "Platform: centre",
             target: "Platform: centre",
@@ -387,7 +387,7 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     }
     // Something in hand goes where the puzzle at hand reads it.
     match (f.carrying, unsolved) {
-        (Some(Item::Block(Yard::Ledge)), Some(PuzzleKind::Canyon)) => return Some(JACK_FRAME.into()),
+        (Some(Item::Block(Yard::Ledge)), Some(PuzzleKind::Channel)) => return Some(JACK_FRAME.into()),
         (Some(Item::Block(Yard::Rail)), Some(PuzzleKind::Rail)) => return Some(RAIL_CART.into()),
         (Some(Item::Gate), Some(PuzzleKind::Gravity)) => return Some(TOWER_NOTCHES.into()),
         _ => {}
@@ -405,7 +405,7 @@ fn choose_gaze(f: &Facts) -> Option<String> {
             return Some(place.into());
         }
         match kind {
-            PuzzleKind::Canyon if f.slot_empty => return Some(LEDGE_BLOCKS.into()),
+            PuzzleKind::Channel if f.slot_empty => return Some(LEDGE_BLOCKS.into()),
             PuzzleKind::Rail if f.slot_empty => return Some(CART_BLOCK.into()),
             // A gate on the tower and nothing timed with it yet: run the experiment.
             PuzzleKind::Gravity if f.gate_pending => return guide(kind).demo.map(Into::into),
@@ -580,7 +580,7 @@ fn direct(
                         PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => {
                             Some((Nudge::Build, "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart."))
                         }
-                        PuzzleKind::Canyon if carry.holds(Slot::Frame) == 0 => {
+                        PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => {
                             Some((Nudge::Build, "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher."))
                         }
                         _ => None,
@@ -734,7 +734,7 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
         });
         let def = game.def(puzzle);
         // The shots after the drop tower are worked out with the player's own g, which passed there.
-        if matches!(kind, PuzzleKind::Canyon | PuzzleKind::Ridge) && companion.nudged.insert((puzzle, Nudge::YourG)) {
+        if matches!(kind, PuzzleKind::Channel | PuzzleKind::Ridge) && companion.nudged.insert((puzzle, Nudge::YourG)) {
             companion.say("Your g worked at the drop tower, so I'd check the other readings first.");
             return;
         }
@@ -1202,8 +1202,8 @@ mod tests {
     }
 
     #[test]
-    fn at_the_canyon_the_beam_shows_the_crates_and_then_the_frame() {
-        let open = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
+    fn at_the_channel_the_beam_shows_the_crates_and_then_the_frame() {
+        let open = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
         assert_eq!(choose_gaze(&open).as_deref(), Some(LEDGE_BLOCKS));
         let built = Facts { slot_empty: false, ..open.clone() };
         assert_eq!(choose_gaze(&built).as_deref(), Some("Platform: centre"));
@@ -1316,7 +1316,7 @@ mod tests {
     fn a_line_about_a_place_looks_at_it_unless_there_is_work_to_show() {
         let telling = Facts { line_look: Some(MAIN_HULL.into()), ..walking_to(0) };
         assert_eq!(choose_gaze(&telling).as_deref(), Some(MAIN_HULL));
-        let at_work = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, slot_empty: true, ..telling.clone() };
+        let at_work = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, slot_empty: true, ..telling.clone() };
         assert_eq!(choose_gaze(&at_work).as_deref(), Some(LEDGE_BLOCKS));
         assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Rail), ..telling }).as_deref(), Some("Rail marker: centre"));
     }
@@ -1339,11 +1339,11 @@ mod tests {
 
     #[test]
     fn nothing_about_a_solved_puzzle_draws_the_beam() {
-        let solved = Facts { focus_kind: Some(PuzzleKind::Canyon), focus_solved: true, beckon: false, ..walking_to(3) };
+        let solved = Facts { focus_kind: Some(PuzzleKind::Channel), focus_solved: true, beckon: false, ..walking_to(3) };
         assert_eq!(choose_gaze(&Facts { station_open: true, ..solved.clone() }), None);
         assert_eq!(choose_gaze(&Facts { ruler_active: true, ..solved.clone() }), None);
         // A test or an experiment still running there is still watched.
-        assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Canyon), ..solved }).as_deref(), Some("Platform: centre"));
+        assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Channel), ..solved }).as_deref(), Some("Platform: centre"));
     }
 
     #[test]
@@ -1359,7 +1359,7 @@ mod tests {
 
     #[test]
     fn a_running_test_and_a_held_look_come_first() {
-        let mut f = Facts { ruler_active: true, testing: Some(PuzzleKind::Canyon), ..walking_to(2) };
+        let mut f = Facts { ruler_active: true, testing: Some(PuzzleKind::Channel), ..walking_to(2) };
         assert_eq!(choose_gaze(&f).as_deref(), Some("Platform: centre"));
         f.held = Some("The wreck".into());
         assert_eq!(choose_gaze(&f).as_deref(), Some("The wreck"));
@@ -1367,7 +1367,7 @@ mod tests {
 
     #[test]
     fn an_open_station_points_at_its_experiment_until_it_has_been_watched() {
-        let mut f = Facts { focus_kind: Some(PuzzleKind::Canyon), station_open: true, demo_pending: true, ..walking_to(2) };
+        let mut f = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, demo_pending: true, ..walking_to(2) };
         assert_eq!(choose_gaze(&f).as_deref(), Some("Ledge launcher: release point"));
         f.demo_pending = false;
         assert_eq!(choose_gaze(&f).as_deref(), Some("Platform: centre"));
@@ -1391,7 +1391,7 @@ mod tests {
         let layout = Ch1Layout::generate(7);
         let (_, sites) = island::build(&layout);
         let labels: Vec<&str> = sites.pins.iter().map(|p| p.label).collect();
-        for kind in [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+        for kind in [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Channel, PuzzleKind::Ridge] {
             let g = guide(kind);
             for label in g.measure.iter().chain([&g.study, &g.target]).chain(g.demo.iter()).chain(g.demo_watch.iter()) {
                 assert!(labels.contains(label), "{kind:?}: no pin labelled '{label}'");

@@ -2,7 +2,7 @@
 //!
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
 //!   screenshots. It loads the cart, times the crawler and catches it, clamps the light gate and times
-//!   drops at two notches, and stacks the canyon's blocks.
+//!   drops at two notches, and stacks the channel's blocks.
 //! - `walk` drives the avatar with key presses: up the steps, to the edge of the ledge, where the deep
 //!   water of the channel stops it, over the bridge once it stands, a jump.
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
@@ -192,8 +192,8 @@ const TURN: f32 = std::f32::consts::FRAC_PI_2;
 
 /// Where to stand at the jack frame's foot, on the ledge launcher's rail, facing it.
 fn at_the_frame(sites: &Sites) -> (Vec3, Vec3) {
-    let out = sites.canyon_launch.direction;
-    (sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4, out)
+    let out = sites.channel_launch.direction;
+    (sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4, out)
 }
 
 fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
@@ -219,7 +219,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(1.2),
         Shot("01b_lumen_points_off_screen"),
         // The whole route, from the wreck on the south coast to the skiff on the north shore.
-        // The route's northern half, from the canyon to the skiff on the north shore, looked at from
+        // The route's northern half, from the channel to the skiff on the north shore, looked at from
         // high over it so no hill comes between the camera and it (the camera keeps within 80 m).
         Watch(Some(sites.tower_plate.lerp(sites.slipway, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
         Look { yaw: 0.25, pitch: 1.0, distance: 80.0 },
@@ -507,10 +507,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Station(None),
     ];
     // Then the stack worked out, and the speed for it.
-    let stack = *game.layout.canyon_stacks().start();
+    let stack = *game.layout.channel_stacks().start();
     let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
-    let ledge = sites.canyon_well.y as f32;
+    let ledge = sites.channel_well.y as f32;
     let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
     let (at_frame, to_frame) = at_the_frame(sites);
     for k in 0..stack {
@@ -618,12 +618,12 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
 fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let ground = crate::island::GROUND as f32;
-    let ledge = sites.canyon_launch.origin;
-    let back = -sites.canyon_launch.direction;
+    let ledge = sites.channel_launch.origin;
+    let back = -sites.channel_launch.direction;
     let (north, east) = (0.0, -std::f32::consts::FRAC_PI_2);
     // The bridge runs north across the channel: start on the near bank, a few steps short of it.
     let deck = sites.way.bridge.centre();
-    let half = game.layout.canyon_width as f32 / 2.0;
+    let half = game.layout.channel_width as f32 / 2.0;
     let bridge_foot = Vec3::new(deck.x, ground, deck.z + half + 4.0);
     let far_bank = deck.z - half - 2.0;
     vec![
@@ -718,8 +718,8 @@ fn way(sites: &Sites) -> Vec<Step> {
         ("01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
         ("02_crane", way.crane_pivot.lerp(sites.crane_foot, 0.5), 0.6, 0.4, 16.0),
         ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
-        ("04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
-        ("05_channel", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
+        ("04_ramp", sites.channel_launch.origin - sites.channel_launch.direction * 18.0, 2.6, 0.45, 26.0),
+        ("05_channel", sites.channel_launch.origin, 1.9, 0.5, 34.0),
         ("05b_bridge", way.bridge.centre(), -0.8, 0.4, 36.0),
         ("06_pad", sites.ridge_launch.origin.lerp(sites.slipway, 0.4), 1.6, 0.6, 50.0),
         ("06b_seal", way.seal.centre(), 1.2, 0.4, 24.0),
@@ -758,7 +758,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
-    let at_pile = Vec3::new(pile_west - 0.6, sites.canyon_well.y as f32, pile_row + 0.5);
+    let at_pile = Vec3::new(pile_west - 0.6, sites.channel_well.y as f32, pile_row + 0.5);
     let (at_frame, to_frame) = at_the_frame(sites);
     let (cargo_at, cart_at) = by_the_rail(sites);
     let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };

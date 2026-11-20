@@ -954,7 +954,7 @@ mod tests {
             let (mut world, sites) = island::build(&layout);
             let climb = climb(&layout);
             let spawn = sites.spawn.floor().as_ivec3();
-            let ledge = sites.canyon_well;
+            let ledge = sites.channel_well;
             settle(&mut world, &sites.way, 2);
             assert!(!reachable(&world, spawn, climb).contains(&ledge), "seed {seed}: the ledge can be climbed before the ramp rises (climb {climb})");
             settle(&mut world, &sites.way, 3);
@@ -972,7 +972,7 @@ mod tests {
             let (mut world, sites) = island::build(&layout);
             let climb = climb(&layout);
             let spawn = sites.spawn.floor().as_ivec3();
-            let platform = sites.canyon_launch.at(layout.platform_centre, 0.0, GROUND as f32).floor().as_ivec3();
+            let platform = sites.channel_launch.at(layout.platform_centre, 0.0, GROUND as f32).floor().as_ivec3();
             let console = sites.stations[PUZZLES - 1] + IVec3::NEG_X;
             settle(&mut world, &sites.way, 3);
             let before = reachable(&world, spawn, climb);

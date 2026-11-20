@@ -104,9 +104,9 @@ pub(crate) fn spawn(
     // The jack frame at the rim: two uprights either side of the column the blocks stack in, as
     // tall as the frame holds, and the launcher's cradle riding on the stack.
     // They stand either side of the launch line, so the load leaves between them.
-    let ledge = sites.canyon_launch;
+    let ledge = sites.channel_launch;
     let (out, side) = (ledge.direction, ledge.direction.cross(Vec3::Y).normalize());
-    let frame_centre = sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
+    let frame_centre = sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
     let tall = Ch1Layout::MAX_STACK as f32 + 0.6;
     let upright = meshes.add(Cuboid::new(0.14, tall, 0.14));
     // Each upright is capped with quartz.
@@ -130,9 +130,9 @@ pub(crate) fn spawn(
 
     // A speed gauge beside each launcher, on the station's side, rated to the most it accepts and
     // following the blueprint. The ledge launcher's also marks the bottom of its band.
-    let canyon = puzzle_of(&game, PuzzleKind::Canyon);
+    let channel = puzzle_of(&game, PuzzleKind::Channel);
     let gauges = [
-        (canyon, sites.canyon_launch, game.layout.canyon_speed_max, Some(game.layout.canyon_speed_min)),
+        (channel, sites.channel_launch, game.layout.channel_speed_max, Some(game.layout.channel_speed_min)),
         (ridge, sites.ridge_launch, game.layout.v_max, None),
     ];
     let post = meshes.add(Cuboid::new(0.12, GAUGE_HEIGHT + 0.7, 0.12));
@@ -171,7 +171,7 @@ const CRADLE_H: f32 = 0.14;
 
 /// Where the ledge launcher's cradle sits: capping the jack frame's top block, under the load.
 fn cradle_at(sites: &Sites) -> Vec3 {
-    sites.canyon_launch.origin - sites.canyon_launch.direction * 0.5 + Vec3::Y * (CRADLE_PROUD - CRADLE_H / 2.0)
+    sites.channel_launch.origin - sites.channel_launch.direction * 0.5 + Vec3::Y * (CRADLE_PROUD - CRADLE_H / 2.0)
 }
 
 fn ride_the_stack(sites: Res<Sites>, mut cradle: Single<&mut Transform, With<Cradle>>) {
@@ -253,7 +253,7 @@ mod tests {
         for seed in 0..40 {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = island::build(&layout);
-            for site in [sites.canyon_launch, sites.ridge_launch] {
+            for site in [sites.channel_launch, sites.ridge_launch] {
                 let foot = gauge_foot(&site);
                 assert!(solid_below(&world, foot), "seed {seed}: the gauge at {foot} has nothing under it");
                 assert!(!world.is_solid((foot + Vec3::Y * 0.5).floor().as_ivec3()), "seed {seed}: the gauge at {foot} is buried");

@@ -342,7 +342,7 @@ Chapter(
         ),
         PuzzleDef(
             id: "1.1.3",
-            kind: Canyon,
+            kind: Channel,
             title: "Across the channel",
             task: "Land the helm's casket on the platform across the channel.",
             why: "Now the helm itself has to go across the channel in its casket, over to the tilting launcher on the next island. It's our first real shot with your g, and I'll admit I'm a little nervous.",

@@ -198,10 +198,10 @@ mod tests {
         let mut inputs = puzzle.solution().inputs();
         let key = puzzle.inputs().last().unwrap().key;
         let value = &mut inputs.get_mut(key).unwrap().value;
-        if kind == PuzzleKind::Canyon && scale != 1.0 {
+        if kind == PuzzleKind::Channel && scale != 1.0 {
             // The dial turns only so far: a miss is the top or the bottom of its band.
             let layout = &puzzle.layout;
-            *value = if scale < 1.0 { layout.canyon_speed_min } else { layout.canyon_speed_max };
+            *value = if scale < 1.0 { layout.channel_speed_min } else { layout.channel_speed_max };
         } else {
             *value *= scale;
         }
@@ -226,7 +226,7 @@ mod tests {
         assert!(save.is_unlocked(&chapter, "1.1.3"));
         assert!(!save.is_unlocked(&chapter, "1.1.4"));
         assert!(!save.chapter_complete(&chapter));
-        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 1.0));
+        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Channel, 1.0));
         assert!(attempt(&mut save, "1.1.4", PuzzleKind::Ridge, 1.0));
         assert!(save.chapter_complete(&chapter));
     }
@@ -236,11 +236,11 @@ mod tests {
         let chapter = chapter_1_1();
         let mut save = Save::new(42);
         assert_eq!(save.charges_left(&chapter, "1.1.3"), 3);
-        assert!(!attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 0.5));
-        assert!(!attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 1.5));
+        assert!(!attempt(&mut save, "1.1.3", PuzzleKind::Channel, 0.5));
+        assert!(!attempt(&mut save, "1.1.3", PuzzleKind::Channel, 1.5));
         assert_eq!(save.charges_left(&chapter, "1.1.3"), 1);
         assert_eq!(save.progress("1.1.3").quality(), None);
-        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Canyon, 1.0));
+        assert!(attempt(&mut save, "1.1.3", PuzzleKind::Channel, 1.0));
         assert_eq!(save.charges_left(&chapter, "1.1.3"), 0);
         assert_eq!(save.progress("1.1.3").quality(), Some(Quality::Serviceable));
         save.recharge("1.1.3");

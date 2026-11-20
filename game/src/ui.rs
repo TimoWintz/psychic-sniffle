@@ -305,7 +305,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if def.kind == PuzzleKind::Chase {
                     ui.label(RichText::new(format!("Haul cart rating: {} top speed.", Quantity::speed(Ch1Layout::CART_TOP_SPEED).display())).strong());
                 }
-                if def.kind == PuzzleKind::Canyon {
+                if def.kind == PuzzleKind::Channel {
                     rating_plate(ui, game);
                 }
                 ui.add_space(6.0);
@@ -425,7 +425,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
 
 /// The ledge launcher's rating plate: its one speed, which can be noted like a ruler reading.
 fn rating_plate(ui: &mut egui::Ui, game: &mut Game) {
-    let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
+    let (low, high) = (Quantity::speed(game.layout.channel_speed_min), Quantity::speed(game.layout.channel_speed_max));
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(format!("Rating plate: the damaged dial only turns from {} to {}.", low.display(), high.display())).strong());
         let noted = game.save.notebook.entries.iter().any(|e| e.source == "plate");
@@ -443,7 +443,7 @@ pub fn note_plate(game: &mut Game) {
 
 /// Write the ends of the ledge launcher's speed band into the notebook, without saving.
 pub fn write_plate(game: &mut Game) {
-    let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
+    let (low, high) = (Quantity::speed(game.layout.channel_speed_min), Quantity::speed(game.layout.channel_speed_max));
     game.save.notebook.set("vmin", "lowest speed of the ledge launcher's dial", low, "plate");
     game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, "plate");
 }
@@ -576,13 +576,13 @@ fn result_section(ui: &mut egui::Ui, instance: &Instance, outcome: &Outcome) {
         // Side view: terrain, target, and the path that was flown.
         let layout = &instance.layout;
         let (target, half) = match instance.kind {
-            PuzzleKind::Canyon => (layout.platform_centre, layout.platform_half),
+            PuzzleKind::Channel => (layout.platform_centre, layout.platform_half),
             _ => (layout.pad_centre, layout.pad_half),
         };
         let x_min = -3.0;
         let x_max = (target + half + 6.0).max(flight.x + 3.0).min(profile.x_end());
         let (_, _, apex) = projectile.apex();
-        let y_min = if instance.kind == PuzzleKind::Canyon { -Ch1Layout::WATER_DROP - 1.0 } else { -2.0 };
+        let y_min = if instance.kind == PuzzleKind::Channel { -Ch1Layout::WATER_DROP - 1.0 } else { -2.0 };
         let y_max = apex.max(layout.ridge_h as f64 * (instance.kind == PuzzleKind::Ridge) as u8 as f64) + 2.0;
 
         let width = ui.available_width().min(400.0);

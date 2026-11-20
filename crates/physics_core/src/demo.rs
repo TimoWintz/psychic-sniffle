@@ -21,9 +21,9 @@ pub const PACE_CART: f64 = 0.5;
 /// The haul track's demonstration runs until the crawler is this far past the second timing post.
 pub const PACE_OVERRUN: f64 = 1.0;
 /// Where the test blocks at the channel start: this far out over the edge, clear of the bank.
-pub const CANYON_DEMO_LIP: f64 = 0.5;
+pub const CHANNEL_DEMO_LIP: f64 = 0.5;
 /// The fired test block comes down on the water this far across the channel, as a fraction of its width.
-pub const CANYON_DEMO_REACH: f64 = 0.5;
+pub const CHANNEL_DEMO_REACH: f64 = 0.5;
 /// The two launch angles of the ridge demonstration, in degrees. Equally far either side of 45.
 pub const RIDGE_DEMO_ANGLES: [f64; 2] = [30.0, 60.0];
 /// The ridge's test slugs land this far out, as a fraction of the distance to the ridge.
@@ -85,7 +85,7 @@ impl Instance {
         self.demo_raised(0)
     }
 
-    /// The demonstration with the launcher raised on `stack` crates: the canyon's test blocks leave
+    /// The demonstration with the launcher raised on `stack` crates: the channel's test blocks leave
     /// from wherever the launcher stands. The other stations ignore it.
     pub fn demo_raised(&self, stack: u32) -> Option<DemoPlayback> {
         let l = &self.layout;
@@ -108,15 +108,15 @@ impl Instance {
                 let fall_time = fall_time(height, l.g);
                 Some(DemoPlayback::Strobe { height, g: l.g, interval: fall_time / STROBE_INTERVALS as f64, fall_time })
             }
-            PuzzleKind::Canyon => {
-                let profile = self.profile().expect("the canyon has terrain");
+            PuzzleKind::Channel => {
+                let profile = self.profile().expect("the channel has terrain");
                 let y0 = (l.ledge_h + stack) as f64;
                 let floor_drop = y0 + Ch1Layout::WATER_DROP;
-                let reach = CANYON_DEMO_REACH * l.canyon_width as f64;
-                let speed = (reach - CANYON_DEMO_LIP) / fall_time(floor_drop, l.g);
+                let reach = CHANNEL_DEMO_REACH * l.channel_width as f64;
+                let speed = (reach - CHANNEL_DEMO_LIP) / fall_time(floor_drop, l.g);
                 // "Dropped" has to move forward for the terrain walk; a millimetre an hour will do.
-                let dropped = Projectile { x0: CANYON_DEMO_LIP, y0, vx: 1e-6, vy: 0.0, g: l.g };
-                let fired = Projectile { x0: CANYON_DEMO_LIP, y0, vx: speed, vy: 0.0, g: l.g };
+                let dropped = Projectile { x0: CHANNEL_DEMO_LIP, y0, vx: 1e-6, vy: 0.0, g: l.g };
+                let fired = Projectile { x0: CHANNEL_DEMO_LIP, y0, vx: speed, vy: 0.0, g: l.g };
                 Some(DemoPlayback::DropAndFire {
                     dropped: Shot::new(dropped, fly(&dropped, &profile)),
                     fired: Shot::new(fired, fly(&fired, &profile)),
@@ -150,7 +150,7 @@ mod tests {
     fn the_tutorial_has_no_demonstration_and_the_others_do() {
         let layout = Ch1Layout::generate(3);
         assert!(Instance::new(PuzzleKind::Rail, &layout).demo().is_none());
-        for kind in [PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Canyon, PuzzleKind::Ridge] {
+        for kind in [PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Channel, PuzzleKind::Ridge] {
             assert!(Instance::new(kind, &layout).demo().is_some(), "{kind:?}");
         }
     }
@@ -199,8 +199,8 @@ mod tests {
     fn the_dropped_and_the_fired_crate_reach_the_floor_together() {
         for (seed, stack) in (0..SEEDS).flat_map(|seed| (0..=Ch1Layout::MAX_STACK).map(move |stack| (seed, stack))) {
             let layout = Ch1Layout::generate(seed);
-            let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Canyon, &layout).demo_raised(stack) else {
-                panic!("the canyon drops and fires")
+            let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Channel, &layout).demo_raised(stack) else {
+                panic!("the channel drops and fires")
             };
             let floor = -Ch1Layout::WATER_DROP;
             for shot in [dropped, fired] {
@@ -209,7 +209,7 @@ mod tests {
             }
             assert!((dropped.flight.t - fired.flight.t).abs() < 1e-9, "seed {seed}");
             assert!(fired.flight.x > dropped.flight.x + 3.0, "seed {seed}: the fired block must visibly travel");
-            assert!(fired.flight.x < layout.canyon_width as f64 - 1.0, "seed {seed}: it must come down in the channel");
+            assert!(fired.flight.x < layout.channel_width as f64 - 1.0, "seed {seed}: it must come down in the channel");
             // It falls further than the launcher's drop to the platform, so its time is not the puzzle's.
             let to_platform = fall_time((layout.ledge_h + stack) as f64, layout.g);
             assert!(fired.flight.t > to_platform * 1.1, "seed {seed}, {stack} blocks");

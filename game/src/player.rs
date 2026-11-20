@@ -50,6 +50,9 @@ impl Default for OrbitCamera {
 /// The camera's nearest and furthest distance from what it looks at.
 const NEAREST: f32 = 3.0;
 const FURTHEST: f32 = 80.0;
+/// How far back a side view may stand, to fit a whole test (the ridge's is about 95 m): further than
+/// the player zooms out, and well inside the fog.
+pub(crate) const SIDE_VIEW_FURTHEST: f32 = 120.0;
 /// The steepest a watched view is tilted to see over terrain in the way.
 const STEEPEST_WATCH: f32 = 1.1;
 
@@ -69,9 +72,8 @@ impl OrbitCamera {
         let width = size.with_y(0.0).length() + 8.0;
         let height = size.y + 6.0;
         let half_screen_width = ASPECT * TAN_HALF_FOV;
-        // The box may use the left half of the screen's width and most of its height, as far as the
-        // camera can stand back.
-        let distance = (width / half_screen_width).max(height / (1.4 * TAN_HALF_FOV)).clamp(18.0, FURTHEST);
+        // The box may use the left half of the screen's width and most of its height.
+        let distance = (width / half_screen_width).max(height / (1.4 * TAN_HALF_FOV)).clamp(18.0, SIDE_VIEW_FURTHEST);
         let yaw = f32::atan2(-along.z, along.x);
         let view = (yaw, 0.18, distance);
         if glide {
@@ -290,7 +292,9 @@ fn orbit_camera(
             orbit.yaw -= motion.delta.x * 0.005;
             orbit.pitch += motion.delta.y * 0.005;
         }
-        orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, FURTHEST);
+        // A side view may stand further back than the player zooms out, to fit its whole test.
+        let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
+        orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
     }
     if !wants.wants_any_keyboard_input() {
         let turn = keys.pressed(KeyCode::ArrowLeft) as i32 - keys.pressed(KeyCode::ArrowRight) as i32;

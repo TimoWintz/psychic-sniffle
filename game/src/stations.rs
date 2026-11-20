@@ -215,3 +215,26 @@ fn colour_beacons(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::player::SIDE_VIEW_FURTHEST;
+
+    #[test]
+    fn every_station_view_fits_on_screen() {
+        // Each station's view stands back far enough to show its whole box left of the panel: the
+        // distance it asks for is within what a side view may use.
+        for seed in 0..20 {
+            let game = Game::for_test(seed);
+            let (_, sites) = crate::island::build(&game.layout);
+            for puzzle in 0..PUZZLES {
+                let kind = game.def(puzzle).kind;
+                let (min, max, along) = station_view(kind, &game, &sites);
+                let mut orbit = OrbitCamera::default();
+                orbit.frame_side_view(min, max, along, false);
+                assert!(orbit.distance < SIDE_VIEW_FURTHEST, "seed {seed}: {kind:?} wants {} m", orbit.distance);
+            }
+        }
+    }
+}

@@ -344,7 +344,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         let plural = if blocks == 1 { "" } else { "s" };
                         ui.label(
                             RichText::new(format!(
-                                "    {blocks} block{plural} in the jack frame at the rim. Leave the console and carry blocks there (F) to change it."
+                                "    {blocks} block{plural} in the jack frame at the edge of the ledge. Leave the console and carry blocks there (F) to change it."
                             ))
                             .small()
                             .color(DIM),
@@ -582,7 +582,7 @@ fn result_section(ui: &mut egui::Ui, instance: &Instance, outcome: &Outcome) {
         let x_min = -3.0;
         let x_max = (target + half + 6.0).max(flight.x + 3.0).min(profile.x_end());
         let (_, _, apex) = projectile.apex();
-        let y_min = if instance.kind == PuzzleKind::Canyon { -(layout.canyon_depth as f64) - 1.0 } else { -2.0 };
+        let y_min = if instance.kind == PuzzleKind::Canyon { -Ch1Layout::WATER_DROP - 1.0 } else { -2.0 };
         let y_max = apex.max(layout.ridge_h as f64 * (instance.kind == PuzzleKind::Ridge) as u8 as f64) + 2.0;
 
         let width = ui.available_width().min(400.0);

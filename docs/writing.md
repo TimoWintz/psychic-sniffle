@@ -41,7 +41,7 @@ Lumen is warm and human. It's a friend working beside the player.
   and it never mopes. ("Either the core's gone cold or my receiver has. I'd rather it was the
   receiver.")
 - **It's honestly excited when something works** and when one of the builders' machines wakes. An
-  exclamation mark is fine when it really is a big moment. ("It made it across, and both rims lit
+  exclamation mark is fine when it really is a big moment. ("It made it across, and both banks lit
   up!")
 - **The builders amaze it a little.** It wonders about them, and it says plainly when it doesn't know
   something. ("I've no idea what the builders meant by it, but I like where it's pointing.")

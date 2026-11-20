@@ -65,10 +65,8 @@ pub struct Ch1Layout {
 
     /// Puzzle 3: height of the ledge above the far plateau, before any blocks raise the launcher.
     pub ledge_h: u32,
-    /// Puzzle 3: width of the canyon, from the ledge edge to the far rim.
+    /// Puzzle 3: width of the channel between the islands, from the ledge edge to the far bank.
     pub canyon_width: u32,
-    /// Puzzle 3: depth of the canyon floor below the far plateau.
-    pub canyon_depth: u32,
     /// Puzzle 3: distance from the ledge edge to the centre of the landing platform.
     pub platform_centre: f64,
     pub platform_half: f64,
@@ -122,6 +120,9 @@ impl Ch1Layout {
     /// Puzzle 3: metres of flat ground the island keeps beyond the rim, which the furthest shot the
     /// launcher can make must come down on.
     pub const CANYON_RUN: usize = 70;
+    /// Puzzle 3: how far the water in the channel lies below the far bank, which is the top of the far
+    /// island. A casket that falls short ends its flight on the water.
+    pub const WATER_DROP: f64 = 11.4;
 
     pub fn generate(seed: u64) -> Self {
         let mut rng = Rng::new(seed ^ 0x1_0001);
@@ -182,7 +183,6 @@ impl Ch1Layout {
                 mast_h,
                 ledge_h,
                 canyon_width,
-                canyon_depth: 10,
                 platform_centre,
                 platform_half: Self::CATCH_HALF,
                 canyon_speed_min: bottom,
@@ -221,7 +221,6 @@ impl Ch1Layout {
             mast_h,
             ledge_h,
             canyon_width,
-            canyon_depth: 10,
             platform_centre,
             platform_half: Self::CATCH_HALF,
             canyon_speed_min,
@@ -234,13 +233,14 @@ impl Ch1Layout {
         }
     }
 
-    /// Terrain along the canyon's launch line, with the rim at `x = 0` and the far plateau at `y = 0`.
+    /// Terrain along the ledge launcher's line, with the near bank at `x = 0` and the far bank at
+    /// `y = 0`. Over the channel the surface is the water's.
     pub fn canyon_profile(&self) -> Profile {
         // Long enough for the furthest shot the launcher can make, with room to spare.
         let furthest = self.canyon_speed_max * fall_time((self.ledge_h + Self::MAX_STACK) as f64, self.g);
         let length = (furthest.max(self.platform_centre + self.platform_half) + 6.0).ceil() as usize;
         let mut p = Profile::flat(0.0, length, 0.0);
-        p.set(0.0, self.canyon_width as f64, -(self.canyon_depth as f64));
+        p.set(0.0, self.canyon_width as f64, -Self::WATER_DROP);
         p
     }
 
@@ -913,7 +913,7 @@ impl Instance {
                     (
                         "Fell short".to_string(),
                         format!(
-                            "The casket dropped into the canyon and struck the far wall {} m below the rim.",
+                            "The casket fell short and struck the far bank {} m below the top.",
                             sig(-flight.y, 3)
                         ),
                     )
@@ -921,7 +921,7 @@ impl Instance {
                     (
                         "Fell short".to_string(),
                         format!(
-                            "The casket dropped into the canyon and hit the floor {} m out from the ledge.",
+                            "The casket fell into the channel {} m out from the ledge.",
                             sig(flight.x, 3)
                         ),
                     )

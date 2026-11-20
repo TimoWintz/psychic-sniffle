@@ -42,10 +42,11 @@ other line in the game is written, is set out in [writing.md](writing.md).
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
 - **Closing.** When the chapter's part is installed, and what woke along the way with it.
 - **Remarks.** A handful of lines about places (the wreck on the road, the shore facing the strait,
-  the canyon rim, the ridge, the skiff on the old quay), each said once a session when the player comes near. Lumen makes a
+  the ledge over the channel, the bridge once it stands, the ridge, the skiff on the old quay), each
+  said once a session when the player comes near. Lumen makes a
   remark only when nothing is going on: no station open, no test or experiment running, the ruler
   away, nothing carried, its conversation closed, and nothing said for 40 seconds.
-- **Help.** Once per station a session: after a first miss at the canyon or the ridge, that the
+- **Help.** Once per station a session: after a first miss at the channel or the ridge, that the
   player's g held up at the drop tower; after two misses, if the player has not talked to it and a
   model is connected, that it can help without giving the number; when a station runs out of
   charges, that it is a good moment to check the readings.
@@ -59,16 +60,19 @@ chapter's goal above the next task.
 Alien, but familiar. The planet has turf, rock, sand and trees, only not quite ours: the turf is teal
 with drifts of olive and patches of violet lichen, the rock is slate-violet laid down in rust and pale
 strata, the trees are parasols and spires of teal and violet fronds, and quartz grows in clusters that
-glow. A ringed gas giant and a small moon hang in a turquoise sky, and other islands sit in the haze
-on the horizon.
+glow. A ringed gas giant and a small moon hang in a turquoise sky. The chapter's land is an
+archipelago: two islands with a narrow channel of sea between them, and other islands in the haze on
+the horizon.
 
 Two hands built what stands at the puzzle sites, and they should never be confused.
 
 - **The way.** A road of dressed pale stone runs from the south coast to a gate on the north shore,
   and its builders' machines stand along it: a cart in a groove sunk in stone, a crawler that walks
   on six stone legs, a drop tower and a
-  taller survey mast, two launchers (one in a stone jack frame on the canyon rim, one that tilts), a
-  crane arm, and a quay with a slipway down to the strait, where their skiff lies. Beside each machine
+  taller survey mast, two launchers (one in a stone jack frame on a ledge over the channel, one that
+  tilts), a crane arm, a suspension bridge over the channel, and a quay with a slipway down to the
+  strait, where their skiff lies. The bridge's deck hangs from cables of the same light as the road's
+  quartz, and while it sleeps there is no bridge at all. Beside each machine
   stands its console, a stone with a quartz face (Lumen reads through it, the player commits through
   it), and a stone lamp. The blocks the cart carries and the jack frame takes, the casket the helm
   travels in and the helm itself are theirs too. Their stone is smooth and pale and its edges are
@@ -82,7 +86,7 @@ Two hands built what stands at the puzzle sites, and they should never be confus
   the builders left no numbers. Apart from that, only the wreck and the scrap thrown clear of it are
   ours.
 
-The landforms a puzzle needs (the outcrop, the canyon, the ridge) are geology, not boxes: exact where
+The landforms a puzzle needs (the outcrop, the channel, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
 
 ## Title and intro
@@ -105,9 +109,11 @@ camera glides down to the player's view and Lumen says its first line. The place
 
 **Premise.** The ship broke up on the way in. Its drive section is still in orbit; the main hull came
 down on the mainland across the strait; the forward section, with the castaway in it, came down on the
-island, across the southern end of an ancient road. A bay of the strait reaches into the island's
-north-west, so from the wreck the castaway sees over the water to the skiff's quay and, beyond the
-strait, the main hull. Both stay in view from the island's northern shore.
+island, across the southern end of an ancient road. A narrow channel of sea cuts the land in two from
+coast to coast: the wreck's island in the south, and the north island, where the road goes on to the
+skiff's quay. A bay of the strait reaches in from the north-west, so from the wreck the castaway sees
+over the water to the skiff's quay and, beyond the strait, the main hull. Both stay in view from the
+north island's northern shore.
 
 **The way.** The road and its machines were built by someone who is not here any more, long ago. The
 machines are asleep. Through its console, one does exactly what it is told and works nothing out:
@@ -135,7 +141,7 @@ and Lumen learns one thing about this world.
 
 | Chapter | Part | Why the crossing needs it | What Lumen learns |
 |---|---|---|---|
-| 1.1 The Helm | helm | the skiff has no helm: it sits in a casket on a launcher over the canyon | local g |
+| 1.1 The Helm | helm | the skiff has no helm: it sits in a casket on a launcher on the wrong side of the channel | local g |
 | 1.2 First Light | its lamps and power loop | the skiff's quartz is drained, the backup's cells are fading, and the crossing runs into the night | what the salvaged cells can deliver |
 | 1.3 The Haul | winch, hull stones | its loose hull stones lie on the shore below the quay, and the slipway is uphill | how these grounds grip |
 | 1.4 The Forge | hull stones refired | some stones are cracked, and the builders' kiln must fire them again | how the stone takes heat |
@@ -148,20 +154,21 @@ orbiter in tier 2, and the restored core brings the grapher, tier 2's instrument
 
 **Chapter 1.1: the helm.** The skiff lies on the builders' old quay on the north shore, facing the
 strait and the main hull. Its helm, a long stone tiller, never reached it: it sits in a stone casket
-on the launcher above the canyon, as if the way was sending it there when everything stopped. The
+on the launcher above the channel, as if the way was sending it there when everything stopped. The
 casket is too heavy to carry, but the builders' launchers can throw it, once they can aim. The
 chapter is one route from the wreck on the south coast to the quay, the southern stretch of the way,
 and each station is the next machine along it. At the start all of it is asleep; only the first
-console glows. Each other console lights as its machine wakes. The ridge runs on as a wall, the
-spine, from coast to coast (a reef under the water at both ends), and the road crosses it by one
-pass, which a stone seal closes.
+console glows. Each other console lights as its machine wakes. The road crosses the channel by the
+builders' bridge, which sleeps until the casket is across. On the north island the ridge runs on as a
+wall, the spine, from coast to coast (a reef under the water at both ends), and the road crosses it
+by one pass, which a stone seal closes.
 
 1. The road's rail runs east from the wreck. Its first stretch is the supply rail; past a stone gate
    the same rail is the haul track, where the same cart chases the crawler to the transfer crane.
 2. The drop tower and the survey mast stand at the rail's end, under the outcrop.
 3. A ramp climbs north onto the outcrop, where the ledge launcher fires the casket north across the
-   canyon. It lands on the platform beside the tilting launcher, and a dolly rail takes the tiller
-   aboard.
+   channel to the north island. It lands on the platform beside the tilting launcher, and a dolly
+   rail takes the tiller aboard. The bridge rises out of the water, and the road runs over it.
 4. The tilting launcher fires the tiller north over the ridge into the landing circle on the quay.
    Past it, the skiff lies on the quay at the head of the slipway, which runs down to the strait,
    with the main hull beyond, and the north gate stands at the quay's end.
@@ -170,7 +177,8 @@ After each pass, once the player has read the result and stepped away from the c
 few seconds), the way wakes, in a short scene behind letterbox bars:
 
 1. The machine whose job was done lights up (and, after the crawler's pass, the crane swings the
-   sight off its back and sets it down at its foot).
+   sight off its back and sets it down at its foot; after the casket's, the bridge's pylons rise out
+   of the water and its deck runs out from both banks to meet in the middle, so the light can cross).
 2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
 3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
    cart rolls through, the ramp's steps rise out of the ground, the seal in the pass sinks, the
@@ -179,15 +187,17 @@ few seconds), the way wakes, in a short scene behind letterbox bars:
 
 Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly
 fills in from south to north. While the ramp sleeps the ledge cannot be reached at all: the outcrop
-is sheer all round, too tall to climb even with this planet's highest jump. While the seal sleeps the
-north shore cannot be reached either: nothing climbs the spine, and nothing goes round it.
+is sheer all round, too tall to climb even with this planet's highest jump. Until the bridge stands
+the north island cannot be reached: the channel's water is too deep to wade, all the way from coast
+to coast. While the seal sleeps the north shore cannot be reached either: nothing climbs the spine,
+and nothing goes round it.
 
 | Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
 | The supply rail | their cart, and the one console that still glows; the cart will not run empty, so a block of theirs goes on it (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
 | Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
 | Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
-| Across the canyon | the helm, in its casket, has to cross the canyon; the first real shot with the player's g | both rims light; the casket stays on the platform and the tiller waits on the tilting launcher; the seal in the pass through the spine sinks (it only ever stood in the castaway's way, not the helm's) |
+| Across the channel | the helm, in its casket, has to cross the channel to the north island; the first real shot with the player's g | both banks light and the bridge rises across the channel; the casket stays on the platform and the tiller waits on the tilting launcher; the seal in the pass through the spine sinks (it only ever stood in the castaway's way, not the helm's) |
 | Over the ridge | the tiller itself, on to the skiff | the tiller lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff takes its helm, which settles into the socket at the stern, and the helm's quartz lights (the rest of the skiff stays dark); Lumen hears the core for the first time |
 
 ## Pillars
@@ -247,7 +257,7 @@ builds it, and the exact simulator judges what was built.
 
 | Pattern | What the player does | Where |
 |---|---|---|
-| Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: blocks under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the canyon (built) |
+| Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: blocks under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the channel (built) |
 | Place to measure | Put an instrument where it measures what is wanted: a light gate clamped at a chosen notch of the drop tower, so the player designs their own measurement and collects pairs of drop and time. | 1.1 Local gravity (built) |
 | Place the catcher | The setting is fixed and read off a plate; carry the target (net, stop, bin) to where the load will end up. | 1.3, the sled: place the stop where it comes to rest under friction (planned; see the curriculum) |
 
@@ -269,7 +279,7 @@ worked into the typed answer.
   lucky pass is, is really how many tests that halving takes: the size of the target against
   everything the station accepts, in bits. Every answer that is built in the world gets a test that
   plays such a guesser against it across many seeds: it must need well over a station's charges on
-  average, and rarely pass within them. At the canyon the same guesser needed 3.9 tests (31 % within three) with the
+  average, and rarely pass within them. At the channel the same guesser needed 3.9 tests (31 % within three) with the
   old typed speed, 2.8 (75 %) with blocks alone at a fixed speed, and 7.6 (32 %) now that the stack is
   built and the speed is calculated for it. The haul track's typed speed has one too: a marker one block
   wide, a coupling point that moves fast with the speed, 6.4 tests (6 % within three).
@@ -349,6 +359,9 @@ inventory.
   placement, putting the thing into its place is the act: a block onto the cart or into the jack frame, the
   light gate onto a notch of the drop tower (the notch is the one the pointer marks on the tower, or
   the one at hand height). The station shows what is placed there, and the save keeps it.
+- **Water.** The castaway wades in the shallows but stops where the water gets too deep (deeper than
+  about a metre), as at a wall, and at the top of a bank over deep water. The first time, Lumen says
+  why, once a session.
 - **Notebook, handbook, Lumen.** Always on screen. The notebook and the handbook sit in a fixed column
   at the top left under the chapter's progress, reduced to a header; `N` and `H` (or a click on the
   header) expand and reduce them. Lumen reduced is its eye; `T` expands its conversation.
@@ -364,7 +377,7 @@ Lumen is pointing.
 The builders' skiff lies on their quay on the north shore, at the end of the chapter's route, with
 the strait and the main hull beyond it. Progress shows twice over: the way wakes machine by machine
 along the route, and each chapter's capstone wakes a part of the skiff on the quay; a puzzle on the
-way moves what it delivers one step nearer (the helm's casket, across the canyon to the tilting
+way moves what it delivers one step nearer (the helm's casket, across the channel to the tilting
 launcher).
 
 | Stage | Purpose in the story | Unlocks |

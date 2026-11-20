@@ -6,7 +6,7 @@
 //! engine, which bounces and settles it. Nothing the engine does can change the result.
 
 use crate::carry::{Carry, Slot};
-use crate::island::{GROUND, LaunchSite, Sites};
+use crate::island::{GROUND, LaunchSite, SEA_LEVEL, Sites};
 use crate::player::OrbitCamera;
 use crate::props::{self, Finishes, Vehicle};
 use crate::state::{Game, PageEvent, RECHARGE_SECONDS, Ui};
@@ -17,7 +17,7 @@ use physics_core::ballistics::{Flight, Projectile};
 use physics_core::demo::{DemoPlayback, Shot};
 use physics_core::expr::evaluate;
 use physics_core::progress::CommittedValue;
-use physics_core::puzzle::{InputSource, Inputs, Outcome, Playback, PuzzleKind};
+use physics_core::puzzle::{Ch1Layout, InputSource, Inputs, Outcome, Playback, PuzzleKind};
 use physics_core::units::Quantity;
 
 /// Something the interface asks the simulation to do.
@@ -189,6 +189,53 @@ struct PropAssets {
     tiller: (Handle<Mesh>, Handle<Mesh>, Handle<StandardMaterial>),
     /// The haul cart's and the crawler's shapes, for their afterimages.
     haul: [Vehicle; 2],
+    /// A ring of foam, for where something falls into the water.
+    ring: (Handle<Mesh>, Handle<StandardMaterial>),
+}
+
+/// A ring of foam spreading on the water where something fell in. It sinks out of sight as it
+/// spreads.
+#[derive(Component)]
+struct Splash {
+    age: f32,
+    delay: f32,
+}
+
+/// How long a ring of foam spreads, and how wide it gets.
+const SPLASH_TIME: f32 = 1.3;
+const SPLASH_REACH: f32 = 3.2;
+
+/// Whether a flight came down on the water rather than the ground.
+fn on_water(flight: &Flight) -> bool {
+    (flight.surface + Ch1Layout::WATER_DROP).abs() < 1e-9
+}
+
+/// Rings of foam where something falls into the water at `at`.
+fn splash(commands: &mut Commands, assets: &PropAssets, at: Vec3) {
+    for delay in [0.0, 0.25] {
+        commands.spawn((
+            Splash { age: 0.0, delay },
+            Mesh3d(assets.ring.0.clone()),
+            MeshMaterial3d(assets.ring.1.clone()),
+            Transform::from_translation(at.with_y(SEA_LEVEL + 0.03)).with_scale(Vec3::splat(0.01)),
+            bevy::light::NotShadowCaster,
+        ));
+    }
+}
+
+/// Spread each ring of foam, sink it under the water as it fades, and clear it away.
+fn spread_splashes(time: Res<Time>, mut commands: Commands, mut splashes: Query<(Entity, &mut Splash, &mut Transform)>) {
+    for (entity, mut splash, mut transform) in &mut splashes {
+        splash.age += time.delta_secs();
+        let u = ((splash.age - splash.delay) / SPLASH_TIME).clamp(0.0, 1.0);
+        if u >= 1.0 {
+            commands.entity(entity).despawn();
+            continue;
+        }
+        let reach = 0.3 + (SPLASH_REACH - 0.3) * (1.0 - (1.0 - u) * (1.0 - u));
+        transform.scale = Vec3::splat(if splash.age < splash.delay { 0.01 } else { reach });
+        transform.translation.y = SEA_LEVEL + 0.03 - 0.3 * ((u - 0.6) / 0.4).max(0.0);
+    }
 }
 
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
@@ -230,7 +277,7 @@ impl Plugin for SimPlugin {
         app.init_resource::<Sim>()
             .init_resource::<TerrainReshaped>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels, props::step_legs, reshape_terrain).chain());
+            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels, props::step_legs, reshape_terrain, spread_splashes).chain());
     }
 }
 
@@ -446,6 +493,10 @@ pub(crate) fn setup(
         casket,
         tiller,
         haul: [haul_cart, crawler_shape],
+        ring: (
+            meshes.add(Annulus::new(0.8, 1.0).mesh().resolution(40).build().rotated_by(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2))),
+            materials.add(StandardMaterial { base_color: Color::srgb(0.9, 0.97, 1.0), unlit: true, ..default() }),
+        ),
     });
 }
 
@@ -869,6 +920,9 @@ fn advance(
                 }
                 if flying >= shot.flight.t && !landed[k] {
                     landed[k] = true;
+                    if on_water(&shot.flight) {
+                        splash(&mut commands, &assets, centre);
+                    }
                     let (vx, vy) = shot.projectile.vel(shot.flight.t);
                     commands.entity(entity).remove::<DemoBody>().insert((
                         RigidBody::Dynamic,
@@ -942,6 +996,9 @@ fn advance(
                 }
                 if *t - RUN_UP >= flight.t as f32 && *visibility != Visibility::Hidden {
                     *visibility = Visibility::Hidden;
+                    if on_water(flight) {
+                        splash(&mut commands, &assets, centre);
+                    }
                     // A load that lands on its target stays down (the casket on the platform beside
                     // the tilting launcher, the tiller in the landing circle, until the skiff takes
                     // it); a miss is returned to its launcher.

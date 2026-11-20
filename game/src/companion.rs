@@ -68,6 +68,7 @@ impl Landmarks {
         places.push(("The stone gate".into(), way.stone_gate + Vec3::Y * 2.0));
         places.push(("The north gate".into(), way.keystone));
         places.push(("The ramp".into(), way.ramp.centre() + Vec3::Y * 0.5));
+        places.push(("The bridge".into(), way.bridge.centre() + Vec3::Y * 1.0));
         places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
         Landmarks(places)
     }
@@ -88,7 +89,10 @@ impl Landmarks {
     }
 }
 
-/// The blocks on the canyon ledge, and the frame at the rim they go into.
+/// What Lumen says the first time deep water stops the engineer.
+const WATER_LINE: &str = "Not out there, please. It gets deep fast, and if you went under I couldn't pull you out.";
+
+/// The blocks on the ledge, and the frame at its edge they go into.
 const LEDGE_BLOCKS: &str = "Blocks on the ledge";
 const JACK_FRAME: &str = "Jack frame under the ledge launcher";
 /// The block for the supply rail's cart where it lies at the start, and the cart it goes on.
@@ -205,6 +209,8 @@ pub struct Companion {
     frame: u64,
     /// The place the camera has turned to show while the story names it.
     showing: Option<String>,
+    /// Whether Lumen has said why the engineer stopped at deep water, this session.
+    warned_of_water: bool,
 }
 
 impl Companion {
@@ -462,6 +468,7 @@ fn direct(
     landmarks: Res<Landmarks>,
     waking: Res<crate::waking::Waking>,
     player: Single<&Transform, With<crate::player::Player>>,
+    shore: Res<crate::player::Shore>,
     mut orbit: ResMut<crate::player::OrbitCamera>,
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
@@ -527,6 +534,11 @@ fn direct(
                     companion.say("It's recharging. While we wait, let's check your readings against the handbook.");
                 }
             }
+            if shore.stopped && !companion.warned_of_water {
+                companion.warned_of_water = true;
+                companion.feel(Mood::Concerned, 4.0);
+                companion.say(WATER_LINE);
+            }
             if now.refusal.is_some() && now.refusal != before.refusal {
                 companion.feel(Mood::Concerned, 4.0);
                 companion.say("The station refused that before launching, so you haven't lost a charge. The reason's under the button.");
@@ -569,7 +581,7 @@ fn direct(
                             Some((Nudge::Build, "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart."))
                         }
                         PuzzleKind::Canyon if carry.holds(Slot::Frame) == 0 => {
-                            Some((Nudge::Build, "The dial only turns so far. If you put the blocks from the ledge into the frame at the rim, they'll raise the launcher."))
+                            Some((Nudge::Build, "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher."))
                         }
                         _ => None,
                     }

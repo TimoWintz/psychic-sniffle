@@ -14,7 +14,8 @@
 //!
 //! - one railway runs east from the wreck: the supply rail, the stone gate, then the haul track;
 //! - the drop tower and the survey mast stand at the line's end, under the outcrop;
-//! - a ramp climbs north onto the outcrop, whose ledge launcher fires north across the canyon;
+//! - a ramp climbs north onto the outcrop, whose ledge launcher fires north across the channel to the
+//!   second island, the north island; the builders' bridge over the channel wakes when the casket lands;
 //! - the tiller lands beside the tilting launcher, which fires it north over the ridge into the landing circle on the quay;
 //! - past the circle, the quay and a slipway, with the builders' skiff on it, run down to the strait, through the north gate.
 
@@ -28,7 +29,16 @@ use std::collections::HashSet;
 pub const WORLD_SIZE: IVec3 = IVec3::new(232, 72, 232);
 /// Height of the ground surface over most of the island.
 pub const GROUND: i32 = 20;
-pub const SEA_LEVEL: f32 = 8.6;
+/// The water's surface: as far below the ground as the simulator has the channel's water.
+pub const SEA_LEVEL: f32 = GROUND as f32 - Ch1Layout::WATER_DROP as f32;
+/// The deepest water the castaway wades into: the ground under it at most this far below the
+/// surface. Anywhere deeper, it stops at the water's edge.
+pub const WADE_DEPTH: f32 = 1.2;
+
+/// Whether the water over a column with its top at `surface` is too deep to wade.
+pub fn too_deep(surface: i32) -> bool {
+    (surface as f32) < SEA_LEVEL - WADE_DEPTH
+}
 
 /// A named point the ruler snaps to.
 #[derive(Clone, Debug)]
@@ -174,6 +184,11 @@ pub struct Way {
     pub leaf: Stonework,
     /// The seal in the pass through the spine: it sinks as the ridge's machine wakes.
     pub seal: Stonework,
+    /// The builders' bridge over the channel to the north island: it rises as the casket lands on the
+    /// platform, before the light runs over it to the tilting launcher.
+    pub bridge: Stonework,
+    /// The bridge's two cables, which are not blocks (see `waking`).
+    pub cables: Vec<Cable>,
     /// Foot of the stone gate, in the rail between its posts.
     pub stone_gate: Vec3,
     /// Foot of the north gate, between its posts on the slipway, and its keystone's centre.
@@ -183,13 +198,26 @@ pub struct Way {
     pub crane_pivot: Vec3,
 }
 
-/// Stone of the way that comes and goes, layer by layer: it stands from `stage` on if it `rises`,
+/// Stone of the way that comes and goes, step by step: it stands from `stage` on if it `rises`,
 /// and until `stage` if it sinks. Its cells are listed with what each one is when it stands.
 #[derive(Clone, Debug, Default)]
 pub struct Stonework {
     pub cells: Vec<(IVec3, Material)>,
+    /// The step each cell comes in at, rising, or goes at, sinking from the last step down. When
+    /// empty, the steps are its layers, from the lowest.
+    pub steps: Vec<i32>,
     pub stage: usize,
     pub rises: bool,
+    /// Whether it moves while the machine whose job was just done lights up, before the light runs on
+    /// (the bridge, which the light runs over), rather than as the next machine wakes.
+    pub with_glow: bool,
+}
+
+impl Way {
+    /// All the way's stonework that comes and goes.
+    pub fn stonework(&self) -> [&Stonework; 4] {
+        [&self.ramp, &self.leaf, &self.seal, &self.bridge]
+    }
 }
 
 impl Stonework {
@@ -198,10 +226,34 @@ impl Stonework {
         if self.rises { stage >= self.stage } else { stage < self.stage }
     }
 
+    /// The step at which cell `i` comes or goes.
+    pub fn step(&self, i: usize) -> i32 {
+        match self.steps.get(i) {
+            Some(&step) => step,
+            None => self.cells[i].0.y - self.cells.iter().map(|(c, _)| c.y).min().unwrap_or(0),
+        }
+    }
+
+    /// How many steps it moves in.
+    pub fn step_count(&self) -> i32 {
+        (0..self.cells.len()).map(|i| self.step(i) + 1).max().unwrap_or(0)
+    }
+
     /// The middle of it.
     pub fn centre(&self) -> Vec3 {
         self.cells.iter().map(|(c, _)| c.as_vec3() + Vec3::splat(0.5)).sum::<Vec3>() / self.cells.len().max(1) as f32
     }
+}
+
+/// A cable of the bridge, drawn as a chain of segments between the tops of a pylon on each bank. It
+/// glows like the way's quartz and is not a block, so it never stands in anyone's way.
+#[derive(Clone, Debug, Default)]
+pub struct Cable {
+    /// The points it runs through, from the near bank's pylon to the far bank's.
+    pub points: Vec<Vec3>,
+    /// The bridge's step at which each segment (between `points[i]` and `points[i + 1]`) is there: it
+    /// grows out from both pylons with the deck.
+    pub steps: Vec<i32>,
 }
 
 /// One stretch of the way's quartz inlay, down the middle of the road: the line it follows (column
@@ -251,10 +303,17 @@ const RIDGE_X: i32 = 108;
 /// Row of the pad's centre. Everything else is laid back south from it, by the seed's distances.
 const PAD_Z: i32 = 60;
 /// How far east of the tilting launcher's line the ledge launcher's line runs: far enough that the
-/// ridge stays off the canyon shot's level run, near enough that the tiller lands beside the launcher.
+/// ridge stays off the channel shot's level run, near enough that the tiller lands beside the launcher.
 const CANYON_OFFSET: i32 = 9;
-/// The canyon's length, across its launch line: it closes at the west end and climbs out at the east.
-const CANYON_ENDS: (i32, i32) = (-28, 28);
+/// Where the builders' bridge crosses the channel, across the ledge launcher's line: west of it, clear
+/// of the outcrop, and behind the shot from the side view's camera, which looks from the east.
+const BRIDGE_C: i32 = -13;
+/// How tall the bridge's pylons stand above the banks.
+const PYLON_H: i32 = 9;
+/// How high over the middle of the deck its cables sag to.
+const CABLE_LOW: f32 = 2.2;
+/// The channel's bed: the top of the rock under its water, deeper than anyone wades.
+const CHANNEL_BED: i32 = 4;
 /// Depth of the ledge's flat top, back from the rim.
 const LEDGE_DEPTH: i32 = 14;
 /// How far south of the rim the railway runs.
@@ -424,11 +483,12 @@ impl Plan {
             Rect::new(route.rail_x - 3, line - 6, line_end, line + 4),
             // Drop tower, survey mast and their station, between the line and the outcrop.
             Rect::new(route.mast.x - 5, route.tower.z - 4, route.tower.x + 8, line - 2),
-            // Ramp foot, outcrop, and the ledge launcher's line out past the canyon to the end of its
+            // Ramp foot, outcrop, and the ledge launcher's line out past the channel to the end of its
             // level run.
             canyon.rect(-LEDGE_DEPTH - 18, -6, Ch1Layout::CANYON_RUN as i32 + 10, 6),
-            // The canyon, rim to rim.
-            canyon.rect(-4, CANYON_ENDS.0 - 4, width + 4, CANYON_ENDS.1 + 4),
+            // Both banks of the channel, from the bridge to past the launch line. The channel itself
+            // is cut out of them afterwards.
+            canyon.rect(-4, BRIDGE_C - 6, width + 4, 12),
             // The platform, the dolly rail, the tilting launcher and its station.
             Rect::new(RIDGE_X - 3, ridge.origin.y - 2, canyon.origin.x + 3, ridge.origin.y + 8),
             // The tilting launcher's line: ridge, landing circle, quay and on to the end of its level run.
@@ -551,7 +611,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     }
     world.set(IVec3::new(gate_x, GROUND + 3, row), Material::Limestone);
     let stone_gate = Vec3::new(gate_x as f32 + 0.5, ground, row as f32 + 0.5);
-    let leaf = Stonework { cells: (GROUND..GROUND + 3).map(|y| (IVec3::new(gate_x, y, row), Material::Limestone)).collect(), stage: 1, rises: false };
+    let leaf = Stonework { cells: (GROUND..GROUND + 3).map(|y| (IVec3::new(gate_x, y, row), Material::Limestone)).collect(), stage: 1, ..default() };
     world.set(IVec3::new(rail_x, GROUND - 1, row - 1), Material::Concrete);
     let marker_x = rail_x + layout.rail_target as i32;
     world.fill(IVec3::new(marker_x, GROUND - 1, row - 1), IVec3::new(marker_x, GROUND - 1, row + 1), Material::Marker);
@@ -653,11 +713,12 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // The light gate rests on a stand on the station's apron until it is clamped on the tower.
     let gate_stand = Vec3::new(tower.x as f32 + 3.5, ground, tower.z as f32 + 3.5);
 
-    // --- Puzzle 3: ledge, canyon, platform ----------------------------------------------------
+    // --- Puzzle 3: ledge, channel, platform ---------------------------------------------------
     let canyon_frame = route.canyon;
     let ledge_top = GROUND + layout.ledge_h as i32;
     outcrop(&mut world, &canyon_frame, layout.ledge_h as i32);
-    canyon(&mut world, &canyon_frame, layout);
+    channel(&mut world, &canyon_frame, layout);
+    let (bridge_cells, cables) = bridge(&mut world, &canyon_frame, layout.canyon_width as i32);
     // Launcher rail along the launch line, ending at the rim.
     canyon_frame.fill(&mut world, (-4, 0, ledge_top - 1), (-1, 0, ledge_top - 1), Material::Steel);
     let canyon_launch = canyon_frame.launch(ledge_top as f32);
@@ -666,8 +727,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let platform_mid = layout.platform_centre.floor() as i32;
     let reach = (layout.platform_half - 0.5).round() as i32;
     canyon_frame.fill(&mut world, (platform_mid - reach, -1, GROUND - 1), (platform_mid + reach, 1, GROUND - 1), Material::Marker);
-    // Both rims light when the block lands: quartz either side of the jack frame on the ledge, and
-    // in front of and behind the platform on the far plateau (the dolly rail leaves it sideways).
+    // Both banks light when the casket lands: quartz either side of the jack frame on the ledge, and
+    // in front of and behind the platform on the far bank (the dolly rail leaves it sideways).
     let mut canyon_quartz = Vec::new();
     for c in [-2, 2] {
         canyon_quartz.push(canyon_frame.cell(-1, c, ledge_top - 1));
@@ -798,17 +859,17 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     pins.extend(haul_pins);
 
     // The road: from the wreck beside the railway
-    // to the stone gate and its end, past the drop tower, up the ramp onto the ledge; down again and
-    // round the canyon's east end to the platform and the tilting launcher; round the ridge's east end,
-    // across the quay and down the slipway to the north gate. Quartz runs down its middle,
-    // one stretch from each machine to the next.
-    let rim = canyon_frame.origin.y;
+    // to the stone gate and its end, past the drop tower, up the ramp onto the ledge; down again, west
+    // round the outcrop and over the bridge to the north island, the platform and the tilting
+    // launcher; round the ridge's east end, across the quay and down the slipway to the north gate.
+    // Quartz runs down its middle, one stretch from each machine to the next.
     let ramp_foot = canyon_frame.col(-LEDGE_DEPTH - layout.ledge_h as i32 - 2, 0);
     let ledge_end = canyon_frame.col(-6, 0);
-    let canyon_east = canyon_frame.col(0, CANYON_ENDS.1 + 3).x;
-    let far_side = rim - layout.canyon_width as i32 - 5;
+    let width = layout.canyon_width as i32;
+    let (near_end, far_end) = (canyon_frame.col(-4, BRIDGE_C), canyon_frame.col(width + 3, BRIDGE_C));
     let ridge_row = route.ridge_row(layout);
     let launcher = ridge_frame.col(-3, 2);
+    let approach = launcher.y + 7;
     // The spine: the ridge carried on as a wall from coast to coast, so the only way north is the
     // pass, which the seal closes. It loops north round the ledge launcher's line where that line's
     // level run reaches past the ridge, and crosses it only beyond the run's end.
@@ -822,7 +883,16 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         road(&mut world, &[(station1.x + 1, station1.z - 1), (ramp_foot.x - 1, tower.z - 3), (ramp_foot.x, ramp_foot.y), (ledge_end.x, ledge_end.y)]),
         road(&mut world, &[(ledge_end.x, ledge_end.y), (ramp_foot.x, ramp_foot.y)]).then(road(
             &mut world,
-            &[(ramp_foot.x + 3, ramp_foot.y), (canyon_east, rim + 6), (canyon_east, far_side), (canyon_frame.origin.x + 3, far_side - 4), (canyon_frame.origin.x + 3, launcher.y), (launcher.x + 3, launcher.y)],
+            &[
+                (ramp_foot.x, ramp_foot.y + 2),
+                (ramp_foot.x, tower.z - 3),
+                (near_end.x, tower.z - 3),
+                (near_end.x, near_end.y),
+                (far_end.x, far_end.y),
+                (far_end.x, approach),
+                (launcher.x + 3, approach),
+                (launcher.x + 3, launcher.y),
+            ],
         )),
         road(
             &mut world,
@@ -861,10 +931,19 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let seal = Stonework {
         cells: (PASS_X - 1..=PASS_X + 1).flat_map(|x| (GROUND..GROUND + SEAL_H).map(move |y| (IVec3::new(x, y, ridge_row), Material::Limestone))).collect(),
         stage: 4,
-        rises: false,
+        ..default()
+    };
+    // The bridge as built, with the road's stone and quartz on its deck: it stands once the casket
+    // has crossed, its pylons first, then its deck out from both banks to meet in the middle.
+    let bridge = Stonework {
+        cells: bridge_cells.iter().map(|&(c, _)| (c, world.get(c))).collect(),
+        steps: bridge_cells.iter().map(|&(_, step)| step).collect(),
+        stage: 4,
+        rises: true,
+        with_glow: true,
     };
     // The ramp as built, above the ground: what sleeps until gravity is measured.
-    let mut ramp = Stonework { cells: Vec::new(), stage: 3, rises: true };
+    let mut ramp = Stonework { stage: 3, rises: true, ..default() };
     for a in (-LEDGE_DEPTH - layout.ledge_h as i32 - 1)..-LEDGE_DEPTH {
         for c in -2..=2 {
             let col = canyon_frame.col(a, c);
@@ -891,6 +970,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         ramp,
         leaf,
         seal,
+        bridge,
+        cables,
         stone_gate,
         north_gate,
         keystone,
@@ -1131,39 +1212,90 @@ fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
     }
 }
 
-/// The canyon, across the ledge launcher's line: exact width on the line, its walls wandering
-/// outward away from it, a rounded west end, a floor that climbs in steps at the east end so nobody
-/// is trapped (and the way round it is a walk), rubble and quartz.
-fn canyon(world: &mut VoxelWorld, frame: &Frame, layout: &Ch1Layout) {
-    let depth = layout.canyon_depth as i32;
+/// The channel between the islands, across the ledge launcher's line from one coast to the other:
+/// exactly as wide as the layout says where the casket crosses it and where the bridge spans it, its
+/// banks wandering further away from those, sheer down to a bed of sand and rock too deep to wade.
+/// Fallen rock and quartz lie on the bed under the water.
+fn channel(world: &mut VoxelWorld, frame: &Frame, layout: &Ch1Layout) {
     let width = layout.canyon_width as i32;
-    let (first, last) = CANYON_ENDS;
-    for c in first..last {
+    // Across the whole world: the frame fires north, so its columns run east with `c`.
+    for c in -frame.origin.x..WORLD_SIZE.x - frame.origin.x {
         let cf = c as f32;
-        let off_line = ((c.abs() - 6).max(0) as f32 / 6.0).min(1.0);
-        let mut near = -(fbm(cf / 6.0, 0.5, 71, 2) * 4.0 * off_line).round() as i32;
-        let mut far = width - 1 + (fbm(cf / 6.0, 0.5, 73, 2) * 4.0 * off_line).round() as i32;
-        // The west end closes in a curve.
-        let pinch = ((first + 5 - c).max(0) as f32).powi(2) / 3.0;
-        near += pinch as i32;
-        far -= pinch as i32;
-        let climb = (c - (last - depth)).max(0);
-        let floor = GROUND - depth + climb;
+        let exact = (c.abs() - 6).max(0).min(((c - BRIDGE_C).abs() - 3).max(0));
+        let wander = (exact as f32 / 6.0).min(1.0) * (4.0 + 6.0 * smoothstep(20.0, 60.0, exact as f32));
+        let near = -(fbm(cf / 6.0, 0.5, 71, 2) * wander).round() as i32;
+        let far = width - 1 + (fbm(cf / 6.0, 0.5, 73, 2) * wander).round() as i32;
         for a in near..=far {
-            let cell = frame.cell(a, c, floor);
+            let column = frame.col(a, c);
+            let bed = CHANNEL_BED - (hash01(IVec3::new(column.x, 302, column.y)) < 0.3) as i32;
+            if world.surface(column.x, column.y) <= bed {
+                continue;
+            }
+            let cell = IVec3::new(column.x, bed, column.y);
             world.fill(cell, cell.with_y(WORLD_SIZE.y - 1), Material::Air);
             world.set(cell - IVec3::Y, Material::Sand);
-            // Away from the launch line: fallen rock, and quartz growing at the foot of the walls.
-            // Kept off the near side, where anyone who walks off the rim lands and walks out.
-            let away = c.abs() > 6 && climb == 0 && a > 1;
+            // Away from the launch line and the bridge: fallen rock, and quartz growing at the foot
+            // of the banks.
             let h = hash01(cell.with_y(301));
-            if away && h < 0.06 {
+            if exact > 0 && h < 0.06 {
                 world.set(cell, Material::Rock);
-            } else if away && (a == near || a == far) && h > 0.9 {
+            } else if exact > 0 && (a == near || a == far) && h > 0.9 {
                 quartz(world, cell, h);
             }
         }
     }
+}
+
+/// The builders' bridge over the channel, at `BRIDGE_C` across the ledge launcher's line: a deck three
+/// blocks wide, flush with both banks, hung from a pylon at each corner by two cables. The island is
+/// built with it standing. Returns its cells, each with the step at which it rises (the pylons from
+/// the ground up, then the deck out from both banks), and its cables.
+fn bridge(world: &mut VoxelWorld, frame: &Frame, width: i32) -> (Vec<(IVec3, i32)>, Vec<Cable>) {
+    let mut cells = Vec::new();
+    for a in [-2, width + 1] {
+        for c in [BRIDGE_C - 2, BRIDGE_C + 2] {
+            for y in GROUND..GROUND + PYLON_H {
+                let quartz = (y - GROUND) % 3 == 2 || y == GROUND + PYLON_H - 1;
+                frame.fill(world, (a, c, y), (a, c, y), if quartz { Material::Quartz } else { Material::Limestone });
+                cells.push((frame.cell(a, c, y), y - GROUND));
+            }
+        }
+    }
+    for a in 0..width {
+        let out = a.min(width - 1 - a);
+        for c in BRIDGE_C - 1..=BRIDGE_C + 1 {
+            frame.fill(world, (a, c, GROUND - 1), (a, c, GROUND - 1), Material::Limestone);
+            cells.push((frame.cell(a, c, GROUND - 1), PYLON_H + out));
+        }
+    }
+    // Each cable sags from one pylon's top to the other's, lowest over the middle of the deck.
+    let top = (GROUND + PYLON_H) as f32;
+    let cables = [BRIDGE_C - 2, BRIDGE_C + 2]
+        .into_iter()
+        .map(|c| {
+            let at = |a: f32, y: f32| {
+                let col = frame.origin.as_vec2() + frame.along.as_vec2() * a + frame.across.as_vec2() * c as f32 + Vec2::splat(0.5);
+                Vec3::new(col.x, y, col.y)
+            };
+            let (from, to) = (-2.0, width as f32 + 1.0);
+            let segments = (width + 3) as usize;
+            let points: Vec<Vec3> = (0..=segments)
+                .map(|i| {
+                    let u = i as f32 / segments as f32;
+                    let sag = 1.0 - (2.0 * u - 1.0).powi(2);
+                    at(from + (to - from) * u, top - (top - GROUND as f32 - CABLE_LOW) * sag)
+                })
+                .collect();
+            let steps = (0..segments)
+                .map(|i| {
+                    let a = from + (to - from) * (i as f32 + 0.5) / segments as f32;
+                    PYLON_H + (a.min(width as f32 - 1.0 - a).max(0.0)) as i32
+                })
+                .collect();
+            Cable { points, steps }
+        })
+        .collect();
+    (cells, cables)
 }
 
 /// The ridge, across the tilting launcher's line: a fin of rock. Where the tiller crosses it, it is
@@ -1472,12 +1604,14 @@ mod tests {
     use super::*;
     use physics_core::puzzle::{Instance, PuzzleKind};
 
-    /// Surface heights of the block columns along a launch line, relative to the ground.
+    /// Surface heights of the block columns along a launch line, relative to the ground: the water's,
+    /// where it stands over the ground.
     fn columns(world: &VoxelWorld, site: &LaunchSite, count: usize) -> Vec<f64> {
         (0..count)
             .map(|i| {
                 let p = site.origin + site.direction * (i as f32 + 0.5);
-                (world.surface(p.x.floor() as i32, p.z.floor() as i32) - GROUND) as f64
+                let top = world.surface(p.x.floor() as i32, p.z.floor() as i32);
+                if (top as f32) < SEA_LEVEL { -Ch1Layout::WATER_DROP } else { (top - GROUND) as f64 }
             })
             .collect()
     }
@@ -1644,6 +1778,39 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn the_bridge_spans_the_channel_level_with_both_banks() {
+        for seed in 0..100 {
+            let layout = Ch1Layout::generate(seed);
+            let (world, sites) = build(&layout);
+            let (bridge, launch) = (&sites.way.bridge, sites.canyon_launch);
+            let deck: Vec<IVec3> = bridge.cells.iter().map(|&(c, _)| c).filter(|c| c.y == GROUND - 1).collect();
+            assert_eq!(deck.len(), 3 * layout.canyon_width as usize, "seed {seed}: the deck spans the channel, three wide");
+            // Asleep, the deck's columns are deep water; awake, the deck is flush with both banks, and
+            // nothing but water is under it.
+            let mut asleep = world.clone();
+            crate::waking::settle(&mut asleep, &sites.way, 0);
+            for c in &deck {
+                assert!(too_deep(asleep.surface(c.x, c.z)), "seed {seed}: {c} is not over deep water");
+                assert_eq!(world.surface(c.x, c.z), GROUND, "seed {seed}: the deck at {c}");
+                assert!(!world.is_solid(*c - IVec3::Y), "seed {seed}: something holds the deck up at {c}");
+            }
+            let (north, south) = (deck.iter().map(|c| c.z).min().unwrap(), deck.iter().map(|c| c.z).max().unwrap());
+            for x in deck.iter().map(|c| c.x) {
+                assert_eq!(world.surface(x, south + 1), GROUND, "seed {seed}: the near bank at {x}");
+                assert_eq!(world.surface(x, north - 1), GROUND, "seed {seed}: the far bank at {x}");
+            }
+            // Its cables hang clear over the heads of anyone crossing.
+            for cable in &sites.way.cables {
+                assert_eq!(cable.steps.len() + 1, cable.points.len());
+                assert!(cable.points.iter().all(|p| p.y >= GROUND as f32 + 2.0), "seed {seed}: a cable hangs too low");
+            }
+            // It stands west of the ledge launcher's line, behind the shot from the side view, which
+            // looks from the east.
+            assert!(bridge.cells.iter().all(|&(c, _)| (c.x as f32) < launch.origin.x - 8.0), "seed {seed}");
         }
     }
 

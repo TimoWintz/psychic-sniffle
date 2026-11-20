@@ -11,10 +11,10 @@ This repository holds the design and a playable slice: tier 1, chapter 1 (kinema
 ![A test in progress](docs/screenshots/test.png)
 
 Each station starts with an experiment to try before any calculation. You guess what will happen,
-then watch: a block dropped and a block fired sideways reach the canyon floor together. What you see
+then watch: a block dropped and a block fired sideways reach the water together. What you see
 writes the matching page of your handbook (H), and the stations point you to the pages they need.
 
-![The canyon's experiment: guess, then watch](docs/screenshots/experiment.png)
+![The channel's experiment: guess, then watch](docs/screenshots/experiment.png)
 
 Each handbook page shows its idea in a short looping picture set on Earth: a cyclist past distance
 posts, an apple dropped from a balcony, two kicks landing on one flag. Pause and replay are under it.
@@ -51,7 +51,7 @@ Some things are done with your hands. The supply rail's cart will not run until 
 block onto it. On the haul track the road builders' crawler walks at one steady speed you can only
 measure: time it between two posts, then set the haul cart's speed so it catches the crawler on the
 transfer marker. At the drop tower you can clamp a light gate at any metre of the tower and time
-the fall to it, short drops and long. At the canyon the launcher's dial only turns within a band, too
+the fall to it, short drops and long. At the channel between the islands the launcher's dial only turns within a band, too
 slow for the bare ledge: work out how high it must stand, carry the builders' stone blocks into the jack frame
 under it (one metre each), then set the speed for the height you built.
 
@@ -100,7 +100,7 @@ GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 `tour` plays the chapter with the expressions a player would type, loads the rail cart, times the
 crawler and catches it (once too soon, once on the marker), times drops
 with the light gate at two notches, photographs each handbook page as it is found and answers the
-Free fall page's quiz (once wrong, then right), carries the canyon's blocks into the jack frame, and writes
+Free fall page's quiz (once wrong, then right), carries the ledge's blocks into the jack frame, and writes
 screenshots to `shots/`;
 `walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,
 presses Start and checks that the game takes over; `pose` films the avatar's animations up close
@@ -109,9 +109,9 @@ pass). `tour`, `walk`
 and `pose` press Start first.
 
 To play by hand without the bookkeeping, `prefill` puts the tour's ruler readings in the notebook
-and keeps each station's blueprint (and the calculator, at the haul track and the canyon) filled
+and keeps each station's blueprint (and the calculator, at the haul track and the channel) filled
 with the tour's formula. A formula appears once the readings it needs exist: the chase waits for
-the crawler's stopwatch time, gravity for a light gate reading, the canyon and the ridge for the
+the crawler's stopwatch time, gravity for a light gate reading, the channel and the ridge for the
 calibrated `g`. Walking, carrying, running experiments and committing stay yours. Type over a
 blueprint and it is left alone; clear it to get the formula back.
 

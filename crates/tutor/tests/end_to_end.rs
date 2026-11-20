@@ -161,7 +161,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     let system = messages[0]["content"].as_str().unwrap();
     assert_eq!(messages[0]["role"], "system");
     assert!(system.starts_with(tutor::prompt::POLICY));
-    assert!(system.contains("Puzzle: Across the canyon"));
+    assert!(system.contains("Puzzle: Across the channel"));
     assert!(system.contains("- g = "), "notebook is included");
     assert!(system.contains("set by building, not typed; now: 1 block in the jack frame"), "what is built is included");
     assert!(system.contains("currently typed: d1/t"), "the typed speed is included");

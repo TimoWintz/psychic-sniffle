@@ -3,14 +3,14 @@
 //! A demonstration shows the principle a puzzle rests on, in the world, before any calculation. Like a
 //! test, what happens is decided here, in closed form; the game only plays it back. Unlike a test it
 //! costs nothing, judges nothing, and is built so that it gives nothing away: the haul cart runs slower
-//! than the crawler instead of chasing it, the canyon blocks fall
+//! than the crawler instead of chasing it, the test blocks at the channel fall
 //! further than the launcher's drop to the platform, and the ridge slugs land well short of the ridge.
 //!
 //! The question, the choices and what the player should notice are words, kept with the chapter in
 //! `assets/curriculum`.
 
 use crate::ballistics::{Flight, Projectile, fall_time, fly};
-use crate::puzzle::{Instance, PuzzleKind};
+use crate::puzzle::{Ch1Layout, Instance, PuzzleKind};
 
 /// Number of equal intervals the strobe divides the tower drop into.
 pub const STROBE_INTERVALS: u32 = 7;
@@ -20,9 +20,9 @@ pub const PACE_INTERVALS: u32 = 8;
 pub const PACE_CART: f64 = 0.5;
 /// The haul track's demonstration runs until the crawler is this far past the second timing post.
 pub const PACE_OVERRUN: f64 = 1.0;
-/// Where the canyon's test blocks start: this far out over the lip, clear of the wall.
+/// Where the test blocks at the channel start: this far out over the edge, clear of the bank.
 pub const CANYON_DEMO_LIP: f64 = 0.5;
-/// The fired test block lands this far across the canyon floor, as a fraction of the canyon's width.
+/// The fired test block comes down on the water this far across the channel, as a fraction of its width.
 pub const CANYON_DEMO_REACH: f64 = 0.5;
 /// The two launch angles of the ridge demonstration, in degrees. Equally far either side of 45.
 pub const RIDGE_DEMO_ANGLES: [f64; 2] = [30.0, 60.0];
@@ -111,7 +111,7 @@ impl Instance {
             PuzzleKind::Canyon => {
                 let profile = self.profile().expect("the canyon has terrain");
                 let y0 = (l.ledge_h + stack) as f64;
-                let floor_drop = y0 + l.canyon_depth as f64;
+                let floor_drop = y0 + Ch1Layout::WATER_DROP;
                 let reach = CANYON_DEMO_REACH * l.canyon_width as f64;
                 let speed = (reach - CANYON_DEMO_LIP) / fall_time(floor_drop, l.g);
                 // "Dropped" has to move forward for the terrain walk; a millimetre an hour will do.
@@ -202,14 +202,14 @@ mod tests {
             let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Canyon, &layout).demo_raised(stack) else {
                 panic!("the canyon drops and fires")
             };
-            let floor = -(layout.canyon_depth as f64);
+            let floor = -Ch1Layout::WATER_DROP;
             for shot in [dropped, fired] {
                 assert_eq!(shot.flight.end, FlightEnd::Landed, "seed {seed}");
-                assert_eq!(shot.flight.surface, floor, "seed {seed}: must land on the canyon floor");
+                assert_eq!(shot.flight.surface, floor, "seed {seed}: must come down on the water");
             }
             assert!((dropped.flight.t - fired.flight.t).abs() < 1e-9, "seed {seed}");
             assert!(fired.flight.x > dropped.flight.x + 3.0, "seed {seed}: the fired block must visibly travel");
-            assert!(fired.flight.x < layout.canyon_width as f64 - 1.0, "seed {seed}: it must stay inside the canyon");
+            assert!(fired.flight.x < layout.canyon_width as f64 - 1.0, "seed {seed}: it must come down in the channel");
             // It falls further than the launcher's drop to the platform, so its time is not the puzzle's.
             let to_platform = fall_time((layout.ledge_h + stack) as f64, layout.g);
             assert!(fired.flight.t > to_platform * 1.1, "seed {seed}, {stack} blocks");

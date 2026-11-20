@@ -10,7 +10,7 @@
 use crate::carry::Carry;
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
-use crate::sim::{CRAWLER_TIME, Request, Sim, TOWER_TIME};
+use crate::sim::{CRAWLER_TIME, Request, Sim};
 use crate::state::{Game, Mode, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
@@ -453,6 +453,8 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
     let id = &game.def(puzzle).id;
     let watched = game.save.demo_watched(id);
     let running = sim.demo() == Some(puzzle);
+    // What has to stand in the world before the experiment runs (the light gate on the drop tower).
+    let unready = game.instance(puzzle).experiment_unready(game.placed(puzzle));
     ui.label(RichText::new("Try it first").strong());
     ui.label(&demo.question);
     let first_guess = game.save.first_guess(id);
@@ -474,13 +476,15 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         }
     }
     ui.horizontal(|ui| {
-        let ready = !sim.busy() && (watched || ui_state.guess[puzzle].is_some());
+        let ready = !sim.busy() && unready.is_none() && (watched || ui_state.guess[puzzle].is_some());
         let label = if watched { "Run it again" } else { "Run the experiment" };
         if ui.add_enabled(ready, egui::Button::new(label)).clicked() {
             sim.request = Some(Request::Demo(puzzle));
         }
         if running {
             ui.label(RichText::new("Watch…").italics());
+        } else if unready.is_some() {
+            ui.label(RichText::new("It needs the light gate first.").small().color(WARN));
         } else if !watched && ui_state.guess[puzzle].is_none() {
             ui.label(RichText::new("Make a guess first. It costs nothing.").small().color(DIM));
         } else {
@@ -491,24 +495,30 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
     }
     if game.def(puzzle).kind == PuzzleKind::Gravity {
-        // Where the light gate is, and the last reading: a pair from the gate, or the whole drop.
+        // Where the light gate is, and its last reading.
         let gate = game.placed(puzzle);
-        let built = game.instance(puzzle).built(gate).unwrap_or_default();
-        let line = if gate > 0 { format!("{}.", capitalise(&built)) } else { format!("Light gate: none fitted, so {}.", built.trim_start_matches("no light gate on the drop tower: ")) };
-        ui.label(RichText::new(line).color(if gate > 0 { Color32::WHITE } else { DIM }));
+        if gate > 0 {
+            let built = game.instance(puzzle).built(gate).unwrap_or_default();
+            ui.label(format!("{}.", capitalise(&built)));
+        } else {
+            ui.horizontal(|ui| {
+                ui.label("Light gate:");
+                ui.label(RichText::new("not fitted").strong().color(WARN));
+            });
+            if let Some(how) = &unready {
+                ui.label(RichText::new(format!("    {how}")).small().color(DIM));
+            }
+        }
         let entries = &game.save.notebook.entries;
-        let last = entries
-            .iter()
-            .rposition(|e| (e.source == "stopwatch" && e.label == TOWER_TIME) || (e.source == "light gate" && e.quantity.dim == physics_core::units::Dim::TIME));
-        match last.map(|i| &entries[i]) {
-            Some(time) if time.source == "light gate" => {
+        let last = entries.iter().rev().find(|e| e.source == "light gate" && e.quantity.dim == physics_core::units::Dim::TIME);
+        match last {
+            Some(time) => {
                 let number = time.name.trim_start_matches('t');
                 let drop = game.save.notebook.get(&format!("h{number}"));
                 let drop = drop.map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
                 ui.label(format!("Light gate: {drop}{} = {}", time.name, time.quantity.display()))
             }
-            Some(time) => ui.label(format!("Stopwatch: {} = {}", time.name, time.quantity.display())),
-            None => ui.label(RichText::new("Stopwatch: no reading yet").color(DIM)),
+            None => ui.label(RichText::new("Light gate: no reading yet").color(DIM)),
         };
     }
     if game.def(puzzle).kind == PuzzleKind::Chase {

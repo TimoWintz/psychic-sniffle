@@ -329,7 +329,10 @@ on Lumen's eye) talks to Lumen. The avatar carries one thing at a time, in its h
 inventory.
 
 - **Stations.** While a station is open the engineer stays at its console: the movement keys do
-  nothing, the camera still turns and zooms. `E`, `Esc` or the panel's Leave button steps away. A
+  nothing. The camera glides to a side view of the station's puzzle, left of the panel, holding what
+  the ruler measures there; it still turns and zooms around it. A test or an experiment takes the
+  camera while it plays and gives it back to the station's view; leaving the station glides it home.
+  A side view that terrain would block is seen from higher up rather than from close in. `E`, `Esc` or the panel's Leave button steps away. A
   station opens once its console is awake: the way wakes it with its machine.
 - **Waking.** While the way wakes, the engineer waits and the camera follows the light, then glides
   back; `E` or `Esc` skips to the end.

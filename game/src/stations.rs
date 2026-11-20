@@ -1,12 +1,14 @@
 //! Stations: the builders' consoles where puzzles are worked on, one beside each machine, and their
 //! lamps.
 
-use crate::island::{MACHINES, Sites};
-use crate::player::Player;
+use crate::island::{GROUND, MACHINES, Sites};
+use crate::player::{OrbitCamera, Player};
+use crate::sim::Sim;
 use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::waking::{MachineTrim, Waking};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
+use physics_core::puzzle::PuzzleKind;
 
 /// How close the avatar must be to use a station.
 const REACH: f32 = 4.5;
@@ -18,7 +20,8 @@ pub struct StationsPlugin;
 
 impl Plugin for StationsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(Update, (proximity.run_if(in_state(Mode::Playing)), colour_beacons, light_consoles));
+        app.add_systems(Startup, spawn)
+            .add_systems(Update, ((proximity, frame_station).chain().run_if(in_state(Mode::Playing)), colour_beacons, light_consoles));
     }
 }
 
@@ -116,6 +119,71 @@ fn proximity(
         let ready = game.unlocked(near) && waking.console_awake(near);
         ui.station = if ui.station == Some(near) || !ready { None } else { Some(near) };
     }
+}
+
+/// What the camera shows while a puzzle's station is open: the box from `min` to `max`, seen from
+/// the side with `along` running left to right. It holds what the ruler measures there and where the
+/// test runs, so the player can work from the console.
+pub fn station_view(kind: PuzzleKind, game: &Game, sites: &Sites) -> (Vec3, Vec3, Vec3) {
+    let layout = &game.layout;
+    let ground = GROUND as f32;
+    let span = |points: &[Vec3]| points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+    match kind {
+        PuzzleKind::Rail => {
+            let (min, max) = span(&[sites.rail_start - Vec3::X * 1.5, sites.rail_start + Vec3::new(layout.rail_target as f32 + 2.0, 2.0, 0.0)]);
+            (min, max, Vec3::X)
+        }
+        PuzzleKind::Chase => {
+            let reach = layout.transfer_at.max(layout.posts().1) as f64 + 2.0;
+            haul_view(sites, reach as f32)
+        }
+        PuzzleKind::Gravity => {
+            let (min, max) = span(&[sites.tower_plate, sites.tower_release, sites.mast_plate, sites.mast_release, sites.gate_stand]);
+            (min, max, Vec3::X)
+        }
+        PuzzleKind::Canyon => {
+            let site = sites.canyon_launch;
+            let (min, max) = span(&[site.at(-2.0, 0.0, ground), site.origin + Vec3::Y * 2.0, site.at(layout.platform_centre + 2.0, 0.0, ground)]);
+            (min, max, site.direction)
+        }
+        PuzzleKind::Ridge => {
+            let site = sites.ridge_launch;
+            let (min, max) = span(&[site.at(-2.0, 0.0, ground), site.at(layout.pad_centre + 3.0, layout.ridge_h as f64 + 2.0, ground)]);
+            (min, max, site.direction)
+        }
+    }
+}
+
+/// The haul track from the side, from just behind the haul cart's start to `reach` metres along it.
+pub fn haul_view(sites: &Sites, reach: f32) -> (Vec3, Vec3, Vec3) {
+    let (a, b) = (sites.haul_at(-1.5), sites.haul_at(reach as f64 + 0.5));
+    (a.min(b), a.max(b) + Vec3::Y * 2.0, sites.haul_direction)
+}
+
+/// Turn the camera to the puzzle's view, gliding, while the station is open.
+pub fn look_at_station(orbit: &mut OrbitCamera, game: &Game, sites: &Sites, puzzle: usize) {
+    let (min, max, along) = station_view(game.def(puzzle).kind, game, sites);
+    orbit.frame_side_view(min, max, along, true);
+}
+
+/// While a station is open the camera shows its puzzle, and it glides back to the avatar when the
+/// player leaves. A test borrows it meanwhile (`sim` hands it back), and a wake closes the station
+/// and borrows it itself.
+fn frame_station(game: Res<Game>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, waking: Res<Waking>, mut orbit: ResMut<OrbitCamera>, mut shown: Local<Option<usize>>) {
+    if ui.station == *shown {
+        return;
+    }
+    if sim.busy() || sim.watching() {
+        // The test keeps the camera; `sim` brings it back to the station, or home, when it is done.
+        *shown = ui.station;
+        return;
+    }
+    match ui.station {
+        Some(puzzle) => look_at_station(&mut orbit, &game, &sites, puzzle),
+        None if !waking.playing() => orbit.ease_home(),
+        None => {}
+    }
+    *shown = ui.station;
 }
 
 /// A console's column of light is there once its machine has woken: green once its job is done,

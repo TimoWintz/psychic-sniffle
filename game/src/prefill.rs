@@ -137,7 +137,7 @@ fn formula(game: &Game, puzzle: usize) -> Option<Vec<String>> {
             Some(vec![format!("({d4}/{t})*{d3}/({d3} - {d2})")])
         }
         2 => {
-            // The light gate's reading over the longest drop; the stopwatch's own is too rough.
+            // The light gate's reading over the longest drop.
             let (h, t) = notebook
                 .entries
                 .iter()
@@ -222,7 +222,6 @@ mod tests {
         commit(game, &mut ui, 1);
 
         assert!(formula(game, 2).is_none(), "gravity waits for the light gate");
-        note_reading(game, 0);
         note_reading(game, 3);
         let long = game.layout.tower_h - 2;
         note_reading(game, long);

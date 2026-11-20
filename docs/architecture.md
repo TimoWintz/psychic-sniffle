@@ -51,7 +51,7 @@ it had. What the engine does afterwards cannot change the result.
 | `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
-| `stations` | the builders' consoles and lamps (their quartz lit as each machine wakes), proximity and interaction, the active puzzle |
+| `stations` | the builders' consoles and lamps (their quartz lit as each machine wakes), proximity and interaction, the active puzzle, and the camera's view of its puzzle while a station is open |
 | `sim` | experiment and test playback, hand-off to the physics engine (whose view of the island is built again when the way's blocks come or go), handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |

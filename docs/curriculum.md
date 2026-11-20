@@ -158,15 +158,17 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
 - **Wakes.** The tower, to the top; the ramp onto the outcrop surfaces, and the sight is set on the
   ledge launcher.
 - **Brief.** The launchers need this planet's gravitational acceleration.
-- **Investigate.** Measure the drop tower's height with the ruler. Release the test mass and time the
-  fall with the stopwatch (free, repeatable).
+- **Investigate.** Measure the drop tower's height with the ruler. Clamp the light gate on the tower,
+  release the test mass and time the fall to the gate (free, repeatable).
 - **Place to measure: the light gate.** A gate on a stand by the station, carried (`F`) and clamped on
   the drop tower at any whole-metre notch (painted orange by the castaway), from 1 m below the
-  release down to the plate: the notch the pointer marks on the tower, or the one at hand height. With a gate fitted, each release times
-  the fall from the release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`,
-  `t3`, ...), so the player designs their own measurement and can see that doubling the drop does not
-  double the time. Without one, the stopwatch times the whole drop. The gate's notch is kept in the
-  save; a ruler pin rides on it. The answer stays the typed `g`.
+  release down to the plate: the notch the pointer marks on the tower, or the one at hand height. The
+  experiment needs it, like the rail cart needs its block: until a gate is clamped the station's Run
+  button is off and says why, and Lumen points at the stand. Each release times the fall from the
+  release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`, `t3`, ...), so the
+  player designs their own measurement and can see that doubling the drop does not double the time.
+  The notch at the plate times the whole drop. The gate's notch is kept in the save; a ruler pin rides
+  on it. The answer stays the typed `g`.
 - **Short drops are worth less.** Readings are rounded to 0.01 s, so at 1 m (about 0.4 to 0.55 s)
   the rounding alone is up to about 2.6 % of `g`, beyond the 2 % pass. A reading of a second or more
   (`h ≥ g/2`, 3.3 to 6.8 m) gives `g` to 1 %. The station's text says only that the longer the drop,

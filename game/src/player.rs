@@ -31,19 +31,30 @@ pub struct OrbitCamera {
     /// When set, the camera looks at this point instead of the avatar (used to follow a test).
     pub watch: Option<Vec3>,
     focus: Vec3,
-    /// The player's yaw, pitch and distance while a test has borrowed the camera.
+    /// The player's yaw, pitch and distance while a test, a station or a wake has borrowed the camera.
     saved: Option<(f32, f32, f32)>,
-    /// The player's yaw, pitch and distance the camera is easing back to, after a wake.
+    /// The player's yaw, pitch and distance the camera is easing back to, after a wake or a station.
     returning: Option<(f32, f32, f32)>,
-    /// The yaw, pitch and distance the camera is turning to, to show something past the avatar.
+    /// The yaw, pitch and distance the camera is turning to: to show something past the avatar, or a
+    /// station's puzzle.
     turning: Option<(f32, f32, f32)>,
+    /// The camera is on a side view (a test, or a station's puzzle), which may stand further back
+    /// than the player zooms out.
+    side_view: bool,
 }
 
 impl Default for OrbitCamera {
     fn default() -> Self {
-        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, returning: None, turning: None }
+        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, returning: None, turning: None, side_view: false }
     }
 }
+
+/// The camera's nearest and furthest distance from what it looks at.
+const NEAREST: f32 = 3.0;
+const FURTHEST: f32 = 80.0;
+/// How far back a side view may stand, to fit a whole test (the ridge's is about 95 m): further than
+/// the player zooms out, and well inside the fog.
+pub(crate) const SIDE_VIEW_FURTHEST: f32 = 120.0;
 
 /// Tangent of half the camera's vertical field of view (Bevy's default is 45 degrees).
 const TAN_HALF_FOV: f32 = 0.4142;
@@ -52,25 +63,36 @@ const ASPECT: f32 = 16.0 / 9.0;
 impl OrbitCamera {
     /// Turn to a side view that shows the box from `min` to `max`, with `along` running left to
     /// right. The box is placed in the left part of the screen, clear of the station panel. The
-    /// player's own view is kept and comes back with [`OrbitCamera::release_view`].
-    pub fn frame_side_view(&mut self, min: Vec3, max: Vec3, along: Vec3) {
+    /// player's own view is kept and comes back with [`OrbitCamera::release_view`] or
+    /// [`OrbitCamera::ease_home`]. With `glide`, the camera turns to the view over a moment (a
+    /// station's view); without, it cuts to it (a test).
+    pub fn frame_side_view(&mut self, min: Vec3, max: Vec3, along: Vec3, glide: bool) {
         self.keep_view();
+        // Either corner may come first.
+        let (min, max) = (min.min(max), min.max(max));
         let size = max - min;
         let width = size.with_y(0.0).length() + 8.0;
         let height = size.y + 6.0;
         let half_screen_width = ASPECT * TAN_HALF_FOV;
         // The box may use the left half of the screen's width and most of its height.
-        self.distance = (width / half_screen_width).max(height / (1.4 * TAN_HALF_FOV)).max(18.0);
-        self.yaw = f32::atan2(-along.z, along.x);
-        self.pitch = 0.18;
-        let right = Vec3::new(self.yaw.cos(), 0.0, -self.yaw.sin());
-        self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * self.distance);
+        let distance = (width / half_screen_width).max(height / (1.4 * TAN_HALF_FOV)).clamp(18.0, SIDE_VIEW_FURTHEST);
+        let yaw = f32::atan2(-along.z, along.x);
+        let view = (yaw, 0.18, distance);
+        if glide {
+            self.turning = Some(view);
+        } else {
+            (self.yaw, self.pitch, self.distance) = view;
+        }
+        let right = Vec3::new(yaw.cos(), 0.0, -yaw.sin());
+        self.side_view = true;
+        self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * distance);
     }
 
     /// Take the camera to watch something with this pitch and distance (set `watch` to say what),
     /// keeping the player's own view to come back with [`OrbitCamera::release_view`].
     pub fn borrow(&mut self, pitch: f32, distance: f32) {
         self.keep_view();
+        self.side_view = false;
         self.pitch = pitch;
         self.distance = distance;
     }
@@ -80,6 +102,7 @@ impl OrbitCamera {
     /// [`OrbitCamera::ease_home`].
     pub fn face(&mut self, from: Vec3, to: Vec3, pitch: f32, distance: f32) {
         self.keep_view();
+        self.side_view = false;
         self.turning = Some((yaw_towards(from, to), pitch, distance));
     }
 
@@ -92,10 +115,18 @@ impl OrbitCamera {
         self.turning = None;
     }
 
+    /// Set the yaw, pitch and distance outright, cancelling any glide (the scripts' `Look`).
+    pub fn set_view(&mut self, yaw: f32, pitch: f32, distance: f32) {
+        (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
+        self.returning = None;
+        self.turning = None;
+    }
+
     pub fn release_view(&mut self) {
         self.watch = None;
         self.returning = None;
         self.turning = None;
+        self.side_view = false;
         if let Some((yaw, pitch, distance)) = self.saved.take() {
             (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
         }
@@ -106,6 +137,7 @@ impl OrbitCamera {
     pub fn ease_home(&mut self) {
         self.watch = None;
         self.turning = None;
+        self.side_view = false;
         self.returning = self.saved.take();
     }
 
@@ -256,7 +288,8 @@ fn orbit_camera(
 ) {
     let dt = time.delta_secs();
     let blend = (dt * 6.0).min(1.0);
-    // Back to the player's view, or round to show something: slower, so the eye can follow.
+    // Back to the player's view, or round to show something or a station's puzzle: slower, so the
+    // eye can follow.
     let easing = orbit.returning.map(|view| (view, blend)).or(orbit.turning.map(|view| (view, (dt * 2.5).min(1.0))));
     if let Some(((yaw, pitch, distance), blend)) = easing {
         // The shorter way round.
@@ -275,7 +308,9 @@ fn orbit_camera(
             orbit.yaw -= motion.delta.x * 0.005;
             orbit.pitch += motion.delta.y * 0.005;
         }
-        orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(3.0, 80.0);
+        // A side view may stand further back than the player zooms out, to fit its whole test.
+        let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
+        orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
     }
     if !wants.wants_any_keyboard_input() {
         let turn = keys.pressed(KeyCode::ArrowLeft) as i32 - keys.pressed(KeyCode::ArrowRight) as i32;
@@ -288,11 +323,12 @@ fn orbit_camera(
     let target = orbit.watch.unwrap_or(player.translation + Vec3::Y * 1.5);
     orbit.focus = orbit.focus.lerp(target, blend);
 
+    // A focus that is itself inside terrain (a fixed test view can be) is left alone.
+    let open_focus = !world.is_solid(orbit.focus.floor().as_ivec3());
     let back = orbit.back();
     // Pull the camera in if terrain is between it and what it looks at.
-    // A focus that is itself inside terrain (a fixed test view can be) is left alone.
     let reach = match world.raycast(orbit.focus, back, orbit.distance) {
-        Some(hit) if !world.is_solid(orbit.focus.floor().as_ivec3()) => (hit.distance - 0.4).max(1.0),
+        Some(hit) if open_focus => (hit.distance - 0.4).max(1.0),
         _ => orbit.distance,
     };
     camera.translation = orbit.focus + back * reach;

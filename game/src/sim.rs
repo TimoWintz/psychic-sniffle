@@ -23,7 +23,8 @@ use physics_core::units::Quantity;
 /// Something the interface asks the simulation to do.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Request {
-    /// Run a station's demonstration (free, repeatable). At the drop tower it is also the stopwatch.
+    /// Run a station's demonstration (free, repeatable). At the drop tower it also times the fall to
+    /// the light gate, which must be clamped on the tower first.
     Demo(usize),
     /// Commit the blueprint of a puzzle and run the test.
     Commit(usize),
@@ -37,8 +38,8 @@ const PAIR_COLOURS: [[f32; 3]; 2] = [[0.35, 0.85, 1.0], [1.0, 0.4, 0.75]];
 const TRAIL: [f32; 3] = [1.0, 0.85, 0.2];
 
 enum Running {
-    /// The test mass falls from the drop tower; a flash marks it at each of `flashes`. With the
-    /// light gate clamped `gate` metres below the release (0 for none), the stopwatch stops there.
+    /// The test mass falls from the drop tower; a flash marks it at each of `flashes`. The light
+    /// gate is clamped `gate` metres below the release, and the stopwatch stops there.
     Strobe { puzzle: usize, t: f32, flashes: Vec<f64>, shown: usize, guess: Option<usize>, gate: u32 },
     /// Two demonstration bodies fly their exact paths from a launch site.
     Pair { puzzle: usize, t: f32, shots: [Shot; 2], site: LaunchSite, offsets: [Vec3; 2], size: f32, landed: [bool; 2], guess: Option<usize> },
@@ -522,6 +523,10 @@ fn handle_requests(
                 return;
             }
             let instance = game.instance(puzzle);
+            // The drop tower's experiment waits for the light gate (the panel says so).
+            if instance.experiment_unready(game.placed(puzzle)).is_some() {
+                return;
+            }
             let Some(playback) = instance.demo_raised(game.placed(puzzle)) else { return };
             // The guess counts only before the first run.
             let guess = if game.save.demo_watched(&game.def(puzzle).id) { None } else { ui.guess[puzzle] };
@@ -533,7 +538,7 @@ fn handle_requests(
                     }
                     sim.strobe.clear();
                     sim.gate_tripped = false;
-                    orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X);
+                    orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
                     Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
                 }
                 DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } => {
@@ -550,14 +555,14 @@ fn handle_requests(
                 DemoPlayback::DropAndFire { dropped, fired } => {
                     let site = sites.canyon_launch;
                     let low = site.at(0.0, dropped.flight.y, ground);
-                    orbit.frame_side_view(low, site.at(fired.flight.x, dropped.projectile.y0, ground), site.direction);
+                    orbit.frame_side_view(low, site.at(fired.flight.x, dropped.projectile.y0, ground), site.direction, false);
                     let mesh = meshes.add(Cuboid::from_length(0.4));
                     start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [dropped, fired], site, 0.4, guess)
                 }
                 DemoPlayback::TwoAngles { flat, steep } => {
                     let site = sites.ridge_launch;
                     let (_, _, apex) = steep.projectile.apex();
-                    orbit.frame_side_view(site.at(-2.0, 0.0, ground), site.at(steep.flight.x + 2.0, apex, ground), site.direction);
+                    orbit.frame_side_view(site.at(-2.0, 0.0, ground), site.at(steep.flight.x + 2.0, apex, ground), site.direction, false);
                     let mesh = meshes.add(Cuboid::from_length(0.3));
                     start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [flat, steep], site, 0.3, guess)
                 }
@@ -577,15 +582,17 @@ fn handle_requests(
                             *visibility = Visibility::Visible;
                         }
                     }
-                    orbit.frame_side_view(sites.mast_plate, sites.mast_release, Vec3::X);
+                    orbit.frame_side_view(sites.mast_plate, sites.mast_release, Vec3::X, false);
                     Running::MastDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, verdict: Verdict { values, outcome } }
                 }
                 Playback::Flight { projectile, flight } => {
                     let site = if instance.kind == PuzzleKind::Canyon { sites.canyon_launch } else { sites.ridge_launch };
+                    // The box holds the release, the top of the arc and the landing. A launch that
+                    // climbs has its top halfway along, so all three are needed.
                     let (_, apex_x, apex_y) = projectile.apex();
-                    let highest = site.at(apex_x, apex_y, ground);
-                    let end = site.at(flight.x, flight.y, ground);
-                    orbit.frame_side_view(site.at(0.0, projectile.y0, ground).min(end), highest.max(end), site.direction);
+                    let points = [site.at(0.0, projectile.y0, ground), site.at(apex_x, apex_y, ground), site.at(flight.x, flight.y, ground)];
+                    let (low, high) = points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+                    orbit.frame_side_view(low, high, site.direction, false);
                     Running::Flight { puzzle, t: 0.0, projectile, flight, site, verdict: Verdict { values, outcome } }
                 }
                 Playback::Chase { cart_speed, crawler_speed, head_start, t } => {
@@ -600,7 +607,7 @@ fn handle_requests(
                 }
                 Playback::Slide { distance } => {
                     let reach = distance.max(game.layout.rail_target as f64) as f32;
-                    orbit.frame_side_view(sites.rail_start, sites.rail_start + Vec3::new(reach, 2.0, 0.0), Vec3::X);
+                    orbit.frame_side_view(sites.rail_start, sites.rail_start + Vec3::new(reach, 2.0, 0.0), Vec3::X, false);
                     let duration = 1.0 + distance as f32 / 6.0;
                     Running::Slide { puzzle, t: 0.0, distance: distance as f32, duration, verdict: Verdict { values, outcome } }
                 }
@@ -611,8 +618,8 @@ fn handle_requests(
 
 /// Look at the haul track from the side, from just behind the cart's start to `reach` metres along it.
 fn frame_track(orbit: &mut OrbitCamera, sites: &Sites, reach: f32) {
-    let (a, b) = (sites.haul_at(-1.5), sites.haul_at(reach as f64 + 0.5));
-    orbit.frame_side_view(a.min(b), a.max(b) + Vec3::Y * 2.0, sites.haul_direction);
+    let (min, max, along) = crate::stations::haul_view(sites, reach);
+    orbit.frame_side_view(min, max, along, false);
 }
 
 /// Put the haul cart and the crawler where a run has them at `t`. Returns where the action is: between
@@ -749,11 +756,14 @@ fn advance(
     let ground = GROUND as f32;
 
     // Let go of the camera a little after a test or an experiment ends (and only then: anything else
-    // that points the camera keeps it).
+    // that points the camera keeps it). At an open station it goes back to the station's view.
     if sim.running.is_none() && sim.watch_left > 0.0 {
         sim.watch_left -= dt;
         if sim.watch_left <= 0.0 {
-            orbit.release_view();
+            match ui.station {
+                Some(station) => crate::stations::look_at_station(&mut orbit, &game, &sites, station),
+                None => orbit.release_view(),
+            }
         }
     }
     sim.action = None;
@@ -994,9 +1004,8 @@ fn advance(
     ui.results[puzzle] = Some(outcome);
 }
 
-/// What the stopwatch's readings are called in the notebook, at the haul track and at the drop tower.
+/// What the stopwatch's reading is called in the notebook at the haul track.
 pub const CRAWLER_TIME: &str = "crawler's time between the timing posts";
-pub const TOWER_TIME: &str = "fall time from the drop tower";
 
 /// Write the stopwatch's reading of the crawler, from the first timing post to the second, into the
 /// notebook.
@@ -1005,17 +1014,15 @@ pub fn note_crawler(game: &mut Game) {
     game.save.notebook.add_numbered("t", CRAWLER_TIME, reading, "stopwatch");
 }
 
-/// Write the stopwatch's reading of a release from the drop tower into the notebook: with the light
-/// gate clamped `gate` metres below the release, the drop and the time to the gate as a pair (`h2`,
-/// `t2`); without, the time of the whole drop.
+/// Write the light gate's reading of a release from the drop tower into the notebook: with the gate
+/// clamped `gate` metres below the release, the drop and the time to the gate as a pair (`h2`, `t2`).
+/// The experiment does not run without the gate, so there is nothing to note for `gate == 0`.
 pub fn note_reading(game: &mut Game, gate: u32) {
     if gate == 0 {
-        let reading = Quantity::seconds(game.layout.tower_fall_time());
-        game.save.notebook.add_numbered("t", TOWER_TIME, reading, "stopwatch");
-    } else {
-        let (drop, time) = (Quantity::metres(gate as f64), Quantity::seconds(game.layout.gate_time(gate)));
-        game.save.notebook.add_pair(("h", "drop from the release point to the light gate", drop), ("t", "fall time to the light gate", time), "light gate");
+        return;
     }
+    let (drop, time) = (Quantity::metres(gate as f64), Quantity::seconds(game.layout.gate_time(gate)));
+    game.save.notebook.add_pair(("h", "drop from the release point to the light gate", drop), ("t", "fall time to the light gate", time), "light gate");
 }
 
 /// Seconds the cart takes to roll on from the tutorial's marker, through the stone gate, to the haul
@@ -1220,12 +1227,11 @@ mod tests {
     }
 
     #[test]
-    fn the_light_gate_notes_a_pair_and_the_bare_tower_a_time() {
+    fn the_light_gate_notes_a_pair() {
         let mut game = game(12);
         game.save.notebook.add_numbered("h", "tower height", Quantity::metres(game.layout.tower_h as f64), "ruler");
         note_reading(&mut game, 0);
-        let nb = &game.save.notebook;
-        assert_eq!(nb.get("t1").unwrap().quantity, Quantity::seconds(game.layout.tower_fall_time()));
+        assert!(game.save.notebook.get("t1").is_none(), "no gate, no reading");
         note_reading(&mut game, 6);
         note_reading(&mut game, 9);
         let nb = &game.save.notebook;

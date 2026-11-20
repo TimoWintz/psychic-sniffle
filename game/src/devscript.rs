@@ -1,8 +1,8 @@
 //! Scripted runs for automated checks. Development only; enabled by `GAME_SCRIPT`.
 //!
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
-//!   screenshots. It loads the cart, times the crawler and catches it, times drops with the light gate
-//!   at two notches, and stacks the canyon's blocks.
+//!   screenshots. It loads the cart, times the crawler and catches it, clamps the light gate and times
+//!   drops at two notches, and stacks the canyon's blocks.
 //! - `walk` drives the avatar with key presses: up the steps, off the rim, out of the canyon, a jump.
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
 //!   test, and its reactions to a miss and a pass.
@@ -381,9 +381,9 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
         Wait(1.0),
         Station(Some(2)),
-        // Lumen points at the experiment until it has been watched.
-        expect_gaze("Drop tower: release point"),
-        Wait(0.6),
+        // The experiment needs the light gate: Lumen points at it on its stand.
+        expect_gaze("Light gate on its stand"),
+        Wait(1.2),
         Shot("07a_try_it_first"),
         RulerPin(0),
         RulerPin(1),
@@ -391,6 +391,19 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("07_ruler_on_tower"),
         RulerNote(1),
         RulerOff,
+        // The gate first, at a short drop.
+        Station(None),
+        carry_at(at_stand, Vec3::X, Expect::TakeGate),
+        expect_gaze("Notches on the drop tower"),
+        clamp(short),
+        Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
+        Wait(0.8),
+        Shot("08c_gate_clamped"),
+        GoToStation(2),
+        Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
+        Station(Some(2)),
+        // With the gate on, Lumen points at the experiment until it has been watched.
+        expect_gaze("Drop tower: release point"),
         Guess(2, 1),
         RunDemo(2),
         Wait(1.6),
@@ -418,20 +431,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.6),
         Shot("08h_quiz_done"),
         closed_step(),
-        // Then the light gate: a short drop, then a long one, each timed by a run of the experiment.
-        expect_gaze("Light gate on its stand"),
-        Station(None),
-        carry_at(at_stand, Vec3::X, Expect::TakeGate),
-        expect_gaze("Notches on the drop tower"),
-        clamp(short),
-        Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
-        Wait(0.8),
-        Shot("08c_gate_clamped"),
-        GoToStation(2),
-        Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
-        Station(Some(2)),
-        RunDemo(2),
-        WaitIdle,
+        // Then a long drop: the gate moves down the tower, and the experiment runs again.
         Station(None),
         carry_at(at_tower, Vec3::NEG_Z, Expect::TakeOut(Slot::Tower)),
         clamp(long),
@@ -444,7 +444,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.4),
         Shot("08e_gate_reading"),
         Windows { notebook: true, handbook: false, tutor: false },
-        Draft(2, vec!["2*h4/t4^2".into()]),
+        Draft(2, vec!["2*h3/t3^2".into()]),
         Wait(0.3),
         Shot("09_gravity_blueprint"),
         closed_step(),
@@ -785,6 +785,10 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
         GoToStation(0),
         at_console(),
         Station(Some(0)),
+        // The station turns the camera to the rail; look back at the avatar.
+        Wait(0.2),
+        Watch(None),
+        at_console(),
         expect_activity(Activity::Typing),
         Wait(1.2),
         Shot("pose_05_typing"),
@@ -890,11 +894,7 @@ fn run(
             player.1.translation = position;
             player.0.velocity = Vec3::ZERO;
         }
-        Step::Look { yaw, pitch, distance } => {
-            orbit.yaw = yaw;
-            orbit.pitch = pitch;
-            orbit.distance = distance;
-        }
+        Step::Look { yaw, pitch, distance } => orbit.set_view(yaw, pitch, distance),
         Step::Watch(target) => orbit.watch = target,
         Step::Station(station) => ui.station = station,
         Step::RulerPin(i) => {

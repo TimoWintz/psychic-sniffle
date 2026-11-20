@@ -9,6 +9,7 @@ mod handbook;
 mod intro;
 mod island;
 mod player;
+mod prefill;
 mod props;
 mod rig;
 mod ruler;

@@ -147,3 +147,6 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
   times drops with the light gate at two notches, and carries the canyon's blocks into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`
   installed) and takes about ten minutes.
+- `GAME_SCRIPT=prefill GAME_SAVE=/tmp/fp-prefill.ron cargo run -p game` — not a script: the player plays by hand while the
+  tour's ruler readings are noted and its formulas are kept in the blueprints (`game/src/prefill.rs`).
+  Without `GAME_SAVE` it writes into the real save, `saves/slot1.ron`.

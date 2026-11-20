@@ -145,7 +145,7 @@ pub fn body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f32) {
     let now = ui.input(|i| i.time);
     egui::ScrollArea::vertical().id_salt("handbook").max_height(room).show(ui, |ui| {
         ui.label(RichText::new("Pages").strong());
-        ui.label(RichText::new("A page is written when you see what it describes happen in the world.").small().color(DIM));
+        ui.label(RichText::new("A page is written once you've seen what it describes happen in the world.").small().color(DIM));
         let focus = ui_state.handbook_focus.take();
         // A page is listed once a puzzle that uses it is open; it can be read once found.
         let mut shown: Vec<String> = Vec::new();
@@ -157,7 +157,7 @@ pub fn body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f32) {
             shown.push(id.clone());
             let Some(concept) = game.chapter.concept(&id).cloned() else { continue };
             if !game.page_found(&id) {
-                ui.label(RichText::new(format!("{} — not found yet", concept.title)).color(DIM));
+                ui.label(RichText::new(format!("{} (not found yet)", concept.title)).color(DIM));
                 ui.label(RichText::new(format!("    {}", concept.hint)).small().italics().color(DIM));
                 continue;
             }

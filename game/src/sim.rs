@@ -462,7 +462,7 @@ pub fn read_blueprint(game: &Game, ui: &Ui, puzzle: usize) -> Result<(Inputs, Ve
         }
         let text = ui.drafts[puzzle].get(i).map_or("", String::as_str);
         if text.trim().is_empty() {
-            return Err(format!("{} has not been entered.", spec.label));
+            return Err(format!("{} hasn't been entered yet.", spec.label));
         }
         let quantity = evaluate(text, &game.save.notebook).map_err(|e| format!("{}: {e}", spec.label))?;
         inputs.insert(spec.key.to_string(), quantity);

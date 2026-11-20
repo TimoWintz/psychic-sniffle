@@ -42,7 +42,8 @@ from a wrong method. Keeping the answer from the player is handled below.
 
 ## Teaching policy (the system prompt)
 
-Lumen teaches by asking. The policy (`tutor::prompt::POLICY`):
+Lumen teaches by asking. The policy (`tutor::prompt::POLICY`) also gives the model Lumen's character
+and way of talking, kept in step with [writing.md](writing.md). Its teaching rules:
 
 1. Teach by asking: find out what the player thinks, has tried or predicts before explaining; when
    they are partly right, say which part and ask about the gap. Do not lecture.

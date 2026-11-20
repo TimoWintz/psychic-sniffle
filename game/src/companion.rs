@@ -35,6 +35,10 @@ const RESULT_LOOK_SECONDS: f32 = 6.0;
 const BECKON_SECONDS: f32 = 12.0;
 /// How long Lumen keeps quiet after saying anything before it makes a remark of its own, in seconds.
 const REMARK_AFTER: f32 = 40.0;
+/// How the camera stands while the story shows a place past the avatar: low, so the far shore and
+/// the sky over it are in the picture.
+const SHOW_PITCH: f32 = 0.12;
+const SHOW_DISTANCE: f32 = 9.0;
 
 /// Places Lumen can look at, by name, with where they are.
 #[derive(Resource, Clone, Debug)]
@@ -199,6 +203,8 @@ pub struct Companion {
     remarked: BTreeSet<usize>,
     /// Frames directed so far, to tell lines said in the same moment.
     frame: u64,
+    /// The place the camera has turned to show while the story names it.
+    showing: Option<String>,
 }
 
 impl Companion {
@@ -456,6 +462,7 @@ fn direct(
     landmarks: Res<Landmarks>,
     waking: Res<crate::waking::Waking>,
     player: Single<&Transform, With<crate::player::Player>>,
+    mut orbit: ResMut<crate::player::OrbitCamera>,
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
     mut last: Local<Option<Seen>>,
@@ -670,6 +677,24 @@ fn direct(
         gate_pending: focus_kind == PuzzleKind::Gravity && gate_pending(&game, focus),
     };
     companion.gaze = choose_gaze(&facts).filter(|place| landmarks.position(place).is_some());
+
+    // While the story names a place, the camera turns to show it past the avatar, and turns back
+    // once it moves on.
+    let story = companion.lines.first().filter(|l| l.keep && l.shown > 0.0).and_then(|l| l.look.clone());
+    let show = story.filter(|_| ui.station.is_none() && !waking.playing()).and_then(|place| Some((landmarks.position(&place)?, place)));
+    match show {
+        Some((at, place)) => {
+            if companion.showing.as_ref() != Some(&place) {
+                orbit.face(player.translation, at, SHOW_PITCH, SHOW_DISTANCE);
+                companion.showing = Some(place);
+            }
+        }
+        None => {
+            if companion.showing.take().is_some() && ui.station.is_none() && !waking.playing() {
+                orbit.ease_home();
+            }
+        }
+    }
 }
 
 /// Nothing has been timed with the light gate yet (at the drop tower, `puzzle`).

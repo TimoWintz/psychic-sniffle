@@ -14,7 +14,7 @@ Chapter(
         Spoken(text: "Hello. I'm Lumen, the ship's computer, or a backup of it anyway, running on this section's cells. I can see fine, but I've lost my hands. I'm afraid you'll have to be them."),
         Spoken(text: "See that, across the strait? That's the main hull. The rest of me is in there, along with everything we'd need to leave. I keep calling it, and nothing answers yet.", look: Some("The main hull, across the strait")),
         Spoken(text: "We came down right across a road. It's pale stone with quartz in the joints, and there are machines all along it, every one of them asleep. Nobody we know built them, and they're older than anything in my records. The console by their cart is still glowing, though."),
-        Spoken(text: "Up at the north end there's a boat of theirs on a slipway. Its helm is sitting in a casket on a launcher over the canyon, as if they were in the middle of sending it when everything stopped. If their machines still work, I think we can help them finish the job.", look: Some("The skiff on the slipway")),
+        Spoken(text: "Look across the bay, up on the north shore. There's a boat of theirs on a slipway. Its helm is sitting in a casket on a launcher over the canyon, as if they were sending it when everything stopped. If their machines still work, I think we can help them finish the job.", look: Some("The skiff on the slipway")),
     ],
     closing: [
         Spoken(text: "Come and see the skiff. Its helm is in, and it's glowing.", look: Some("The skiff on the slipway")),

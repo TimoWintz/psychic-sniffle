@@ -7,7 +7,8 @@
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
 //!   test, and its reactions to a miss and a pass.
 //! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
-//!   takes over: the camera ends on the player's view and the avatar walks.
+//!   takes over: the camera ends on the player's view, turns to the main hull and the skiff while
+//!   Lumen names them, and the avatar walks.
 //! - `prefill` is not a script: you play by hand, with the tour's ruler readings in the notebook and
 //!   its formulas in the blueprints (see `prefill`).
 //!
@@ -673,6 +674,14 @@ fn intro() -> Vec<Step> {
         Wait(0.5),
         ExpectPlayerView,
         Shot("intro_08_playing"),
+        // Lumen's opening names the main hull, then the skiff: the camera turns to show each across
+        // the bay.
+        ExpectGaze { place: "The main hull, across the strait".into(), within: 15.0 },
+        Wait(2.5),
+        Shot("intro_09_main_hull"),
+        ExpectGaze { place: "The skiff on the slipway".into(), within: 25.0 },
+        Wait(2.5),
+        Shot("intro_10_skiff"),
         Key(KeyCode::KeyW, true),
         UntilMoved { from: None, within: 3.0 },
         Key(KeyCode::KeyW, false),

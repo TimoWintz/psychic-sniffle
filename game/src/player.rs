@@ -33,9 +33,11 @@ pub struct OrbitCamera {
     focus: Vec3,
     /// The player's yaw, pitch and distance while a test, a station or a wake has borrowed the camera.
     saved: Option<(f32, f32, f32)>,
-    /// The yaw, pitch and distance the camera is gliding to: the player's own after a wake or a
-    /// station (then `saved` is empty), or a station's view.
-    easing: Option<(f32, f32, f32)>,
+    /// The player's yaw, pitch and distance the camera is easing back to, after a wake or a station.
+    returning: Option<(f32, f32, f32)>,
+    /// The yaw, pitch and distance the camera is turning to: to show something past the avatar, or a
+    /// station's puzzle.
+    turning: Option<(f32, f32, f32)>,
     /// The camera is on a side view (a test, or a station's puzzle), which may stand further back
     /// than the player zooms out.
     side_view: bool,
@@ -43,7 +45,7 @@ pub struct OrbitCamera {
 
 impl Default for OrbitCamera {
     fn default() -> Self {
-        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, easing: None, side_view: false }
+        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, returning: None, turning: None, side_view: false }
     }
 }
 
@@ -65,7 +67,7 @@ impl OrbitCamera {
     /// [`OrbitCamera::ease_home`]. With `glide`, the camera turns to the view over a moment (a
     /// station's view); without, it cuts to it (a test).
     pub fn frame_side_view(&mut self, min: Vec3, max: Vec3, along: Vec3, glide: bool) {
-        self.keep_home();
+        self.keep_view();
         // Either corner may come first.
         let (min, max) = (min.min(max), min.max(max));
         let size = max - min;
@@ -77,43 +79,53 @@ impl OrbitCamera {
         let yaw = f32::atan2(-along.z, along.x);
         let view = (yaw, 0.18, distance);
         if glide {
-            self.easing = Some(view);
+            self.turning = Some(view);
         } else {
             (self.yaw, self.pitch, self.distance) = view;
-            self.easing = None;
         }
         let right = Vec3::new(yaw.cos(), 0.0, -yaw.sin());
         self.side_view = true;
         self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * distance);
     }
 
-    /// Keep the player's own view, the first time something borrows the camera. If the camera is
-    /// still gliding home, home is where it was going.
-    fn keep_home(&mut self) {
-        if self.saved.is_none() {
-            self.saved = Some(self.easing.take().unwrap_or((self.yaw, self.pitch, self.distance)));
-        }
-    }
-
     /// Take the camera to watch something with this pitch and distance (set `watch` to say what),
     /// keeping the player's own view to come back with [`OrbitCamera::release_view`].
     pub fn borrow(&mut self, pitch: f32, distance: f32) {
-        self.keep_home();
-        self.easing = None;
+        self.keep_view();
         self.side_view = false;
         self.pitch = pitch;
         self.distance = distance;
     }
 
+    /// Turn the camera, over a moment, to look past `from` (the avatar) towards `to`, with this
+    /// pitch and distance, keeping the player's own view to come back with
+    /// [`OrbitCamera::ease_home`].
+    pub fn face(&mut self, from: Vec3, to: Vec3, pitch: f32, distance: f32) {
+        self.keep_view();
+        self.side_view = false;
+        self.turning = Some((yaw_towards(from, to), pitch, distance));
+    }
+
+    /// Keep the player's own view to come back to, unless it is kept already. Whatever the camera
+    /// was turning to or easing back to stops: it is taken from here.
+    fn keep_view(&mut self) {
+        if self.saved.is_none() {
+            self.saved = Some(self.returning.take().unwrap_or((self.yaw, self.pitch, self.distance)));
+        }
+        self.turning = None;
+    }
+
     /// Set the yaw, pitch and distance outright, cancelling any glide (the scripts' `Look`).
     pub fn set_view(&mut self, yaw: f32, pitch: f32, distance: f32) {
         (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
-        self.easing = None;
+        self.returning = None;
+        self.turning = None;
     }
 
     pub fn release_view(&mut self) {
         self.watch = None;
-        self.easing = None;
+        self.returning = None;
+        self.turning = None;
         self.side_view = false;
         if let Some((yaw, pitch, distance)) = self.saved.take() {
             (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
@@ -124,10 +136,9 @@ impl OrbitCamera {
     /// a moment instead of cutting to it.
     pub fn ease_home(&mut self) {
         self.watch = None;
+        self.turning = None;
         self.side_view = false;
-        if let Some(home) = self.saved.take() {
-            self.easing = Some(home);
-        }
+        self.returning = self.saved.take();
     }
 
     /// Where the camera stands to look at `focus` with this yaw, pitch and distance, when nothing is
@@ -140,6 +151,12 @@ impl OrbitCamera {
     fn back(&self) -> Vec3 {
         Quat::from_euler(EulerRot::YXZ, self.yaw, -self.pitch, 0.0) * Vec3::Z
     }
+}
+
+/// The camera's yaw that looks from `from` towards `to`: the way forward is `to`'s way.
+fn yaw_towards(from: Vec3, to: Vec3) -> f32 {
+    let d = to - from;
+    f32::atan2(-d.x, -d.z)
 }
 
 pub struct PlayerPlugin;
@@ -271,15 +288,19 @@ fn orbit_camera(
 ) {
     let dt = time.delta_secs();
     let blend = (dt * 6.0).min(1.0);
-    if let Some((yaw, pitch, distance)) = orbit.easing {
-        // The shorter way round to the yaw it is gliding to.
+    // Back to the player's view, or round to show something or a station's puzzle: slower, so the
+    // eye can follow.
+    let easing = orbit.returning.map(|view| (view, blend)).or(orbit.turning.map(|view| (view, (dt * 2.5).min(1.0))));
+    if let Some(((yaw, pitch, distance), blend)) = easing {
+        // The shorter way round.
         let turn = (yaw - orbit.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
         orbit.yaw += turn * blend;
         orbit.pitch += (pitch - orbit.pitch) * blend;
         orbit.distance += (distance - orbit.distance) * blend;
         if turn.abs() < 1e-3 && (pitch - orbit.pitch).abs() < 1e-3 && (distance - orbit.distance).abs() < 1e-2 {
             (orbit.yaw, orbit.pitch, orbit.distance) = (yaw, pitch, distance);
-            orbit.easing = None;
+            orbit.returning = None;
+            orbit.turning = None;
         }
     }
     if !wants.wants_any_pointer_input() {
@@ -312,4 +333,32 @@ fn orbit_camera(
     };
     camera.translation = orbit.focus + back * reach;
     camera.look_at(orbit.focus, Vec3::Y);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn facing_a_place_puts_it_ahead_and_the_camera_behind() {
+        let from = Vec3::new(40.0, 20.0, 170.0);
+        for to in [Vec3::new(108.0, 20.0, 28.0), Vec3::new(-112.0, 15.0, -328.0), Vec3::new(0.0, 20.0, 200.0)] {
+            let mut orbit = OrbitCamera::default();
+            orbit.face(from, to, 0.12, 9.0);
+            let (yaw, ..) = orbit.turning.unwrap();
+            // Walking forward, as `move_player` reads the yaw, heads for the place.
+            let forward = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+            assert!(forward.dot((to - from).with_y(0.0).normalize()) > 0.999, "{to}");
+            // And the camera stands on the far side of the avatar from it.
+            orbit.yaw = yaw;
+            assert!(orbit.back().with_y(0.0).normalize().dot(forward) < -0.999);
+        }
+        // The player's own view comes back afterwards.
+        let mut orbit = OrbitCamera::default();
+        let own = (orbit.yaw, orbit.pitch, orbit.distance);
+        orbit.face(from, Vec3::ZERO, 0.12, 9.0);
+        orbit.ease_home();
+        assert_eq!(orbit.returning, Some(own));
+        assert_eq!(orbit.turning, None);
+    }
 }

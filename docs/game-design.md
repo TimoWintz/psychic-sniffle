@@ -35,7 +35,8 @@ in the chapter's file; all of them are spoken, so none holds a digit. How Lumen 
 other line in the game is written, is set out in [writing.md](writing.md).
 
 - **Opening.** In a fresh game: who Lumen is, the main hull across the strait (its eye turns to it),
-  what the chapter has to do, and the road the wreck came down across. The opening is not cut short: what happens meanwhile waits its turn.
+  what the chapter has to do, and the road the wreck came down across. While a line of it names a
+  place, the camera turns to show it past the avatar, then turns back. The opening is not cut short: what happens meanwhile waits its turn.
 - **Why.** When a station first opens, one line on why this job matters now. It also heads the
   station's panel ("Lumen: ...").
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
@@ -104,8 +105,9 @@ camera glides down to the player's view and Lumen says its first line. The place
 
 **Premise.** The ship broke up on the way in. Its drive section is still in orbit; the main hull came
 down on the mainland across the strait; the forward section, with the castaway in it, came down on the
-island, across the southern end of an ancient road. The main hull stays in view from the island's
-northern shore.
+island, across the southern end of an ancient road. A bay of the strait reaches into the island's
+north-west, so from the wreck the castaway sees over the water to the skiff's quay and, beyond the
+strait, the main hull. Both stay in view from the island's northern shore.
 
 **The way.** The road and its machines were built by someone who is not here any more, long ago. The
 machines are asleep. Through its console, one does exactly what it is told and works nothing out:

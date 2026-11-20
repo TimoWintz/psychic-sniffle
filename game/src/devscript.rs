@@ -8,6 +8,8 @@
 //!   test, and its reactions to a miss and a pass.
 //! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
 //!   takes over: the camera ends on the player's view and the avatar walks.
+//! - `prefill` is not a script: you play by hand, with the tour's ruler readings in the notebook and
+//!   its formulas in the blueprints (see `prefill`).
 //!
 //! `tour`, `walk` and `pose` press Start first, as a player would.
 //! The scripts go through the same requests as the interface (blueprint text, commit, ruler picks,
@@ -154,6 +156,10 @@ pub struct DevScriptPlugin;
 impl Plugin for DevScriptPlugin {
     fn build(&self, app: &mut App) {
         let Ok(name) = std::env::var("GAME_SCRIPT") else { return };
+        if name == "prefill" {
+            app.add_plugins(crate::prefill::PrefillPlugin);
+            return;
+        }
         let game = app.world().resource::<Game>();
         let sites = app.world().resource::<Sites>();
         let steps = match name.as_str() {
@@ -162,7 +168,7 @@ impl Plugin for DevScriptPlugin {
             "intro" => intro(),
             "pose" => pose(game, sites),
             "way" => way(sites),
-            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way)"),
+            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way, prefill)"),
         };
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");

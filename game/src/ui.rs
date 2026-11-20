@@ -437,10 +437,15 @@ fn rating_plate(ui: &mut egui::Ui, game: &mut Game) {
 
 /// Write the ends of the ledge launcher's speed band into the notebook, as the plate's Note button does.
 pub fn note_plate(game: &mut Game) {
+    write_plate(game);
+    game.persist();
+}
+
+/// Write the ends of the ledge launcher's speed band into the notebook, without saving.
+pub fn write_plate(game: &mut Game) {
     let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
     game.save.notebook.set("vmin", "lowest speed of the ledge launcher's dial", low, "plate");
     game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, "plate");
-    game.persist();
 }
 
 /// The station's free experiment: a guess first, then the world shows what happens.

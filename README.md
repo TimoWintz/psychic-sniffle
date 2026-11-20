@@ -108,6 +108,17 @@ presses Start and checks that the game takes over; `pose` films the avatar's ani
 pass). `tour`, `walk`
 and `pose` press Start first.
 
+To play by hand without the bookkeeping, `prefill` puts the tour's ruler readings in the notebook
+and keeps each station's blueprint (and the calculator, at the haul track and the canyon) filled
+with the tour's formula. A formula appears once the readings it needs exist: the chase waits for
+the crawler's stopwatch time, gravity for a light gate reading, the canyon and the ridge for the
+calibrated `g`. Walking, carrying, running experiments and committing stay yours. Type over a
+blueprint and it is left alone; clear it to get the formula back.
+
+```bash
+GAME_SCRIPT=prefill GAME_SEED=7 GAME_SAVE=/tmp/fp-prefill.ron cargo run -p game
+```
+
 ## Layout
 
 | Path | What |

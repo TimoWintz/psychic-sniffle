@@ -2,11 +2,15 @@
 
 Every line the player reads or hears follows this guide. That covers:
 
-- the chapter files in `assets/curriculum`
+- the chapter and tier files in `assets/curriculum`
 - Lumen's lines in `game/src/companion.rs`
 - the tutor's persona in `crates/tutor/src/prompt.rs`
 - the hints and labels in `game/src/ui.rs`, `game/src/handbook.rs` and `game/src/carry.rs`
 - the intro captions in `game/src/cinematic.rs`
+- the station's refusals, results and blueprint lines in `crates/physics_core/src/puzzle.rs`, and the
+  calculator's errors in `crates/physics_core/src/expr.rs`
+
+The worked solutions in `puzzle.rs` are only for the tutor's private notes, so they're exempt.
 
 The game has three voices:
 
@@ -88,8 +92,9 @@ physics textbook. Lumen doesn't speak them.
 
 ## Briefs, tasks and hints
 
-The `task`, `brief` and `investigate` fields, the experiments' questions and choices, and the
-interface's hints are instructions. Write them as plain, friendly sentences.
+The `task`, `brief` and `investigate` fields, the experiments' questions and choices, the
+interface's hints, and the station's refusals and results are instructions or reports. Write them as
+plain, friendly sentences.
 
 - Say what to do, in the order the player does it ("Use the ruler (R). Click the cart's starting
   point, then…").
@@ -99,6 +104,9 @@ interface's hints are instructions. Write them as plain, friendly sentences.
   verb.
 - In the interface, a label for a reading may use a colon ("Stopwatch: no reading yet"). Sentences
   shouldn't be strings of colons.
+- A refusal says what's wrong and what to do instead, in one or two sentences, without semicolons
+  ("the cart only runs forward, so enter a distance greater than zero."). A result reports what
+  happened in the world ("The cart ran 9 m and stopped 1 m short of the marker centre.").
 
 ## Never, anywhere
 
@@ -140,7 +148,8 @@ it:
 
 ## What the tests check
 
-`Chapter::style_problems` in `crates/physics_core/src/content.rs` runs on every chapter file.
+`Chapter::style_problems` in `crates/physics_core/src/content.rs` runs on every chapter file, and
+`Tier::style_problems` on every tier file.
 
 **In Lumen's spoken lines, it rejects:**
 - the uncontracted forms "I am", "do not", "does not", "is not", "cannot", "it is", "that is",
@@ -154,5 +163,5 @@ it:
 - "it's worth"
 - dashes
 
-Lines in Rust code (`companion.rs`, `ui.rs`) aren't checked automatically. Hold them to the same
-rules.
+Lines in Rust code (`companion.rs`, `ui.rs`, `puzzle.rs`, `expr.rs`) aren't checked automatically.
+Hold them to the same rules, and update the tests that match their wording when you change them.

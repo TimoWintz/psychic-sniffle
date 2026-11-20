@@ -11,17 +11,17 @@ use thiserror::Error;
 pub enum ExprError {
     #[error("Nothing to evaluate.")]
     Empty,
-    #[error("Could not read the expression at position {pos}: {msg}")]
+    #[error("Couldn't read the expression at position {pos}: {msg}")]
     Syntax { pos: usize, msg: String },
-    #[error("'{0}' is not a notebook entry, a unit or a function.")]
+    #[error("'{0}' isn't a notebook entry, a unit or a function.")]
     UnknownName(String),
-    #[error("Cannot {op} {left} and {right}: the dimensions differ.")]
+    #[error("You can't {op} {left} and {right}, because their dimensions differ.")]
     Mismatch { op: &'static str, left: String, right: String },
     #[error("{func} needs a pure number, but was given {got}.")]
     NeedsNumber { func: String, got: String },
     #[error("An exponent must be a pure number, but this one is {0}.")]
     DimensionedExponent(String),
-    #[error("Cannot raise {0} to that power: the result has no sensible unit.")]
+    #[error("Can't raise {0} to that power, because the result would have no sensible unit.")]
     BadPower(String),
     #[error("{0}")]
     Domain(String),
@@ -58,7 +58,7 @@ pub fn evaluate(source: &str, env: &dyn Env) -> Result<Quantity, ExprError> {
         return Err(ExprError::Syntax { pos: tok.pos, msg: "unexpected input here".into() });
     }
     if !value.value.is_finite() {
-        return Err(ExprError::Domain("The result is not a finite number.".into()));
+        return Err(ExprError::Domain("The result isn't a finite number.".into()));
     }
     Ok(value)
 }
@@ -301,7 +301,7 @@ fn pow(base: Quantity, exponent: f64) -> Result<Quantity, ExprError> {
     };
     let value = base.value.powf(exponent);
     if value.is_nan() {
-        return Err(ExprError::Domain("That power of a negative number is not a real number.".into()));
+        return Err(ExprError::Domain("That power of a negative number isn't a real number.".into()));
     }
     Ok(Quantity::new(value, dim))
 }
@@ -390,7 +390,7 @@ mod tests {
         let err = eval("3 m + 2 s").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Cannot add a length (m) and a time (s): the dimensions differ."
+            "You can't add a length (m) and a time (s), because their dimensions differ."
         );
         assert!(matches!(eval("sin(3 m)"), Err(ExprError::NeedsNumber { .. })));
         assert!(matches!(eval("2^(1 s)"), Err(ExprError::DimensionedExponent(_))));

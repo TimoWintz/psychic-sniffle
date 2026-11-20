@@ -427,7 +427,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
 fn rating_plate(ui: &mut egui::Ui, game: &mut Game) {
     let (low, high) = (Quantity::speed(game.layout.canyon_speed_min), Quantity::speed(game.layout.canyon_speed_max));
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new(format!("Rating plate: the damaged dial turns only from {} to {}.", low.display(), high.display())).strong());
+        ui.label(RichText::new(format!("Rating plate: the damaged dial only turns from {} to {}.", low.display(), high.display())).strong());
         let noted = game.save.notebook.entries.iter().any(|e| e.source == "plate");
         if ui.add_enabled(!noted, egui::Button::new("Note")).on_hover_text("Write both ends in the notebook, as vmin and vmax").clicked() {
             note_plate(game);

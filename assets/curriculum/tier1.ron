@@ -2,5 +2,5 @@
 Tier(
     number: 1,
     ship: "Skiff",
-    goal: "Wake the builders' skiff on the north quay and cross the strait to the main hull, where the rest of Lumen is.",
+    goal: "Wake the builders' skiff on the north quay and take it across the strait to the main hull, where the rest of Lumen is waiting.",
 )

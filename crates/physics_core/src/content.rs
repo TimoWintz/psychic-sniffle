@@ -175,6 +175,13 @@ pub struct Tier {
     pub goal: String,
 }
 
+impl Tier {
+    /// The tier's words against the rules in `docs/writing.md`, as [`Chapter::style_problems`] does.
+    pub fn style_problems(&self) -> Vec<String> {
+        text_style(&self.goal).into_iter().map(|p| format!("tier {} goal: {p}", self.number)).collect()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chapter {
     pub id: String,
@@ -517,32 +524,41 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("quiz question 2 needs an explanation")), "{problems:?}");
     }
 
-    /// Every chapter file in `assets/curriculum`, by name, so a new chapter is checked as soon as
-    /// it is added.
-    fn every_chapter() -> Vec<(String, Chapter)> {
+    /// Every `.ron` file in `assets/curriculum` whose name passes `keep`, with its source, sorted by
+    /// name, so a new chapter or tier is checked as soon as it is added.
+    fn curriculum_files(keep: impl Fn(&str) -> bool) -> Vec<(String, String)> {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/curriculum");
-        let mut chapters: Vec<(String, Chapter)> = std::fs::read_dir(&dir)
+        let mut files: Vec<(String, String)> = std::fs::read_dir(&dir)
             .expect("assets/curriculum can be read")
             .map(|entry| entry.expect("a directory entry").path())
-            .filter(|path| path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.contains("_ch") && n.ends_with(".ron")))
-            .map(|path| {
-                let source = std::fs::read_to_string(&path).expect("a chapter file can be read");
-                let name = path.file_name().unwrap().to_string_lossy().into_owned();
-                let chapter = Chapter::from_ron(&source).unwrap_or_else(|e| panic!("{name} is valid: {e}"));
-                (name, chapter)
+            .filter_map(|path| {
+                let name = path.file_name()?.to_str()?.to_string();
+                (name.ends_with(".ron") && keep(&name)).then(|| (name, std::fs::read_to_string(&path).expect("a curriculum file can be read")))
             })
             .collect();
-        chapters.sort_by(|a, b| a.0.cmp(&b.0));
-        assert!(!chapters.is_empty(), "no chapter files found in {}", dir.display());
-        chapters
+        files.sort();
+        assert!(!files.is_empty(), "no matching files found in {}", dir.display());
+        files
     }
 
     #[test]
     fn every_chapter_follows_the_writing_rules() {
         // docs/writing.md: the rules a program can check. The rest is for whoever writes the lines.
-        for (name, chapter) in every_chapter() {
+        for (name, source) in curriculum_files(|n| n.contains("_ch")) {
+            let chapter = Chapter::from_ron(&source).unwrap_or_else(|e| panic!("{name} is valid: {e}"));
             assert_eq!(chapter.style_problems(), Vec::<String>::new(), "{name} breaks docs/writing.md");
         }
+    }
+
+    #[test]
+    fn every_tier_follows_the_writing_rules() {
+        for (name, source) in curriculum_files(|n| n.starts_with("tier") && !n.contains("_ch")) {
+            let tier: Tier = ron::from_str(&source).unwrap_or_else(|e| panic!("{name} is valid: {e}"));
+            assert_eq!(tier.style_problems(), Vec::<String>::new(), "{name} breaks docs/writing.md");
+        }
+        let mut tier = tier_1();
+        tier.goal = "Embark on a journey across the strait.".into();
+        assert_eq!(tier.style_problems().len(), 2, "{:?}", tier.style_problems());
     }
 
     #[test]

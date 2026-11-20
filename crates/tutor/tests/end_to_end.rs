@@ -348,7 +348,7 @@ fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
         TutorContext::build(&chapter, chapter.puzzle(id).unwrap(), &instance, save, &[])
     };
     let rail = at(PuzzleKind::Rail, "1.1.0", &save);
-    assert_eq!(rail.placed.as_deref(), Some("the cart is empty; its block lies beside the rail"));
+    assert_eq!(rail.placed.as_deref(), Some("the cart is empty, and its block is beside the rail"));
     let system = tutor::prompt::system_prompt(&rail, tutor::prompt::HelpLevel::Probe);
     assert!(system.contains("In the world at this station now: the cart is empty"), "the empty cart is in the prompt");
     save.placed.insert("1.1.0".into(), 1);

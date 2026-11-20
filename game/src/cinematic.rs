@@ -132,10 +132,10 @@ pub struct Caption {
 }
 
 const CAPTIONS: [(f32, f32, Stop, &str); 4] = [
-    (1.5, 11.5, Stop::Orbit, "The ship came in too fast. Its drive section tore loose, and it is up there still."),
+    (1.5, 11.5, Stop::Orbit, "The ship came in too fast. Its drive section tore loose, and it's still up there."),
     (14.0, 22.0, Stop::Mainland, "The main hull came down on the far side of the strait."),
     (30.5, 38.5, Stop::Island, "The forward section came down here, with you in it."),
-    (39.0, 46.5, Stop::Island, "Lumen, the ship's computer, came through as well. It can see everything and touch nothing."),
+    (39.0, 46.5, Stop::Island, "Lumen, the ship's computer, made it too. It can see everything, but it can't touch a thing."),
 ];
 
 /// The three pieces the ship breaks into.

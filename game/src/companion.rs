@@ -506,11 +506,11 @@ fn direct(
                     for line in &game.chapter.opening {
                         companion.say_spoken(line, true);
                     }
-                    let first = Spoken { text: format!("{} Follow my beam to the station.", game.def(n).task), look: None };
+                    let first = Spoken { text: format!("{} Follow my beam, and I'll show you the station.", game.def(n).task), look: None };
                     companion.say_spoken(&first, true);
                 }
-                Some(n) => companion.say(format!("Welcome back. Next: {}", lowercase_first(&game.def(n).task))),
-                None => companion.say("Welcome back. The skiff has its helm."),
+                Some(n) => companion.say(format!("You're back! Next we need to {}", lowercase_first(&game.def(n).task))),
+                None => companion.say("You're back! The skiff has its helm, and it's still glowing."),
             }
             companion.beckon_left = BECKON_SECONDS + companion.talking_for();
         }
@@ -521,12 +521,12 @@ fn direct(
                     react_to_result(companion, &game, &ui, puzzle, ask_me);
                 }
                 if now.recharging[puzzle] && !before.recharging[puzzle] && companion.nudged.insert((puzzle, Nudge::Recharge)) {
-                    companion.say("Recharging. A good moment to check your readings against the handbook.");
+                    companion.say("It's recharging. While we wait, let's check your readings against the handbook.");
                 }
             }
             if now.refusal.is_some() && now.refusal != before.refusal {
                 companion.feel(Mood::Concerned, 4.0);
-                companion.say("Refused before launch, so no charge was used. The reason is under the button.");
+                companion.say("The station refused that before launching, so you haven't lost a charge. The reason's under the button.");
             }
             for puzzle in 0..PUZZLES {
                 if now.watched[puzzle] && !before.watched[puzzle] {
@@ -536,13 +536,13 @@ fn direct(
             for id in now.found.difference(&before.found) {
                 if let Some(page) = game.chapter.concept(id) {
                     companion.feel(Mood::Pleased, 4.0);
-                    companion.say(format!("New handbook page: {}. H opens it.", page.title));
+                    companion.say(format!("There's a new page in your handbook, {}. Press H to read it.", page.title));
                 }
             }
             for id in now.quizzes.difference(&before.quizzes) {
                 if let Some(page) = game.chapter.concept(id) {
                     companion.feel(Mood::Pleased, 4.0);
-                    companion.say(format!("{}: every question answered right. Nicely done.", page.title));
+                    companion.say(format!("You got every question on {} right. I'm impressed.", page.title));
                 }
             }
             if now.station != before.station
@@ -555,17 +555,17 @@ fn direct(
                     companion.say(why.clone());
                 }
                 let nudge = if game.def(p).demo.is_some() && !now.watched[p] {
-                    Some((Nudge::Experiment, "Before any numbers, try the experiment. Make your guess first."))
+                    Some((Nudge::Experiment, "Try the experiment before any numbers. Make a guess first. It doesn't cost anything."))
                 } else {
                     match kind {
                         PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => {
-                            Some((Nudge::Build, "The cart will not run empty. A block of theirs lies beside the rail: F picks it up, F again puts it on the cart."))
+                            Some((Nudge::Build, "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart."))
                         }
                         PuzzleKind::Gravity if gate_pending(&game, p) && carry.gate_on_stand() => {
-                            Some((Nudge::Build, "The light gate on the stand times the fall to any notch of the tower you clamp it at. Try a short drop and a long one."))
+                            Some((Nudge::Build, "See the light gate on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one."))
                         }
                         PuzzleKind::Canyon if carry.holds(Slot::Frame) == 0 => {
-                            Some((Nudge::Build, "Its dial only turns so far. The blocks on the ledge fit the frame at the rim and raise the launcher."))
+                            Some((Nudge::Build, "The dial only turns so far. If you put the blocks from the ledge into the frame at the rim, they'll raise the launcher."))
                         }
                         _ => None,
                     }
@@ -579,7 +579,7 @@ fn direct(
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;
                 match now.next {
-                    Some(n) => companion.say(format!("Next: {} Follow my beam.", lowercase_first(&game.def(n).task))),
+                    Some(n) => companion.say(format!("Next we need to {} Follow my beam.", lowercase_first(&game.def(n).task))),
                     None => {
                         for line in &game.chapter.closing {
                             companion.say_spoken(line, false);
@@ -588,9 +588,9 @@ fn direct(
                 }
             }
             if now.ruler_active && !before.ruler_active {
-                companion.say("Click the yellow pin I am pointing at.");
+                companion.say("Click the yellow pin I'm pointing at.");
             } else if now.ruler_active && now.ruler_first && !before.ruler_first && ruler.second.is_none() {
-                companion.say("Now this one.");
+                companion.say("And now this one.");
             }
             if now.asking && !before.asking {
                 companion.feel(Mood::Thinking, f32::INFINITY);
@@ -708,23 +708,23 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
     if outcome.pass {
         companion.feel(Mood::Pleased, 5.0);
         let done = &game.def(puzzle).done;
-        companion.say(if done.is_empty() { "Right on the mark." } else { done.as_str() });
+        companion.say(if done.is_empty() { "Right on the mark!" } else { done.as_str() });
     } else {
         companion.feel(Mood::Concerned, 5.0);
         companion.say(match kind {
-            PuzzleKind::Gravity => "Not quite. Compare your prediction with the real fall.",
-            PuzzleKind::Chase => "Not quite. Look where the cart reached the crawler, compared with the marker.",
-            _ => "Not this time. Look where it ended, compared with the target.",
+            PuzzleKind::Gravity => "Not quite. Have a look at how your prediction compares with the real fall.",
+            PuzzleKind::Chase => "Not quite. Look at where the cart caught the crawler, and where the marker is.",
+            _ => "Not this time. Look at where it ended up, and where the target is.",
         });
         let def = game.def(puzzle);
         // The shots after the drop tower are worked out with the player's own g, which passed there.
         if matches!(kind, PuzzleKind::Canyon | PuzzleKind::Ridge) && companion.nudged.insert((puzzle, Nudge::YourG)) {
-            companion.say("Your g held up at the drop tower. Check the other readings first.");
+            companion.say("Your g worked at the drop tower, so I'd check the other readings first.");
             return;
         }
         let misses = game.save.progress(&def.id).attempts.iter().filter(|a| !a.pass).count();
         if ask_me && misses >= 2 && companion.nudged.insert((puzzle, Nudge::AskMe)) {
-            companion.say("Two misses. Talk to me with T: I will not give you the number, but I can help you find it.");
+            companion.say("That's two misses. Want to talk it through? Press T. I won't give you the number, but I can help you find it.");
             return;
         }
         // Point back to the idea the station is about: its page, or the experiment that writes it.
@@ -732,9 +732,9 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
             && let Some(page) = game.chapter.pages_found_at(&def.id).last()
         {
             if game.page_found(&page.id) {
-                companion.say(format!("Worth rereading: {}. H opens the handbook.", page.title));
+                companion.say(format!("It might help to reread {} in the handbook. Press H.", page.title));
             } else {
-                companion.say("The experiment at this station shows what is going on. Try it.");
+                companion.say("The experiment at this station shows what's going on here. Give it a try.");
             }
         }
     }
@@ -747,11 +747,11 @@ fn react_to_demo(companion: &mut Companion, game: &Game, puzzle: usize) {
     match game.save.first_guess(&def.id) {
         Some(guess) if guess == demo.answer => {
             companion.feel(Mood::Pleased, 5.0);
-            companion.say("You called it.");
+            companion.say("You called it!");
         }
         Some(_) => {
             companion.feel(Mood::Concerned, 4.0);
-            companion.say("Not what you expected? That is the interesting part.");
+            companion.say("Not what you expected? Don't worry, this one surprises most people.");
         }
         None => {}
     }
@@ -1042,7 +1042,7 @@ fn draw(
         .show(&ctx, |ui| {
             let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
             paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
-            response.on_hover_text("Lumen. Click or press T to talk.")
+            response.on_hover_text("Lumen. Click here or press T to talk to me.")
         });
     if area.inner.clicked() {
         ui_state.tutor_open = !ui_state.tutor_open;

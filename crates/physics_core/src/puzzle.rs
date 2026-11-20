@@ -414,9 +414,9 @@ pub type Inputs = BTreeMap<String, Quantity>;
 
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum InputError {
-    #[error("{label} has not been entered.")]
+    #[error("{label} hasn't been entered yet.")]
     Missing { label: String },
-    #[error("{label} must be {expected}, but what you entered is {got}.")]
+    #[error("{label} needs to be {expected}, but you entered {got}.")]
     Dimension { label: String, expected: String, got: String },
     #[error("{label}: {reason}")]
     OutOfRange { label: String, reason: String },
@@ -622,7 +622,7 @@ impl Instance {
     pub fn built(&self, placed: u32) -> Option<String> {
         let plural = |n: u32| if n == 1 { "" } else { "s" };
         Some(match self.kind {
-            PuzzleKind::Rail if placed == 0 => "the cart is empty; its block lies beside the rail".into(),
+            PuzzleKind::Rail if placed == 0 => "the cart is empty, and its block is beside the rail".into(),
             PuzzleKind::Rail => "the block is on the cart".into(),
             PuzzleKind::Gravity if placed == 0 => {
                 "no light gate on the drop tower: the stopwatch times the whole drop to the plate".into()
@@ -639,7 +639,7 @@ impl Instance {
     pub fn unready(&self, placed: u32) -> Option<String> {
         match self.kind {
             PuzzleKind::Rail if placed == 0 => {
-                Some("Load the cart first: pick up the block beside the rail (F) and put it on the cart (F).".into())
+                Some("Load the cart first. Pick up the block beside the rail (F), then put it on the cart (F).".into())
             }
             _ => None,
         }
@@ -664,28 +664,28 @@ impl Instance {
             match spec.key {
                 "distance" => {
                     if q.value <= 0.0 {
-                        return out_of_range("the cart only runs forward; enter a distance greater than zero.".into());
+                        return out_of_range("the cart only runs forward, so enter a distance greater than zero.".into());
                     }
                     if q.value > Ch1Layout::RAIL_LENGTH as f64 {
                         return out_of_range(format!(
-                            "the rail is {} m long and the cart will not run past its end.",
+                            "the rail is {} m long, and the cart won't run past its end.",
                             Ch1Layout::RAIL_LENGTH
                         ));
                     }
                 }
                 "stack" => {
                     if q.value < -1e-9 {
-                        return out_of_range("the launcher cannot stand lower than the ledge.".into());
+                        return out_of_range("the launcher can't stand lower than the ledge.".into());
                     }
                     if (q.value - q.value.round()).abs() > 1e-6 {
-                        return out_of_range("the jack frame holds whole blocks, one metre each.".into());
+                        return out_of_range("the jack frame only takes whole blocks, each one metre high.".into());
                     }
                     if q.value.round() > Ch1Layout::MAX_STACK as f64 {
                         return out_of_range(format!("the jack frame holds at most {} blocks.", Ch1Layout::MAX_STACK));
                     }
                 }
                 "g" if q.value <= 0.0 => {
-                    return out_of_range("gravity pulls downward; enter its size as a positive value.".into());
+                    return out_of_range("gravity pulls downwards, so enter its size as a positive value.".into());
                 }
                 "speed" => {
                     let (limit, what, verb) = match self.kind {
@@ -694,13 +694,13 @@ impl Instance {
                         _ => (LAUNCHER_HARD_LIMIT, "launcher", "fire"),
                     };
                     if q.value <= 0.0 {
-                        return out_of_range("the speed must be greater than zero.".into());
+                        return out_of_range("the speed has to be greater than zero.".into());
                     }
                     if self.kind == PuzzleKind::Canyon {
                         let (low, high) = (self.layout.canyon_speed_min, self.layout.canyon_speed_max);
                         if !(low..=high).contains(&q.value) {
                             return out_of_range(format!(
-                                "the launcher's damaged dial turns only from {} to {}; {} is outside it.",
+                                "the launcher's damaged dial only turns from {} to {}, and {} is outside that range.",
                                 Quantity::speed(low).display(),
                                 Quantity::speed(high).display(),
                                 Quantity::speed(q.value).display()
@@ -709,7 +709,7 @@ impl Instance {
                     }
                     if q.value > limit {
                         return out_of_range(format!(
-                            "the {what} is rated to {} and will not {verb} faster.",
+                            "the {what} is rated to {} and won't {verb} any faster.",
                             Quantity::speed(limit).display()
                         ));
                     }
@@ -718,7 +718,7 @@ impl Instance {
                     let deg = q.value.to_degrees();
                     if q.value > std::f64::consts::FRAC_PI_2 * 1.0001 && q.value <= 90.0 {
                         return out_of_range(format!(
-                            "{} radians is not a launch angle. Did you mean {} deg?",
+                            "{} radians isn't a launch angle. Did you mean {} deg?",
                             sig(q.value, 4),
                             sig(q.value, 4)
                         ));
@@ -843,7 +843,7 @@ impl Instance {
                     (
                         "Calibrated".to_string(),
                         format!(
-                            "The mass fell from the {} m mast in {} s; your value predicted {} s.",
+                            "The mass fell from the {} m mast in {} s, and your value predicted {} s.",
                             l.mast_h,
                             sig(actual_time, 3),
                             sig(predicted_time, 3)
@@ -853,9 +853,9 @@ impl Instance {
                     let (speed_word, strength_word) =
                         if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
                     (
-                        "Prediction does not match".to_string(),
+                        "Prediction doesn't match".to_string(),
                         format!(
-                            "The mass fell from the {} m mast in {} s; your value predicted {} s. It landed \
+                            "The mass fell from the {} m mast in {} s, but your value predicted {} s. It landed \
                              {speed_word} than predicted, so gravity here is {strength_word} than your value.",
                             l.mast_h,
                             sig(actual_time, 3),
@@ -1298,7 +1298,7 @@ mod tests {
         assert!(canyon.evaluate(&inputs(&[("stack", Quantity::metres(0.0)), ("speed", Quantity::speed(v))])).is_ok(), "no blocks is a valid try");
         for speed in [l.canyon_speed_min - 0.5, l.canyon_speed_max + 0.5] {
             let err = canyon.evaluate(&inputs(&[("stack", Quantity::metres(3.0)), ("speed", Quantity::speed(speed))])).unwrap_err();
-            assert!(err.to_string().contains("dial turns only from"), "{err}");
+            assert!(err.to_string().contains("dial only turns from"), "{err}");
         }
         assert_eq!(canyon.inputs()[0].source, InputSource::Placed);
         assert_eq!(canyon.inputs()[1].source, InputSource::Typed);
@@ -1455,7 +1455,7 @@ mod tests {
         let err = puzzle.evaluate(&inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::seconds(3.0))])).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Launch speed must be a speed (m/s), but what you entered is a time (s)."
+            "Launch speed needs to be a speed (m/s), but you entered a time (s)."
         );
         assert!(matches!(puzzle.evaluate(&Inputs::new()), Err(InputError::Missing { .. })));
     }
@@ -1576,10 +1576,10 @@ mod tests {
         let chase = Instance::new(PuzzleKind::Chase, &Ch1Layout::generate(5));
         let err = chase.evaluate(&inputs(&[("speed", Quantity::speed(Ch1Layout::CART_TOP_SPEED + 0.5))])).unwrap_err();
         let rating = Quantity::speed(Ch1Layout::CART_TOP_SPEED).display();
-        assert!(err.to_string().contains(&format!("the haul cart is rated to {rating} and will not run faster")), "{err}");
+        assert!(err.to_string().contains(&format!("the haul cart is rated to {rating} and won't run any faster")), "{err}");
         assert!(chase.evaluate(&inputs(&[("speed", Quantity::speed(0.0))])).is_err());
         let err = chase.evaluate(&inputs(&[("speed", Quantity::seconds(5.0))])).unwrap_err();
-        assert_eq!(err.to_string(), "Cart speed must be a speed (m/s), but what you entered is a time (s).");
+        assert_eq!(err.to_string(), "Cart speed needs to be a speed (m/s), but you entered a time (s).");
     }
 
     /// Tests a player needs who guesses the cart's speed instead of working it out, but uses every miss
@@ -1638,7 +1638,7 @@ mod tests {
 
         // A bare number is refused, for free, with the reason.
         let err = rail.evaluate(&inputs(&[("distance", Quantity::number(d))])).unwrap_err();
-        assert_eq!(err.to_string(), "Run distance must be a length (m), but what you entered is a pure number.");
+        assert_eq!(err.to_string(), "Run distance needs to be a length (m), but you entered a pure number.");
         let err = rail.evaluate(&inputs(&[("distance", Quantity::metres(30.0))])).unwrap_err();
         assert!(err.to_string().contains("the rail is 24 m long"), "{err}");
         assert!(rail.evaluate(&inputs(&[("distance", Quantity::metres(-4.0))])).is_err());

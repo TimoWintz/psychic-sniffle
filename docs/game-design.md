@@ -31,7 +31,8 @@ attached to the eye. None of this needs a language model; with one connected, Lu
 eye to a place it is talking about.
 
 Lumen also carries the story, in a few short lines and never in the way of the physics. The words are
-in the chapter's file; all of them are spoken, so none holds a digit.
+in the chapter's file; all of them are spoken, so none holds a digit. How Lumen talks, and how every
+other line in the game is written, is set out in [writing.md](writing.md).
 
 - **Opening.** In a fresh game: who Lumen is, the main hull across the strait (its eye turns to it),
   what the chapter has to do, and the road the wreck came down across. While a line of it names a
@@ -123,8 +124,10 @@ section's cells: sensors, no hands, and tables made for home. It does not know t
 relearns it with the player, one constant at a time, always the player's own measurement. The road
 is as new to it as the planet. Its core is
 in the main hull: its memory, its full instruments and the fabricator's controls. The core is silent.
-Lumen looks across at it now and then. Its tone is a colleague's: dry, curious, honest about being
-partial, never mopey.
+Lumen looks across at it now and then, and worries about it more than it lets on. It is warm and
+human, a friend beside the engineer: fond of them, glad of their hands, honestly excited when something
+wakes, curious about the builders, open about what it does not know, and never mopey. Its voice is in
+[writing.md](writing.md).
 
 **Tier 1, the Skiff: cross the strait.** The skiff is the builders', and it lies asleep on its
 slipway on the north shore. Nobody builds it: each chapter wakes one part of it (and more of the way),
@@ -376,8 +379,8 @@ prerequisites are now met, so there are usually two or three open at once.
 ## Failure and tone
 
 Failure is information. A failed test shows the physical outcome and leaves the experiment standing so
-the player can look at it. Lumen's tone is a colleague's: curious, brief, never condescending, and
-honest when the player is wrong.
+the player can look at it. Lumen is warm and brief, never condescending,
+and honest when the player is wrong (see [writing.md](writing.md)).
 
 ## Out of scope for the slice
 

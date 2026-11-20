@@ -6,6 +6,9 @@ and thermodynamics (T) at a deeper level. A chapter unlocks when its prerequisit
 Each chapter has 4 to 6 puzzles and ends in a capstone that installs a ship part. Only tier 1,
 chapter 1 is built in the slice; its tutorial and four puzzles are specified at the end of this document.
 
+A chapter's words (Lumen's lines, the handbook pages, the briefs) follow [writing.md](writing.md),
+and `cargo test` checks every chapter file against the rules it can check.
+
 Reading the tables: **Maths** is the hardest mathematics the chapter needs. **Needs** lists
 prerequisite chapters.
 

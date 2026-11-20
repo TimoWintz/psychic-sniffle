@@ -2,9 +2,11 @@
 //!
 //! Every distance a puzzle depends on is built here in whole blocks from [`Ch1Layout`], so the number
 //! the player measures and the number the simulator uses are the same. Around the puzzles the land is
-//! free to be a landscape: a ragged coast of beaches and cliffs, rolling turf, hills to the west and
-//! the east, groves of parasol trees. The puzzle sites themselves are kept exactly flat (the "zones"
-//! below), and the ground the tests' side-view cameras look across is kept low.
+//! free to be a landscape: a ragged coast of beaches and cliffs, rolling turf, hills to the east, a
+//! bay of the strait in the north-west (open water between the wreck and the skiff, so both the skiff
+//! and the main hull can be seen from where the castaway starts), groves of parasol trees. The puzzle
+//! sites themselves are kept exactly flat (the "zones" below), and the ground the tests' side-view
+//! cameras look across is kept low.
 //!
 //! The chapter is one route, from the wreck on the south coast to the skiff on the north shore,
 //! which faces the strait and the main hull beyond it (see [`Route`]). It follows an ancient road of
@@ -350,6 +352,23 @@ impl Route {
     fn quay_rows(&self) -> (i32, i32) {
         (PAD_Z - 6, PAD_Z - 42)
     }
+
+    /// Where the castaway stands at the start, beside the wreck.
+    fn spawn(&self) -> Vec3 {
+        Vec3::new(self.rail_x as f32 + 2.5, GROUND as f32, self.line_z as f32 - 6.5)
+    }
+
+    /// Where the builders' skiff lies on its slipway, at the quay's north end.
+    fn slipway(&self) -> Vec3 {
+        Vec3::new(RIDGE_X as f32 + 0.5, GROUND as f32, self.quay_rows().1 as f32 + 10.5)
+    }
+}
+
+/// Distance from `p` to the segment from `a` to `b`.
+fn distance_to_segment(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
 }
 
 /// An axis-aligned rectangle of columns, both corners inclusive.
@@ -382,6 +401,12 @@ struct Plan {
     views: Vec<Rect>,
     /// Rows south of this are where the railway's cameras stand: no sea stacks off that coast.
     camera_coast: i32,
+    /// The bay: the strait reaches in west of this column and north of this row, between the landing
+    /// site and the north shore, so nothing stands between the wreck and the skiff or the main hull.
+    bay: Vec2,
+    /// Lines of sight from the landing site: to the skiff, and out over the strait towards the main
+    /// hull. Nothing tall stands near them.
+    vistas: Vec<(Vec2, Vec2)>,
 }
 
 impl Plan {
@@ -421,7 +446,34 @@ impl Plan {
             ridge.rect(-6, 0, pad + 43, 90),
         ];
         let views = vec![Rect::new(route.rail_x - 6, line + 2, line_end + 4, WORLD_SIZE.z)];
-        Plan { zones, corridors, views, camera_coast: line - 10 }
+        // The bay comes in short of the quay, the ridge and the drop tower on the east, and stops a
+        // shore's width north of the landing site.
+        let bay = Vec2::new((RIDGE_X - 14) as f32, (line - 14 - 22) as f32);
+        let spawn = route.spawn().xz();
+        let hull = crate::intro::Mainland::wreck().xz();
+        let vistas = vec![(spawn, route.slipway().xz()), (spawn, spawn + (hull - spawn).normalize() * 400.0)];
+        Plan { zones, corridors, views, camera_coast: line - 10, bay, vistas }
+    }
+
+    /// Roughly how many blocks a column is from the bay: negative inside it.
+    fn bay_distance(&self, x: i32, z: i32) -> f32 {
+        let (xf, zf) = (x as f32, z as f32);
+        let (dx, dz) = (xf - self.bay.x, zf - self.bay.y);
+        let outside = Vec2::new(dx.max(0.0), dz.max(0.0)).length();
+        let edge = if outside > 0.0 { outside } else { dx.max(dz) };
+        edge + (fbm(xf / 20.0, zf / 20.0, 9, 3) - 0.5) * 16.0
+    }
+
+    /// 1 in and beside the bay, falling to 0 a shore's width away: there the sites keep only a
+    /// narrow strip of land and come down to the water in low cliffs.
+    fn bayside(&self, x: i32, z: i32) -> f32 {
+        1.0 - smoothstep(0.0, 20.0, self.bay_distance(x, z))
+    }
+
+    /// Distance in blocks from a column to the nearest line of sight from the landing site.
+    fn vista_distance(&self, x: i32, z: i32) -> f32 {
+        let at = Vec2::new(x as f32 + 0.5, z as f32 + 0.5);
+        self.vistas.iter().map(|&(a, b)| distance_to_segment(at, a, b)).fold(f32::INFINITY, f32::min)
     }
 
     fn zone_distance(&self, x: i32, z: i32) -> f32 {
@@ -447,10 +499,13 @@ impl Plan {
         let coast = (1.0 - ellipse - wobble) * 60.0;
         // Puzzle sites always have a beach's width of land around them, more in places, so the coast
         // never simply traces their outline. The sea always reaches the world's edge.
-        let margin = BEACH + 2.0 + 12.0 * fbm(xf / 16.0, zf / 16.0, 7, 2);
+        // By the bay, only a narrow strip: the sites stand over the water there.
+        let wide = BEACH + 2.0 + 12.0 * fbm(xf / 16.0, zf / 16.0, 7, 2);
+        let narrow = 8.0 + 4.0 * fbm(xf / 9.0, zf / 9.0, 10, 2);
+        let margin = wide + (narrow - wide) * self.bayside(x, z);
         let edge = x.min(WORLD_SIZE.x - 1 - x).min(z).min(WORLD_SIZE.z - 1 - z) as f32;
         let fray = 6.0 * fbm(xf / 11.0, zf / 11.0, 6, 2);
-        coast.max(margin - self.zone_distance(x, z)).min(edge - 3.0 - fray)
+        coast.min(self.bay_distance(x, z)).max(margin - self.zone_distance(x, z)).min(edge - 3.0 - fray)
     }
 }
 
@@ -676,7 +731,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         lantern_machine.push(MACHINES - 1);
     }
     // The builders' skiff lies at the quay's north end, at the head of the slipway.
-    let slipway = Vec3::new(RIDGE_X as f32 + 0.5, ground, yard_north as f32 + 10.5);
+    let slipway = route.slipway();
     // Two slipway grooves, worn into stone, run from the quay's north edge down the shore into the
     // water.
     for x in [RIDGE_X - 3, RIDGE_X + 3] {
@@ -846,7 +901,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let shore = shore(&world, slipway, crate::intro::Mainland::wreck());
 
     let sites = Sites {
-        spawn: Vec3::new(rail_x as f32 + 2.5, ground, row as f32 - 6.5),
+        spawn: route.spawn(),
         rail_start,
         cart: rail_start,
         cargo_cell,
@@ -930,19 +985,23 @@ fn terrain(world: &mut VoxelWorld, plan: &Plan) {
             let flat = plan.flatness(x, z);
             let low = plan.lowland(x, z);
             let rolling = (fbm(xf / 26.0, zf / 26.0, 2, 3) - 0.5) * 7.0 * (1.0 - 0.55 * low);
-            // The ranges: one in the west, between the railway and the north shore (off the line of
-            // sight from the skiff to the main hull), and one along the east end.
-            let west = ((92.0 - xf) / 40.0).clamp(0.0, 1.0) * ((zf - 50.0) / 30.0).clamp(0.0, 1.0) * ((170.0 - zf) / 30.0).clamp(0.0, 1.0);
+            // The range along the east end. The west is the bay, open from the landing site to the
+            // skiff and the strait.
             let east = ((xf - 190.0) / 20.0).clamp(0.0, 1.0);
-            let massif = smoothstep(0.3, 0.8, fbm(xf / 42.0, zf / 42.0, 3, 3) * 0.55 + west.max(east) * 0.6);
+            let massif = smoothstep(0.3, 0.8, fbm(xf / 42.0, zf / 42.0, 3, 3) * 0.55 + east * 0.6);
             let crest = 1.0 - (fbm(xf / 18.0, zf / 18.0, 4, 3) * 2.0 - 1.0).abs();
             let mountain = massif * (8.0 + 18.0 * crest) * (1.0 - low);
-            let land = GROUND as f32 + flat * (rolling + mountain);
+            // Along the lines of sight from the landing site the land never rises above the sites.
+            let relief = rolling + mountain;
+            let open = 1.0 - smoothstep(6.0, 20.0, plan.vista_distance(x, z));
+            let land = GROUND as f32 + flat * (relief - open * relief.max(0.0));
 
             // Where the coast is cliff the land runs to the water's edge; elsewhere it slopes to a beach,
             // wide enough that it comes down in broad, low terraces rather than a staircase.
             let inland = plan.inland(x, z);
-            let cliff = smoothstep(0.42, 0.62, fbm(xf / 40.0, zf / 40.0, 5, 2));
+            // Where a site stands close over the bay, its strip of land ends in a low cliff.
+            let over_bay = plan.bayside(x, z) * (1.0 - smoothstep(10.0, 24.0, plan.zone_distance(x, z)));
+            let cliff = smoothstep(0.42, 0.62, fbm(xf / 40.0, zf / 40.0, 5, 2)).max(over_bay);
             let slope = BEACH - (BEACH - 1.5) * cliff;
             let top = if inland >= slope {
                 land
@@ -1002,7 +1061,8 @@ fn sea_stacks(world: &mut VoxelWorld, plan: &Plan) {
             let inland = plan.inland(x, z);
             // Not off the south coast: that is where the railway's test cameras stand.
             let edge = x.min(WORLD_SIZE.x - 1 - x).min(z).min(WORLD_SIZE.z - 1 - z);
-            if !(-13.0..-5.0).contains(&inland) || z > plan.camera_coast || edge < 6 || hash01(IVec3::new(gx, 203, gz)) < 0.35 {
+            let in_view = plan.vista_distance(x, z) < 12.0;
+            if !(-13.0..-5.0).contains(&inland) || z > plan.camera_coast || edge < 6 || in_view || hash01(IVec3::new(gx, 203, gz)) < 0.35 {
                 continue;
             }
             let radius = 1.3 + 1.4 * hash01(IVec3::new(x, 204, z));
@@ -1257,7 +1317,9 @@ fn flora(world: &mut VoxelWorld, plan: &Plan, spine: &HashSet<IVec2>) {
             let z = gz + (hash01(IVec3::new(gx, 502, gz)) * CELL as f32) as i32;
             // Nothing grows against the spine that could be climbed over it.
             let by_spine = (-4..=4).any(|dx| (-4..=4).any(|dz| spine.contains(&IVec2::new(x + dx, z + dz))));
-            if x < 3 || z < 3 || x >= WORLD_SIZE.x - 3 || z >= WORLD_SIZE.z - 3 || plan.zone_distance(x, z) < 7.0 || by_spine {
+            // Nor anything that could stand in the view from the landing site.
+            let vista = plan.vista_distance(x, z);
+            if x < 3 || z < 3 || x >= WORLD_SIZE.x - 3 || z >= WORLD_SIZE.z - 3 || plan.zone_distance(x, z) < 7.0 || by_spine || vista < 8.0 {
                 continue;
             }
             let y = world.surface(x, z);
@@ -1285,7 +1347,7 @@ fn flora(world: &mut VoxelWorld, plan: &Plan, spine: &HashSet<IVec2>) {
                 if roll < 0.12 {
                     quartz(world, base, 0.0);
                 }
-            } else if plan.lowland(x, z) > 0.25 {
+            } else if plan.lowland(x, z) > 0.25 || vista < 20.0 {
                 // Meadow: nothing taller than a few blocks.
                 match roll {
                     r if r < 0.22 => shrub(world, base, shape),
@@ -1776,6 +1838,25 @@ mod tests {
             }
             let seal_top = way.seal.cells.iter().map(|(c, _)| c.y).max().unwrap();
             assert!(seal_top - GROUND + 1 >= 3, "seed {seed}: the seal can be climbed");
+        }
+    }
+
+    #[test]
+    fn from_the_landing_site_the_skiff_and_the_main_hull_are_in_sight() {
+        // Lumen points them out at the start: nothing of the island stands in the way, from the
+        // castaway's eyes to the skiff on its slipway, or out over the strait to the main hull.
+        let hull = crate::intro::Mainland::wreck() + Vec3::Y * 6.0;
+        for seed in 0..200 {
+            let (world, sites) = build(&Ch1Layout::generate(seed));
+            let eye = sites.spawn + Vec3::Y * 1.6;
+            let skiff = sites.slipway + Vec3::Y * 1.0;
+            let to_skiff = skiff - eye;
+            if let Some(hit) = world.raycast(eye, to_skiff, to_skiff.length() - 2.0) {
+                panic!("seed {seed}: the skiff is hidden by {:?} at {}", world.get(hit.cell), hit.point);
+            }
+            if let Some(hit) = world.raycast(eye, hull - eye, 600.0) {
+                panic!("seed {seed}: the main hull is hidden by {:?} at {}", world.get(hit.cell), hit.point);
+            }
         }
     }
 }

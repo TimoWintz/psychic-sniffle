@@ -85,17 +85,17 @@ fn tutor_at(base_url: String) -> Tutor {
     }))
 }
 
-/// A canyon puzzle with gravity already in the notebook and one failed test on record.
-fn canyon_context(seed: u64) -> (TutorContext, f64) {
+/// A channel puzzle with gravity already in the notebook and one failed test on record.
+fn channel_context(seed: u64) -> (TutorContext, f64) {
     let chapter = chapter_1_1();
     let layout = Ch1Layout::generate(seed);
-    let instance = Instance::new(PuzzleKind::Canyon, &layout);
+    let instance = Instance::new(PuzzleKind::Channel, &layout);
     let answer = instance.solution().answers[0].quantity.value;
 
     let mut save = Save::new(seed);
     save.notebook.set("g", "gravitational acceleration", Quantity::acceleration(layout.g), "calculated");
     // No blocks under the launcher, at the top of the dial: the casket falls short.
-    let (low, fast) = (Quantity::metres(0.0), Quantity::speed(layout.canyon_speed_max));
+    let (low, fast) = (Quantity::metres(0.0), Quantity::speed(layout.channel_speed_max));
     let outcome = instance.evaluate(&Inputs::from([("stack".to_string(), low), ("speed".to_string(), fast)])).unwrap();
     save.record(
         "1.1.3",
@@ -121,7 +121,7 @@ fn wait(conversation: &mut Conversation) {
 
 #[test]
 fn a_reply_is_streamed_and_the_answer_is_redacted() {
-    let (ctx, answer) = canyon_context(17);
+    let (ctx, answer) = channel_context(17);
     let leak = format!("{answer}");
     // The stand-in "model" breaks the rules and states the answer, split from its unit.
     let reply = ["How long is the crate in the air? ", "Fine, stack ", &leak, " cra", "tes."];
@@ -142,9 +142,9 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert_eq!(filter.apply(&line), line);
     // The rating plate's band is in plain view and may be repeated; a working speed may not.
     let layout = Ch1Layout::generate(17);
-    let plate = format!("The dial turns from {} m/s to {} m/s.", layout.canyon_speed_min, layout.canyon_speed_max);
+    let plate = format!("The dial turns from {} m/s to {} m/s.", layout.channel_speed_min, layout.channel_speed_max);
     assert_eq!(filter.apply(&plate), plate);
-    let speed = format!("Set it to {:.2} m/s.", layout.canyon_speed_needed(*layout.canyon_stacks().start()));
+    let speed = format!("Set it to {:.2} m/s.", layout.channel_speed_needed(*layout.channel_stacks().start()));
     assert_eq!(filter.apply(&speed), format!("Set it to {REDACTION} m/s."));
 
     let seen = seen.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -161,7 +161,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     let system = messages[0]["content"].as_str().unwrap();
     assert_eq!(messages[0]["role"], "system");
     assert!(system.starts_with(tutor::prompt::POLICY));
-    assert!(system.contains("Puzzle: Across the canyon"));
+    assert!(system.contains("Puzzle: Across the channel"));
     assert!(system.contains("- g = "), "notebook is included");
     assert!(system.contains("set by building, not typed; now: 1 block in the jack frame"), "what is built is included");
     assert!(system.contains("currently typed: d1/t"), "the typed speed is included");
@@ -172,7 +172,7 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
 
 #[test]
 fn a_service_error_is_shown_and_the_conversation_recovers() {
-    let (ctx, _) = canyon_context(3);
+    let (ctx, _) = channel_context(3);
     let (base_url, _) = serve_once(
         "401 Unauthorized",
         "application/json",
@@ -201,7 +201,7 @@ fn a_service_error_is_shown_and_the_conversation_recovers() {
 
 #[test]
 fn an_unreachable_service_is_reported() {
-    let (ctx, _) = canyon_context(3);
+    let (ctx, _) = channel_context(3);
     // A port with nothing listening.
     let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
     let mut conversation = Conversation::default();
@@ -271,7 +271,7 @@ fn the_experiment_is_in_the_snapshot_and_its_angles_may_be_repeated() {
 
 #[test]
 fn a_look_tag_turns_the_eye_and_is_never_shown() {
-    let (mut ctx, _) = canyon_context(5);
+    let (mut ctx, _) = channel_context(5);
     ctx.landmarks = vec!["Platform: centre".into(), "Ledge launcher: release point".into()];
     // The tag arrives split across chunks, and a second tag names a place that is not on the list.
     let reply = ["Measure to the target first ", "[lo", "ok: platform: cen", "tre]. Then [look: the answer]time the drop."];
@@ -301,7 +301,7 @@ fn a_look_tag_turns_the_eye_and_is_never_shown() {
 
 #[test]
 fn help_deepens_while_the_player_is_stuck_and_resets_after_a_test() {
-    let (mut ctx, _) = canyon_context(11);
+    let (mut ctx, _) = channel_context(11);
     let mut conversation = Conversation::default();
     assert_eq!(conversation.help_level(&ctx), HelpLevel::Nudge, "one failed test");
 

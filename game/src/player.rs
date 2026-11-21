@@ -164,6 +164,7 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<OrbitCamera>()
+            .init_resource::<Shore>()
             .add_systems(Startup, spawn)
             .add_systems(Update, (move_player, orbit_camera).chain().run_if(in_state(Mode::Playing)));
     }
@@ -179,6 +180,20 @@ fn collides(world: &VoxelWorld, feet: Vec3) -> bool {
     world.box_collides(feet - Vec3::new(HALF_WIDTH, 0.0, HALF_WIDTH), feet + Vec3::new(HALF_WIDTH, HEIGHT, HALF_WIDTH))
 }
 
+/// Whether a step from `from` to `to` would take the avatar into water too deep to wade, from
+/// somewhere that is not: the avatar stops at the water's edge, or at the top of a bank over deep
+/// water, as at a wall. Out of deep water it may always go.
+pub(crate) fn into_deep_water(world: &VoxelWorld, from: Vec3, to: Vec3) -> bool {
+    let deep = |p: Vec3| crate::island::too_deep(world.surface(p.x.floor() as i32, p.z.floor() as i32));
+    deep(to) && !deep(from)
+}
+
+/// Whether deep water has stopped the avatar this session, which Lumen remarks on once.
+#[derive(Resource, Default)]
+pub struct Shore {
+    pub stopped: bool,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn move_player(
     time: Res<Time>,
@@ -190,6 +205,7 @@ pub(crate) fn move_player(
     ui: Res<Ui>,
     waking: Res<crate::waking::Waking>,
     camera: Res<OrbitCamera>,
+    mut shore: ResMut<Shore>,
     mut player: Single<(&mut Player, &mut Transform)>,
 ) {
     let (player, transform) = &mut *player;
@@ -228,6 +244,12 @@ pub(crate) fn move_player(
     for axis in [0, 2] {
         let mut next = feet;
         next[axis] += player.velocity[axis] * dt;
+        if into_deep_water(&world, feet, next) {
+            if !shore.stopped {
+                shore.stopped = true;
+            }
+            continue;
+        }
         if !collides(&world, next) {
             feet = next;
             continue;
@@ -338,6 +360,23 @@ fn orbit_camera(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_avatar_wades_the_shallows_and_stops_at_deep_water() {
+        use crate::island::{GROUND, SEA_LEVEL};
+        use physics_core::materials::Material;
+        // A bank at the ground's height, then a shelf the water barely covers, then deep water.
+        let mut world = VoxelWorld::new(IVec3::new(3, 32, 1));
+        let shallow = SEA_LEVEL.floor() as i32;
+        world.fill(IVec3::ZERO, IVec3::new(0, GROUND - 1, 0), Material::Rock);
+        world.fill(IVec3::new(1, 0, 0), IVec3::new(1, shallow - 1, 0), Material::Sand);
+        world.fill(IVec3::new(2, 0, 0), IVec3::new(2, 2, 0), Material::Rock);
+        let at = |x: i32, y: i32| Vec3::new(x as f32 + 0.5, y as f32, 0.5);
+        assert!(!into_deep_water(&world, at(0, GROUND), at(1, shallow)), "the shallows can be waded");
+        assert!(into_deep_water(&world, at(1, shallow), at(2, 3)), "deep water stops the avatar");
+        assert!(into_deep_water(&world, at(0, GROUND), at(2, 3)), "so does the top of a bank over it");
+        assert!(!into_deep_water(&world, at(2, 3), at(1, shallow)), "out of deep water it may always go");
+    }
 
     #[test]
     fn facing_a_place_puts_it_ahead_and_the_camera_behind() {

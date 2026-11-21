@@ -19,7 +19,7 @@ its slipway; each chapter wakes the part the crossing needs (see "The story" in 
 
 | # | Chapter | Concepts | Maths | Needs | Ship part | Example puzzles |
 |---|---|---|---|---|---|---|
-| 1.1 | M — The Helm | position, velocity, relative velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff's helm | time a crawler and catch it on a marker; measure local gravity from a timed drop; launch a casket across a canyon; clear a ridge and land in the circle |
+| 1.1 | M — The Helm | position, velocity, relative velocity, acceleration; free fall; projectile motion | quadratics, basic trigonometry | — | skiff's helm | time a crawler and catch it on a marker; measure local gravity from a timed drop; launch a casket across a channel to the next island; clear a ridge and land in the circle |
 | 1.2 | E — First Light | charge, current, voltage, resistance; Ohm's law; series and parallel; electrical power | linear equations | — | skiff's lamps and power loop | size a resistor so a lamp runs at its rating; voltage drop along a long block wire; three lamps, one supply: series or parallel?; choose a fuse |
 | 1.3 | M — The Haul | Newton's three laws; weight; normal force; static and kinetic friction; inclines | vectors in components | 1.1 | haul winch, hull stones up the slipway | mass of a block stack from density; friction coefficient from the tilt angle at which a sled slips; winch tension up a ramp; pull needed to cover a distance in a set time |
 | 1.4 | T — The Forge | temperature; heat; specific heat; mixing; latent heat | linear equations | 1.2 | hull stones refired | energy to bring a stone to firing temperature in the builders' kiln; final temperature of a quench bath; energy to melt a charge; heating time with an electric element |
@@ -92,7 +92,7 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
   drives exactly as far as it is told and stops. Load it, then send it to the orange marker.
 - **Carrying.** The cart starts empty and will not run so. A block of the builders' stone lies
   beside the rail start; the player picks it up (`F`) and puts it on the cart (`F`), which teaches the verb the
-  canyon needs, with nothing at stake. Committing with an empty cart is refused for free ("load the
+  channel needs, with nothing at stake. Committing with an empty cart is refused for free ("load the
   cart first"), before anything typed is read, so it is not the first commit that writes the page.
   The block rides with the cart on every run and stays on it; it can be taken off again and put
   back down beside the rail, and the save keeps whether it is loaded.
@@ -185,25 +185,27 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
   the later puzzles — their own measurement, not the game's number.
 - **Relation.** `h = ½ g t²`.
 
-### Puzzle 3 — Across the canyon
+### Puzzle 3 — Across the channel
 
 - **Story.** The skiff's helm, a stone tiller in the builders' own casket, waits on the ledge
-  launcher, as if the way was sending it when it fell asleep. It crosses the canyon: the first real
+  launcher, as if the way was sending it when it fell asleep. It crosses the channel to the north island: the first real
   shot with the player's g. The platform is beside the tilting launcher. Pass: the casket stays on
   the platform and the tiller waits on the tilting launcher.
-- **Wakes.** Both rims; the seal in the pass through the spine, the ridge's wall from coast to
-  coast, sinks, and the north shore can be reached.
-- **Brief.** Land the helm's casket on the strip across the canyon. The ledge launcher fires
+- **Wakes.** Both banks; the builders' suspension bridge rises out of the water across the channel
+  (its pylons first, then its deck from both banks), so the castaway can follow the helm over to
+  the tilting launcher.
+- **Brief.** Land the helm's casket on the strip across the channel. The ledge launcher fires
   horizontally, but its worn dial turns only within a band (`vmin` to `vmax`, found and painted on
   the rating plate by the castaway), and from the bare ledge no speed in the band reaches the strip.
-  The launcher rides in a stone jack frame at the rim; every one of the builders' dressed blocks
+  The launcher rides in a stone jack frame at the ledge's edge; every one of the builders' dressed blocks
   slid into its sockets raises it one metre.
 - **Investigate.** Ruler: horizontal distance from the release point to the strip's centre, and the
   drop to it (the release point's pin rises with the launcher). The rating plate on the station gives
   the band, with a button to note it (`vmin`, `vmax`).
 - **Try it first.** "One block dropped, one fired sideways, at the same moment: which reaches the
-  canyon floor first?" Both at once. The test blocks leave from wherever the launcher stands. The fired
-  block is slow enough to land mid-canyon; both fall the launcher's height plus the canyon's depth, not
+  water first?" Both at once. The test blocks leave from wherever the launcher stands. The fired
+  block is slow enough to come down mid-channel; both fall the launcher's height plus the drop to the
+  water (`WATER_DROP`, 11.4 m below the far bank), not
   the drop to the strip, so the time is not the puzzle's. Writes *Horizontal and vertical motion are
   independent*.
 - **Build, then compute.** Work out which release heights the band allows, carry blocks (`F`) from
@@ -219,19 +221,20 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
   between 1 and 6 blocks are inside it, and no stack's speed is within 1.5 % of either end: a
   player's own `g` (good to about 0.5 %) never tips a stack in or out. Both ends are rounded to
   0.1 m/s on the plate. The longest shot the dial allows, from a full frame, still comes down on the
-  flat ground beyond the canyon. These numbers are drawn after all the others, so the rest of an older
+  flat ground beyond the channel. These numbers are drawn after all the others, so the rest of an older
   save's island stays as it was.
 - **Guessing.** A player who guesses but uses every miss well (halving the band on the side the miss
   points to, and moving a block when it runs out) needs 7.6 tests on average and is done within three
-  in about a third of saves. The old typed-speed canyon took 3.9 (a third within three); the first stacking
+  in about a third of saves. The old typed-speed version took 3.9 (a third within three); the first stacking
   version, with a fixed speed, 2.8 (three quarters within three). A test in `puzzle.rs` keeps it so.
 
 ### Puzzle 4 — Over the ridge (capstone)
 
-- **Story.** The one that matters: the tiller, come across the canyon, over the ridge to the skiff on
+- **Story.** The one that matters: the tiller, come across the channel, over the ridge to the skiff on
   the builders' old quay on the north shore.
-- **Wakes.** The landing circle, then the north gate, whose light points across the strait at the main
-  hull. In the closing, Lumen hears the core for the first time: faint, but there.
+- **Wakes.** The landing circle; the seal in the pass through the spine, the ridge's wall from coast
+  to coast, sinks, and the quay and the skiff can be reached; then the north gate, whose light points
+  across the strait at the main hull. In the closing, Lumen hears the core for the first time: faint, but there.
 - **Brief.** Launch the tiller over the ridge into the landing circle on the quay. The launcher has a maximum
   speed.
 - **Investigate.** Ruler: distance to the circle, distance to the ridge, height of the ridge.
@@ -277,6 +280,6 @@ target.
 - It needs a friction simulator in `physics_core`, tested against closed form; the row of slots, as
   another `carry::Slot` (the cart, the tower's notches and the jack frame are the ones built); and a
   guesser test (see "What makes guessing a bad strategy").
-- A row of slots alone is a handful of options, the trap the first stacking canyon fell into: a guesser
+- A row of slots alone is a handful of options, the trap the first stacking version fell into: a guesser
   found it in 2.8 tests. So make the slots fine and the target tight, or combine the placement with a
   calculated value: the friction coefficient, measured first from the tilt at which the sled slips.

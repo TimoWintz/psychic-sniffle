@@ -2,17 +2,17 @@
 //!
 //! On taking over from the menu, the ruler readings the tour takes go into the notebook (on a fresh
 //! save: `d1` along the rail; `d2`, `d3`, `d4` at the haul track; `h1` up the drop tower; `d5`, `h2`
-//! across the canyon; `d6` to the ridge's landing circle), and the ledge launcher's rating plate is
+//! across the channel; `d6` to the ridge's landing circle), and the ledge launcher's rating plate is
 //! noted. A reading is known by its label, as the ruler writes it, so one the notebook already holds
 //! is not noted again, and a name the notebook already uses for something else is not taken. Each
 //! station's blueprint is then kept filled with the tour's formula, built from the readings the
 //! notebook holds: the crawler's speed waits for its stopwatch time, `g` for a light gate reading,
-//! the canyon's speed for the stack in the jack frame and the calibrated `g`. A blueprint you type
+//! the channel's speed for the stack in the jack frame and the calibrated `g`. A blueprint you type
 //! into is yours and is left alone; clear it to get the formula back. While a station's panel is
 //! open, the calculator offers the tour's working there in the same way, until its result is noted.
 //!
 //! Everything in the world is still yours to do: walking, carrying the cart's block, the light gate and
-//! the canyon's blocks, running the experiments, committing.
+//! the channel's blocks, running the experiments, committing.
 
 use crate::island::Sites;
 use crate::sim::CRAWLER_TIME;
@@ -84,8 +84,8 @@ fn write_readings(game: &mut Game, sites: &Sites) -> bool {
         let mut from = sites.pins[a].position;
         // The launcher's pin rises with the blocks in the jack frame; the tour measures from the
         // bare ledge, and the blueprint adds the stack.
-        if a == sites.canyon_release_pin {
-            from.y = sites.canyon_well.y as f32;
+        if a == sites.channel_release_pin {
+            from.y = sites.channel_well.y as f32;
         }
         let d = sites.pins[b].position - from;
         let value = if vertical { d.y.abs() } else { d.with_y(0.0).length() };
@@ -153,7 +153,7 @@ fn formula(game: &Game, puzzle: usize) -> Option<Vec<String>> {
         3 => {
             // For the stack in the jack frame, once it is one the dial can reach; until then, the
             // lowest such stack, which is the one to build.
-            let stacks = game.layout.canyon_stacks();
+            let stacks = game.layout.channel_stacks();
             let placed = game.placed(3);
             let stack = if stacks.contains(&placed) { placed } else { *stacks.start() };
             let (d5, h2) = (name("d5")?, name("h2")?);
@@ -228,7 +228,7 @@ mod tests {
         game.save.placed.insert(game.def(2).id.clone(), long);
         commit(game, &mut ui, 2);
 
-        let stack = *game.layout.canyon_stacks().start();
+        let stack = *game.layout.channel_stacks().start();
         game.save.placed.insert(game.def(3).id.clone(), stack);
         commit(game, &mut ui, 3);
         commit(game, &mut ui, 4);
@@ -251,18 +251,18 @@ mod tests {
         for seed in [3, 7, 21] {
             let mut game = Game::for_test(seed);
             let (_, mut sites) = crate::island::build(&game.layout);
-            // The player noted the canyon's width before anything else: it holds d2 and h2.
+            // The player noted other readings first, so d2 and h2 are taken.
             game.save.notebook.set("d2", "horizontal distance, somewhere else", Quantity::metres(99.0), "ruler");
             game.save.notebook.set("h2", "drop from the release point to the light gate", Quantity::metres(1.0), "light gate");
             // And two blocks stand in the jack frame, raising the launcher's pin.
-            let pin = sites.canyon_release_pin;
+            let pin = sites.channel_release_pin;
             sites.pins[pin].position.y += 2.0;
             play_through(&mut game, &sites);
             assert_eq!(game.save.notebook.get("d2").expect("kept").quantity.value, 99.0, "seed {seed}: the player's d2 is kept");
             let h = reading(&game.save.notebook, "h2").expect("noted");
             assert_ne!(h, "h2", "seed {seed}");
-            let bare = (sites.canyon_well.y as f32 - sites.pins[pin + 1].position.y).abs();
-            assert!((game.save.notebook.get(&h).expect("noted").quantity.value - bare as f64).abs() < 1e-6, "seed {seed}: the canyon is measured from the bare ledge");
+            let bare = (sites.channel_well.y as f32 - sites.pins[pin + 1].position.y).abs();
+            assert!((game.save.notebook.get(&h).expect("noted").quantity.value - bare as f64).abs() < 1e-6, "seed {seed}: the channel is measured from the bare ledge");
         }
     }
 
@@ -282,9 +282,9 @@ mod tests {
         refresh(&game, &mut ui, &mut prefill);
         assert_eq!(ui.drafts[0], vec!["d1".to_string()], "a cleared blueprint gets the formula back");
 
-        // The canyon's blueprint follows the stack in the jack frame.
+        // The channel's blueprint follows the stack in the jack frame.
         game.save.notebook.set("g", "gravitational acceleration (your calibration)", Quantity::metres(9.8), "calibrated");
-        let stacks = game.layout.canyon_stacks();
+        let stacks = game.layout.channel_stacks();
         refresh(&game, &mut ui, &mut prefill);
         assert!(ui.drafts[3][1].contains(&format!("+ {} m", stacks.start())), "{:?}", ui.drafts[3]);
         game.save.placed.insert(game.def(3).id.clone(), *stacks.end());

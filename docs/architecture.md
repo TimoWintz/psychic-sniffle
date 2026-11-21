@@ -55,11 +55,11 @@ it had. What the engine does afterwards cannot change the result.
 | `sim` | experiment and test playback, hand-off to the physics engine (whose view of the island is built again when the way's blocks come or go), handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
-| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block, the light gate's notch on the drop tower, the canyon's jack frame, which raises the launcher) |
+| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block, the light gate's notch on the drop tower, the ledge launcher's jack frame, which raises it) |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
 | `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
 | `vessel` | the builders' skiff on its slipway, which takes its helm once the north gate wakes, and the sight the crawler carries (where it is, `waking` says) |
-| `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved). Each machine's quartz has a wake set (lit when the light reaches it) and a done set (lit when its own job is done); its stonework rises or sinks layer by layer (the ramp, the stone gate's leaf, the seal in the pass through the spine); each machine's console and lamps light as it wakes (`stations` draws them). The wake that plays after a pass (a pure timeline: the job's quartz lighting, the crane lifting the sight off after the crawler's pass, the light running up the road, the machine waking and its console lighting, the camera gliding home), its camera and its letterbox; the quartz on the machines' moving parts |
+| `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved). Each machine's quartz has a wake set (lit when the light reaches it) and a done set (lit when its own job is done); its stonework rises or sinks step by step (layer by layer for the ramp, the stone gate's leaf and the seal in the pass through the spine; the bridge over the channel rises pylons first, then its deck out from both banks, with its cables, which are meshes); each machine's console and lamps light as it wakes (`stations` draws them). The wake that plays after a pass (a pure timeline: the job's quartz lighting, the crane lifting the sight off after the crawler's pass, the bridge rising after the casket's, the light running up the road, the machine waking and its console lighting, the camera gliding home), its camera and its letterbox; the quartz on the machines' moving parts |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
 | `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake |
@@ -70,9 +70,11 @@ the world and the number the simulator uses are the same number.
 The island is built awake, with the way's quartz lit and the ramp onto the outcrop standing, and
 every island test checks that world. `waking::settle` puts it to the save's stage in `main`, before
 anything is meshed or collides; a test checks that sleeping and waking stage by stage gives back the
-island as built, that the ledge is out of reach until the ramp rises, that the skiff is out of
-reach until the seal sinks (the spine runs from coast to coast, a reef under the water at both
-ends, and nothing climbs it), and that neither launcher's line is touched by the way at any stage.
+island as built, that the ledge is out of reach until the ramp rises, that the north island is
+out of reach until the bridge stands (the channel runs from coast to coast, and the avatar stops at
+water too deep to wade, `island::too_deep`), that the skiff is out of reach until the seal sinks after the last
+puzzle (the spine runs from coast to coast, a reef under the water at both ends, and nothing climbs
+it), and that neither launcher's line is touched by the way at any stage.
 When the way's blocks change for good (as a wake ends, or on a new game), `sim` builds the physics
 engine's static collider again, so tumbling debris meets the island the avatar walks on.
 
@@ -95,7 +97,7 @@ for its puzzle. Adding a placement is adding a slot:
   tutor) and `Instance::unready` refuses a test until something is in place. `sim::judge_commit`
   runs that check before anything typed is read, so such a refusal writes no handbook page.
 - Things that move with what is placed follow `Sites` changing: `ruler::follow_pins` (pins by index,
-  such as `Sites::canyon_release_pin` and `Sites::gate_pin`; a pin at `Pin::AWAY` is not in the world),
+  such as `Sites::channel_release_pin` and `Sites::gate_pin`; a pin at `Pin::AWAY` is not in the world),
   `sim::follow_launcher`, `rig::ride_the_stack`. Lumen's director (`companion::choose_gaze`) is pure
   and tested; its `Facts` say what is carried and whether the puzzle's slot is empty.
 
@@ -105,15 +107,15 @@ Rules learned the hard way:
    `puzzle.rs` (`tests_by_guessing`); see "What makes guessing a bad strategy" in the game design.
 2. **Old saves keep their numbers.** New layout numbers are drawn after the ones already drawn at the
    end of `Ch1Layout::generate`; draws no longer used stay in place, discarded. Extend
-   `older_saves_keep_every_number_but_the_canyons` with any number you touch.
+   `older_saves_keep_every_number_but_the_channels` with any number you touch.
 3. **Leave room for the player's own measurement.** Later puzzles use the player's `g`, good to about
    0.5 %. Nothing that decides pass or fail may sit closer than that to an edge (`BAND_MARGIN`, 1.5 %,
-   is the canyon's).
+   is the ledge launcher's).
 4. **Stay on the flat ground the island keeps.** Shots and placements stay inside the `Plan` zones in
    `island.rs`; island tests compare the terrain along each launch line with the simulator's profile.
 5. **Hide placed answers from Lumen without over-redacting.** A small whole number is too common to
    redact everywhere: scope each secret by the unit words that follow it (`tutor/src/context.rs`, the
-   ridge and the canyon), and put numbers in plain view (plates, the gate's notch) in `known_numbers`.
+   ridge and the channel), and put numbers in plain view (plates, the gate's notch) in `known_numbers`.
 6. **Stations freeze the avatar.** Carrying happens with the panel closed, and a commit reads what is
    placed at that moment. Walking away from a console closes its panel.
 7. **Movable blocks are blocks, not entities.** One is `Material::Limestone` in the voxel world plus
@@ -144,7 +146,7 @@ Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
   player's view).
 - `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`, `way`) that drives
   the game and writes screenshots. The tour loads the rail cart, times the crawler and catches it,
-  times drops with the light gate at two notches, and carries the canyon's blocks into the jack frame. Headless, it runs under
+  times drops with the light gate at two notches, and carries the ledge's blocks into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`
   installed) and takes about ten minutes.
 - `GAME_SCRIPT=prefill GAME_SAVE=/tmp/fp-prefill.ron cargo run -p game` — not a script: the player plays by hand while the

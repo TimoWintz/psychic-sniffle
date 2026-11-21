@@ -1,7 +1,7 @@
 //! Carrying: pick something up, carry it, put it down or into the place a station reads.
 //!
 //! What has an orange handle (our paint) moves. The builders' dressed blocks are real blocks of the
-//! island: they can be stood on and measured. Each block belongs to a yard (the canyon ledge's pile, or the cart's block beside
+//! island: they can be stood on and measured. Each block belongs to a yard (the channel ledge's pile, or the cart's block beside
 //! the supply rail) and is put down only there. The light gate is not a block: it rests on a stand by
 //! the drop tower's station until it is clamped on the tower.
 //!
@@ -42,7 +42,7 @@ const GATE_FOLDED: f32 = 0.45;
 /// The places loose blocks are put down. A block stays in its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Yard {
-    /// The canyon ledge, north of the launcher's rail: the pile of the builders' blocks.
+    /// The channel ledge, north of the launcher's rail: the pile of the builders' blocks.
     Ledge,
     /// Beside the supply rail's start: the cart's cart's block.
     Rail,
@@ -99,7 +99,7 @@ impl Slot {
         match self {
             Slot::Cart => PuzzleKind::Rail,
             Slot::Tower => PuzzleKind::Gravity,
-            Slot::Frame => PuzzleKind::Canyon,
+            Slot::Frame => PuzzleKind::Channel,
         }
     }
 
@@ -126,7 +126,7 @@ impl Slot {
         match self {
             Slot::Cart => sites.cart,
             Slot::Tower => sites.tower_plate,
-            Slot::Frame => sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5),
+            Slot::Frame => sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5),
         }
     }
 
@@ -362,13 +362,13 @@ pub fn set_slot(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCell
 /// Fill the jack frame with `stack` blocks and raise the launcher (and its survey pin) onto them.
 pub fn set_stack(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCells, stack: u32) {
     for k in 0..=Ch1Layout::MAX_STACK as i32 {
-        let cell = sites.canyon_well + IVec3::Y * k;
+        let cell = sites.channel_well + IVec3::Y * k;
         world.set(cell, if k < stack as i32 { Material::Limestone } else { Material::Air });
         dirty.0.push(cell);
     }
-    sites.canyon_launch.origin.y = (sites.canyon_well.y + stack as i32) as f32;
-    let pin = sites.canyon_release_pin;
-    sites.pins[pin].position = sites.canyon_launch.origin;
+    sites.channel_launch.origin.y = (sites.channel_well.y + stack as i32) as f32;
+    let pin = sites.channel_release_pin;
+    sites.pins[pin].position = sites.channel_launch.origin;
 }
 
 /// Whether a cell may take a block of a yard that is put down: inside the yard, empty, on something
@@ -557,7 +557,7 @@ fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&CrateMar
         return;
     }
     let stack = carry.holds(Slot::Frame) as i32;
-    let cells: Vec<IVec3> = carry.loose.iter().copied().chain((0..stack).map(|k| sites.canyon_well + IVec3::Y * k)).collect();
+    let cells: Vec<IVec3> = carry.loose.iter().copied().chain((0..stack).map(|k| sites.channel_well + IVec3::Y * k)).collect();
     for (mark, mut transform, mut visibility) in &mut marks {
         match cells.get(mark.0) {
             Some(cell) => {
@@ -609,8 +609,8 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
     match target {
         Target::Take(cell) => cube(&mut gizmos, cell.as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
         Target::Put(cell) => cube(&mut gizmos, cell.as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
-        Target::PutIn(Slot::Frame, holds) => cube(&mut gizmos, (sites.canyon_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
-        Target::TakeOut(Slot::Frame, left) => cube(&mut gizmos, (sites.canyon_well + IVec3::Y * left as i32).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
+        Target::PutIn(Slot::Frame, holds) => cube(&mut gizmos, (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
+        Target::TakeOut(Slot::Frame, left) => cube(&mut gizmos, (sites.channel_well + IVec3::Y * left as i32).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
         Target::PutIn(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), put),
         Target::TakeOut(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), take),
         Target::PutIn(Slot::Tower, notch) => {
@@ -673,7 +673,7 @@ mod tests {
     fn a_crate_from_the_pile_goes_into_the_frame_and_raises_the_launcher() {
         for seed in [0, 7, 42] {
             let (mut world, mut sites, mut carry) = laid_out(seed);
-            let base = sites.canyon_launch.origin;
+            let base = sites.channel_launch.origin;
             let mut dirty = DirtyCells::default();
 
             // Facing the pile from the yard's west side: the near block on top comes first.
@@ -688,22 +688,22 @@ mod tests {
             carry.holding = Some(Item::Block(Yard::Ledge));
 
             // At the frame's foot on the launcher's rail, facing it.
-            let out = sites.canyon_launch.direction;
-            let foot = sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4;
+            let out = sites.channel_launch.direction;
+            let foot = sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4;
             assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::PutIn(Slot::Frame, 1)), "seed {seed}");
             // Facing away from it, the block cannot be put on the rail.
             assert!(matches!(target_for(&world, &sites, &carry, foot, -out, None), Some(Target::Blocked(_))), "seed {seed}");
 
             set_stack(&mut world, &mut sites, &mut dirty, 3);
-            assert_eq!(sites.canyon_launch.origin, base + Vec3::Y * 3.0);
-            assert_eq!(sites.pins[sites.canyon_release_pin].position, sites.canyon_launch.origin);
-            assert!(world.is_solid(sites.canyon_well + IVec3::Y * 2));
-            assert!(!world.is_solid(sites.canyon_well + IVec3::Y * 3));
+            assert_eq!(sites.channel_launch.origin, base + Vec3::Y * 3.0);
+            assert_eq!(sites.pins[sites.channel_release_pin].position, sites.channel_launch.origin);
+            assert!(world.is_solid(sites.channel_well + IVec3::Y * 2));
+            assert!(!world.is_solid(sites.channel_well + IVec3::Y * 3));
             carry.filled[Slot::Frame.index()] = 3;
             carry.holding = None;
             assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::TakeOut(Slot::Frame, 2)));
             set_stack(&mut world, &mut sites, &mut dirty, 0);
-            assert_eq!(sites.canyon_launch.origin, base);
+            assert_eq!(sites.channel_launch.origin, base);
         }
     }
 

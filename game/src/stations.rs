@@ -141,8 +141,8 @@ pub fn station_view(kind: PuzzleKind, game: &Game, sites: &Sites) -> (Vec3, Vec3
             let (min, max) = span(&[sites.tower_plate, sites.tower_release, sites.mast_plate, sites.mast_release, sites.gate_stand]);
             (min, max, Vec3::X)
         }
-        PuzzleKind::Canyon => {
-            let site = sites.canyon_launch;
+        PuzzleKind::Channel => {
+            let site = sites.channel_launch;
             let (min, max) = span(&[site.at(-2.0, 0.0, ground), site.origin + Vec3::Y * 2.0, site.at(layout.platform_centre + 2.0, 0.0, ground)]);
             (min, max, site.direction)
         }

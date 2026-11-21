@@ -1,6 +1,6 @@
 //! The builders' skiff, which lies asleep on its slipway on the north shore, and what the way
 //! carries towards it: the launchers' sight, which rides the crawler until it is caught. (The helm's
-//! own journey to the skiff, in its casket across the canyon and then over the ridge, is `sim`'s.)
+//! own journey to the skiff, in its casket across the channel and then over the ridge, is `sim`'s.)
 //!
 //! - The haul track: the sight sits on the crawler, then at the foot of the transfer crane.
 //! - Local gravity: calibrated, the sight is fitted beside the ledge launcher.
@@ -241,9 +241,9 @@ fn place_sight(
 /// Where the calibrated sight sits: on the ledge, beside the ledge launcher's rail, on the
 /// station's side and behind its gauge.
 pub fn fitted_at(sites: &Sites) -> Vec3 {
-    let ledge = sites.canyon_launch;
+    let ledge = sites.channel_launch;
     let side = ledge.direction.cross(Vec3::Y).normalize();
     let mut at = ledge.origin - ledge.direction * 3.0 + side * 1.0;
-    at.y = sites.canyon_well.y as f32;
+    at.y = sites.channel_well.y as f32;
     at
 }

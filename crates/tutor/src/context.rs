@@ -133,13 +133,13 @@ impl TutorContext {
                 secrets.push(Secret { low: a.min(b), high: a.max(b), only_before: Vec::new() });
             }
         }
-        if instance.kind == PuzzleKind::Canyon {
+        if instance.kind == PuzzleKind::Channel {
             // One or two stacks work, each with its own speed. A stack is a small whole number, too
             // common to redact on its own: guard it where it counts blocks, and guard the release height
             // it gives, in metres. Guard the speeds across all of them, in m/s.
             secrets.clear();
             let layout = &instance.layout;
-            let stacks = layout.canyon_stacks();
+            let stacks = layout.channel_stacks();
             for stack in stacks.clone() {
                 let stack_f = stack as f64;
                 secrets.push(Secret {
@@ -155,7 +155,7 @@ impl TutorContext {
                     });
                 }
             }
-            let (fast, slow) = (layout.canyon_speed_needed(*stacks.start()), layout.canyon_speed_needed(*stacks.end()));
+            let (fast, slow) = (layout.channel_speed_needed(*stacks.start()), layout.channel_speed_needed(*stacks.end()));
             secrets.push(Secret {
                 low: slow * (1.0 - SECRET_MARGIN),
                 high: fast * (1.0 + SECRET_MARGIN),
@@ -194,9 +194,9 @@ impl TutorContext {
             // The light gate's notch: the player chose it and it is shown when it is clamped.
             known_numbers.push(notch as f64);
         }
-        if instance.kind == PuzzleKind::Canyon {
+        if instance.kind == PuzzleKind::Channel {
             // On the launcher's rating plate, in plain view.
-            known_numbers.extend([instance.layout.canyon_speed_min, instance.layout.canyon_speed_max]);
+            known_numbers.extend([instance.layout.channel_speed_min, instance.layout.channel_speed_max]);
         }
         // The experiment's question and choices are on the player's screen (the ridge's names its
         // two angles, which may fall inside the working window).

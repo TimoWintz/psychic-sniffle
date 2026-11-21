@@ -12,8 +12,8 @@
 //! - console `i` (each machine has its own, a stone of the builders' with a quartz face) and the
 //!   lamps beside it are awake when `i ≤ k`: the first is the only one awake at the start;
 //! - the stone gate's leaf is down from stage 1, the ramp onto the outcrop stands from stage 3, the
-//!   seal in the pass through the spine is down from stage 4, and the north gate's beam shines at
-//!   stage 5, when the skiff takes its helm;
+//!   bridge over the channel stands from stage 4, and at stage 5, when the skiff takes its helm, the
+//!   seal in the pass through the spine is down and the north gate's beam shines;
 //! - the launchers' sight is off the crawler and at the crane's foot from stage 2, and set on the
 //!   ledge launcher from stage 3.
 //!
@@ -23,7 +23,7 @@
 
 use crate::carry::DirtyCells;
 use crate::companion::Landmarks;
-use crate::island::{MACHINES, Sites, Stonework, Way};
+use crate::island::{Cable, MACHINES, Sites, Stonework, Way};
 use crate::player::OrbitCamera;
 use crate::vessel::{SIGHT_SIZE, Sight};
 use crate::sim::{Sim, TerrainReshaped};
@@ -90,11 +90,10 @@ pub fn light(world: &mut VoxelWorld, cells: impl IntoIterator<Item = IVec3>, lit
     }
 }
 
-/// Stand stonework `layers` blocks high, from its lowest, and take away the rest.
-fn stand_layers(world: &mut VoxelWorld, work: &Stonework, layers: i32, changes: &mut Changes) {
-    let low = work.cells.iter().map(|(c, _)| c.y).min().unwrap_or(0);
-    for &(cell, material) in &work.cells {
-        let want = if cell.y - low < layers { material } else { Material::Air };
+/// Stand the first `steps` steps of stonework and take away the rest.
+fn stand_steps(world: &mut VoxelWorld, work: &Stonework, steps: i32, changes: &mut Changes) {
+    for (i, &(cell, material)) in work.cells.iter().enumerate() {
+        let want = if work.step(i) < steps { material } else { Material::Air };
         if world.get(cell) != want {
             world.set(cell, want);
             changes.cells.push(cell);
@@ -103,18 +102,17 @@ fn stand_layers(world: &mut VoxelWorld, work: &Stonework, layers: i32, changes: 
     }
 }
 
-/// How many layers of blocks stonework has.
-fn layers(work: &Stonework) -> i32 {
-    let (low, high) = work.cells.iter().fold((i32::MAX, i32::MIN), |(l, h), (c, _)| (l.min(c.y), h.max(c.y)));
-    if low > high { 0 } else { high - low + 1 }
+/// How many of its steps stonework stands `moved` of the way through its move (0 as it was, 1 done).
+fn standing_steps(work: &Stonework, moved: f32) -> i32 {
+    let all = work.step_count();
+    let gone = (moved.clamp(0.0, 1.0) * all as f32).ceil() as i32;
+    if work.rises { gone } else { all - gone }
 }
 
-/// Stonework `moved` of the way through its move (0 as it was, 1 done): rising layer by layer from
-/// the ground, or sinking from the top.
+/// Stonework `moved` of the way through its move (0 as it was, 1 done): rising step by step (layer
+/// by layer from the ground, unless it says otherwise), or sinking from the top.
 pub fn shape(world: &mut VoxelWorld, work: &Stonework, moved: f32, changes: &mut Changes) {
-    let all = layers(work);
-    let gone = (moved.clamp(0.0, 1.0) * all as f32).ceil() as i32;
-    stand_layers(world, work, if work.rises { gone } else { all - gone }, changes);
+    stand_steps(world, work, standing_steps(work, moved), changes);
 }
 
 /// Put the world in the state of a stage at once: the quartz lit or dark, the stonework standing or
@@ -128,8 +126,8 @@ pub fn settle(world: &mut VoxelWorld, way: &Way, stage: usize) -> Changes {
     for (run, inlay) in way.runs.iter().enumerate() {
         light(world, inlay.cells.iter().map(|&(c, _)| c), run_lit(run, stage), &mut changes);
     }
-    for work in [&way.ramp, &way.leaf, &way.seal] {
-        stand_layers(world, work, if work.stands(stage) { layers(work) } else { 0 }, &mut changes);
+    for work in way.stonework() {
+        stand_steps(world, work, if work.stands(stage) { work.step_count() } else { 0 }, &mut changes);
     }
     changes
 }
@@ -137,12 +135,13 @@ pub fn settle(world: &mut VoxelWorld, way: &Way, stage: usize) -> Changes {
 /// The parts of one wake, in order.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Phase {
-    /// The machine whose job was just done lights up (and the crane lifts the sight off).
+    /// The machine whose job was just done lights up (and the crane lifts the sight off, the bridge
+    /// rises, or the seal sinks).
     Glow,
     /// The light runs up the road to the next machine.
     Run,
     /// The next machine wakes: its quartz lights and its parts move (the gate's leaf sinks, the
-    /// ramp rises, the seal sinks, the north gate's beam reaches out).
+    /// ramp rises, the north gate's beam reaches out).
     Wake,
     /// Its console has lit with it; the camera glides back to the player's own view.
     Home,
@@ -152,6 +151,9 @@ pub enum Phase {
 const GLOW: f32 = 1.0;
 /// At the crawler's pass, the crane lifts the sight off while its quartz lights.
 const GLOW_LIFT: f32 = 3.2;
+/// At the casket's pass the bridge over the channel rises while both banks light, and at the
+/// tiller's the seal in the pass sinks while the landing circle lights.
+const GLOW_MOVE: f32 = 4.0;
 /// How fast the light runs, and the shortest and longest a run may take.
 const RUN_SPEED: f32 = 14.0;
 const RUN_TIME: (f32, f32) = (2.0, 5.0);
@@ -193,7 +195,13 @@ impl Timeline {
         Timeline {
             stage,
             run_length,
-            glow: if sight_lifted(stage) && !sight_lifted(stage - 1) { GLOW_LIFT } else { GLOW },
+            glow: if sight_lifted(stage) && !sight_lifted(stage - 1) {
+                GLOW_LIFT
+            } else if way.stonework().into_iter().any(|work| work.with_glow && work.stage == stage) {
+                GLOW_MOVE
+            } else {
+                GLOW
+            },
             run: (run_length / RUN_SPEED).clamp(RUN_TIME.0, RUN_TIME.1),
             wake: if stage == 1 { WAKE_FIRST } else { WAKE },
             home: HOME,
@@ -298,6 +306,7 @@ impl Waking {
     pub fn moved(&self, work: &Stonework) -> f32 {
         let before = (work.stands(self.shown) != work.stands(0)) as u8 as f32;
         match self.play {
+            Some(play) if play.timeline.stage == work.stage && before == 0.0 && work.with_glow => ease(play.timeline.glowed(play.t) / 0.9),
             Some(play) if play.timeline.stage == work.stage && before == 0.0 => {
                 let reach = if work.rises { 0.8 } else if work.stage == 1 { GATE_CLEAR } else { 0.6 };
                 ease(play.timeline.woken(play.t) / reach)
@@ -411,13 +420,19 @@ pub fn lift_pose(u: f32, from: Vec3, pivot: Vec3, to: Vec3) -> (f32, Vec3) {
 }
 
 /// The way's parts that move rather than light or stand as blocks: the north gate's beam, which
-/// shines across the strait, the transfer crane's arm and the line of its hook.
+/// shines across the strait, the transfer crane's arm and the line of its hook, and the bridge's
+/// cables.
 #[derive(Component, Clone, Copy, PartialEq, Debug)]
 enum Part {
     NorthBeam,
     CraneArm,
     HookLine,
+    /// A segment of one of the bridge's cables.
+    Cable { cable: usize, segment: usize },
 }
+
+/// How thick the bridge's cables are.
+const CABLE_RADIUS: f32 = 0.12;
 
 /// How far the north gate's beam reaches towards the main hull.
 const BEAM_LENGTH: f32 = 260.0;
@@ -492,6 +507,35 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     commands.spawn((Part::CraneArm, Mesh3d(meshes.add(arm)), MeshMaterial3d(stone.clone()), Transform::from_translation(way.crane_pivot)));
     // The line from the arm down to the sight while it hangs there.
     commands.spawn((Part::HookLine, Mesh3d(meshes.add(Cylinder::new(0.02, 1.0))), MeshMaterial3d(stone), Transform::default(), Visibility::Hidden));
+    // The bridge's cables, a chain of glowing segments each, which come with the deck.
+    let glowing = lit_quartz(&mut materials);
+    let segment = meshes.add(Cylinder::new(CABLE_RADIUS, 1.0));
+    for (c, cable) in way.cables.iter().enumerate() {
+        for (i, ends) in cable.points.windows(2).enumerate() {
+            commands.spawn((
+                Part::Cable { cable: c, segment: i },
+                Mesh3d(segment.clone()),
+                MeshMaterial3d(glowing.clone()),
+                segment_between(ends[0], ends[1]),
+                Visibility::Hidden,
+                bevy::light::NotShadowCaster,
+            ));
+        }
+    }
+}
+
+/// A unit cylinder stretched from `a` to `b`, overlapping a little at each end so a chain of them
+/// reads as one line.
+fn segment_between(a: Vec3, b: Vec3) -> Transform {
+    let along = b - a;
+    Transform::from_translation((a + b) / 2.0)
+        .with_rotation(Quat::from_rotation_arc(Vec3::Y, along.normalize()))
+        .with_scale(Vec3::new(1.0, along.length() + CABLE_RADIUS, 1.0))
+}
+
+/// Whether a segment of one of the bridge's cables is there: once the bridge stands far enough.
+fn cable_shown(cable: &Cable, segment: usize, bridge: &Stonework, moved: f32) -> bool {
+    moved > 0.0 && cable.steps[segment] < standing_steps(bridge, moved)
 }
 
 /// Where the camera looks while a machine wakes: what moves there.
@@ -501,7 +545,6 @@ fn wake_focus(stage: usize, sites: &Sites) -> Vec3 {
         // Over the gate's lintel, so the camera is not drawn in between its posts.
         1 => way.stone_gate + Vec3::Y * 4.5,
         3 => way.ramp.centre(),
-        4 => way.seal.centre(),
         5 => way.keystone,
         k => way.machines[k] + Vec3::Y * 1.5,
     }
@@ -571,12 +614,13 @@ fn play(
     light(&mut world, done.iter().take(glowed).copied(), true, &mut changes);
     let reach = timeline.lit_to(t);
     light(&mut world, way.runs[k - 1].cells.iter().filter(|(_, s)| *s <= reach).map(|&(c, _)| c), true, &mut changes);
-    if !matches!(phase, Phase::Glow | Phase::Run) {
+    let waking_now = !matches!(phase, Phase::Glow | Phase::Run);
+    if waking_now {
         light(&mut world, way.wake[k].iter().copied(), true, &mut changes);
-        for work in [&way.ramp, &way.leaf, &way.seal] {
-            if work.stage == k {
-                shape(&mut world, work, waking.moved(work), &mut changes);
-            }
+    }
+    for work in way.stonework() {
+        if work.stage == k && (waking_now || work.with_glow) {
+            shape(&mut world, work, waking.moved(work), &mut changes);
         }
     }
     dirty.0.extend(changes.cells);
@@ -586,8 +630,10 @@ fn play(
     if let Some(head) = head {
         landmarks.set(LIGHT_ON_THE_ROAD, head);
     }
+    let building = way.stonework().into_iter().find(|work| work.with_glow && work.stage == k);
     orbit.watch = match phase {
         Phase::Glow if waking.lift().is_some() => Some(way.crane_pivot - Vec3::Y * 1.5),
+        Phase::Glow if building.is_some() => building.map(Stonework::centre),
         Phase::Glow | Phase::Run => head,
         Phase::Wake => Some(wake_focus(k, &sites)),
         Phase::Home | Phase::Done => orbit.watch,
@@ -633,7 +679,7 @@ fn light_trim(waking: Res<Waking>, trim: Res<MachineTrim>, mut materials: ResMut
 }
 
 /// Put the moving parts where the way has them: the beam reaching out, the crane's arm turned, its
-/// hook's line down to the sight while it hangs there.
+/// hook's line down to the sight while it hangs there, the bridge's cables as far as its deck.
 fn pose_parts(waking: Res<Waking>, sites: Res<Sites>, mut parts: Query<(&Part, &mut Transform, &mut Visibility)>) {
     if !waking.is_changed() {
         return;
@@ -641,6 +687,7 @@ fn pose_parts(waking: Res<Waking>, sites: Res<Sites>, mut parts: Query<(&Part, &
     let way = &sites.way;
     let turn = waking.crane_turn();
     let hanging = waking.lift().and(waking.sight(&sites));
+    let bridge = waking.moved(&way.bridge);
     for (part, mut transform, mut visibility) in &mut parts {
         let seen = match part {
             Part::NorthBeam => {
@@ -664,6 +711,7 @@ fn pose_parts(waking: Res<Waking>, sites: Res<Sites>, mut parts: Query<(&Part, &
                 }
                 None => false,
             },
+            Part::Cable { cable, segment } => cable_shown(&way.cables[*cable], *segment, &way.bridge, bridge),
         };
         visibility.set_if_neq(if seen { Visibility::Inherited } else { Visibility::Hidden });
     }
@@ -852,14 +900,18 @@ mod tests {
 
     /// Where the avatar can stand, starting from `from`: a block with two clear above it, reached
     /// from a neighbouring column by climbing at most `climb` blocks or dropping any distance. It
-    /// walks the sea bed as well as the land.
+    /// wades the shallows, and stops where the water gets too deep, as the avatar does.
     fn reachable(world: &VoxelWorld, from: IVec3, climb: i32) -> HashSet<IVec3> {
         let stands = |p: IVec3| world.is_solid(p - IVec3::Y) && !world.is_solid(p) && !world.is_solid(p + IVec3::Y);
+        let deep = |p: IVec3| island::too_deep(world.surface(p.x, p.z));
         let mut seen = HashSet::from([from]);
         let mut queue = VecDeque::from([from]);
         while let Some(p) = queue.pop_front() {
             for d in [IVec3::X, IVec3::NEG_X, IVec3::Z, IVec3::NEG_Z] {
                 let n = p + d;
+                if deep(n) && !deep(p) {
+                    continue;
+                }
                 let mut next = None;
                 // Up: clear overhead from where it stands to where it lands.
                 for up in (1..=climb).rev() {
@@ -903,7 +955,7 @@ mod tests {
             let (mut world, sites) = island::build(&layout);
             let climb = climb(&layout);
             let spawn = sites.spawn.floor().as_ivec3();
-            let ledge = sites.canyon_well;
+            let ledge = sites.channel_well;
             settle(&mut world, &sites.way, 2);
             assert!(!reachable(&world, spawn, climb).contains(&ledge), "seed {seed}: the ledge can be climbed before the ramp rises (climb {climb})");
             settle(&mut world, &sites.way, 3);
@@ -912,8 +964,29 @@ mod tests {
         }
     }
 
+    /// The channel keeps the castaway off the north island, where the platform and the tilting
+    /// launcher are, until the casket is across and the bridge stands.
+    #[test]
+    fn the_north_island_is_out_of_reach_until_the_bridge_rises() {
+        for seed in 0..24 {
+            let layout = Ch1Layout::generate(seed);
+            let (mut world, sites) = island::build(&layout);
+            let climb = climb(&layout);
+            let spawn = sites.spawn.floor().as_ivec3();
+            let platform = sites.channel_launch.at(layout.platform_centre, 0.0, GROUND as f32).floor().as_ivec3();
+            let console = sites.stations[PUZZLES - 1] + IVec3::NEG_X;
+            settle(&mut world, &sites.way, 3);
+            let before = reachable(&world, spawn, climb);
+            assert!(!before.contains(&platform) && !before.contains(&console), "seed {seed}: the north island can be reached before the bridge stands (climb {climb})");
+            settle(&mut world, &sites.way, 4);
+            let after = reachable(&world, spawn, climb);
+            assert!(after.contains(&platform), "seed {seed}: the bridge does not lead to the platform");
+            assert!(after.contains(&console), "seed {seed}: the bridge does not lead to the tilting launcher's console");
+        }
+    }
+
     /// The seal stands in the castaway's way: the spine runs from coast to coast, and nothing goes
-    /// round it, over it, or along the sea bed past it, until the canyon is crossed.
+    /// round it or over it until the tiller is in the landing circle, even with the bridge up.
     #[test]
     fn the_skiff_is_out_of_reach_until_the_seal_sinks() {
         for seed in 0..24 {
@@ -922,9 +995,9 @@ mod tests {
             let climb = climb(&layout);
             let spawn = sites.spawn.floor().as_ivec3();
             let yard = (sites.slipway + Vec3::Y * 0.5).floor().as_ivec3();
-            settle(&mut world, &sites.way, 3);
-            assert!(!reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the skiff can be reached before the seal sinks (climb {climb})");
             settle(&mut world, &sites.way, 4);
+            assert!(!reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the skiff can be reached before the seal sinks (climb {climb})");
+            settle(&mut world, &sites.way, 5);
             assert!(reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the pass does not lead to the skiff");
         }
     }

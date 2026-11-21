@@ -2,8 +2,9 @@
 //!
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
 //!   screenshots. It loads the cart, times the crawler and catches it, clamps the light gate and times
-//!   drops at two notches, and stacks the canyon's blocks.
-//! - `walk` drives the avatar with key presses: up the steps, off the rim, out of the canyon, a jump.
+//!   drops at two notches, and stacks the channel's blocks.
+//! - `walk` drives the avatar with key presses: up the steps, to the edge of the ledge, where the deep
+//!   water of the channel stops it, over the bridge once it stands, a jump.
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
 //!   test, and its reactions to a miss and a pass.
 //! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
@@ -86,6 +87,10 @@ enum Step {
     Key(KeyCode, bool),
     /// Wait until the avatar stands at this height; fail if it has not happened in time.
     UntilStandingAt { height: f32, within: f32, what: &'static str },
+    /// Wait until the avatar stands north of this row (smaller z); fail if it has not in time.
+    UntilNorthOf { z: f32, within: f32, what: &'static str },
+    /// Fail unless the avatar stands at this height now.
+    ExpectStanding { height: f32, what: &'static str },
     /// Wait until the avatar is in the air above this height.
     UntilAirborneAbove { height: f32, within: f32 },
     /// Wait until the avatar's animation shows this activity; fail if it has not happened in time.
@@ -187,8 +192,8 @@ const TURN: f32 = std::f32::consts::FRAC_PI_2;
 
 /// Where to stand at the jack frame's foot, on the ledge launcher's rail, facing it.
 fn at_the_frame(sites: &Sites) -> (Vec3, Vec3) {
-    let out = sites.canyon_launch.direction;
-    (sites.canyon_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4, out)
+    let out = sites.channel_launch.direction;
+    (sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4, out)
 }
 
 fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
@@ -214,7 +219,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(1.2),
         Shot("01b_lumen_points_off_screen"),
         // The whole route, from the wreck on the south coast to the skiff on the north shore.
-        // The route's northern half, from the canyon to the skiff on the north shore, looked at from
+        // The route's northern half, from the channel to the skiff on the north shore, looked at from
         // high over it so no hill comes between the camera and it (the camera keeps within 80 m).
         Watch(Some(sites.tower_plate.lerp(sites.slipway, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
         Look { yaw: 0.25, pitch: 1.0, distance: 80.0 },
@@ -483,29 +488,29 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         RulerPin(4),
         RulerPin(5),
         Wait(0.3),
-        Shot("12_ruler_across_canyon"),
+        Shot("12_ruler_across_channel"),
         RulerNote(0),
         RulerNote(1),
         RulerOff,
         // The rating plate, then the lowest height above the ledge the band allows, in the calculator.
         NotePlate,
         Windows { notebook: true, handbook: false, tutor: false },
-        Calculate("hmin = g*d5^2/(2*vmax^2) - h2".into()),
+        Calculate("hmin = g*d5^2/(2*vmax^2) - h4".into()),
         Wait(0.5),
         Shot("13_calculator_rise"),
         closed_step(),
         // Straight from the bare ledge first: the speed it needs is past the top of the dial.
-        Draft(3, vec![String::new(), "d5/sqrt(2*h2/g)".into()]),
+        Draft(3, vec![String::new(), "d5/sqrt(2*h4/g)".into()]),
         Commit(3),
         Wait(0.3),
         Shot("13b_dial_refuses"),
         Station(None),
     ];
     // Then the stack worked out, and the speed for it.
-    let stack = *game.layout.canyon_stacks().start();
+    let stack = *game.layout.channel_stacks().start();
     let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
-    let ledge = sites.canyon_well.y as f32;
+    let ledge = sites.channel_well.y as f32;
     let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
     let (at_frame, to_frame) = at_the_frame(sites);
     for k in 0..stack {
@@ -522,21 +527,23 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         GoToStation(3),
         Look { yaw: -1.4 + TURN, pitch: 0.45, distance: 30.0 },
         Station(Some(3)),
-        Draft(3, vec![String::new(), format!("d5/sqrt(2*(h2 + {stack} m)/g)")]),
+        Draft(3, vec![String::new(), format!("d5/sqrt(2*(h4 + {stack} m)/g)")]),
         Wait(0.5),
         Shot("14c_blueprint"),
         Commit(3),
         Wait(1.2),
-        Shot("15_canyon_flight"),
+        Shot("15_channel_flight"),
         WaitIdle,
         Wait(2.5),
         ExpectSolved(3),
-        Shot("16_canyon_result"),
+        Shot("16_channel_result"),
         Station(None),
         UntilWakeAt { stage: 4, at: 0.6, within: 30.0 },
-        Shot("16_wake_rims_light"),
+        Shot("16_wake_banks_light"),
+        UntilWakeAt { stage: 4, at: 2.6, within: 30.0 },
+        Shot("16a_wake_the_bridge_rises"),
         UntilWakeAt { stage: 4, at: wakes[3].wake_starts() + 1.4, within: 30.0 },
-        Shot("16b_wake_the_seal_sinks"),
+        Shot("16b_wake_the_tilting_launcher"),
         WaitWakeEnd(30.0),
         // The casket is down on the platform, and the tiller waits on the tilting launcher beside it.
         Watch(Some(sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5)),
@@ -590,6 +597,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(3.0),
         Shot("19_ridge_result"),
         Station(None),
+        UntilWakeAt { stage: 5, at: 2.4, within: 30.0 },
+        Shot("19a_wake_the_seal_sinks"),
         UntilWakeAt { stage: 5, at: wakes[4].wake_starts() + 2.2, within: 30.0 },
         Shot("19_wake_north_gate"),
         WaitWakeEnd(30.0),
@@ -611,9 +620,14 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
 fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let ground = crate::island::GROUND as f32;
-    let ledge = sites.canyon_launch.origin;
-    let back = -sites.canyon_launch.direction;
+    let ledge = sites.channel_launch.origin;
+    let back = -sites.channel_launch.direction;
     let (north, east) = (0.0, -std::f32::consts::FRAC_PI_2);
+    // The bridge runs north across the channel: start on the near bank, a few steps short of it.
+    let deck = sites.way.bridge.centre();
+    let half = game.layout.channel_width as f32 / 2.0;
+    let bridge_foot = Vec3::new(deck.x, ground, deck.z + half + 4.0);
+    let far_bank = deck.z - half - 2.0;
     vec![
         Start,
         UntilPlaying { within: 10.0 },
@@ -629,17 +643,25 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         expect_activity(Activity::Walk),
         UntilStandingAt { height: ledge.y, within: 12.0, what: "climb the steps to the top of the outcrop" },
         Shot("walk_01_on_the_ledge"),
-        // Keep walking: off the rim and down to the canyon floor.
-        UntilStandingAt { height: ground - game.layout.canyon_depth as f32, within: 12.0, what: "fall to the canyon floor" },
+        // Keep walking: the avatar stops at the edge of the ledge, over the deep water of the channel.
+        Wait(4.0),
+        ExpectStanding { height: ledge.y, what: "stop at the edge, above the channel" },
         Key(KeyCode::KeyW, false),
-        Shot("walk_02_in_the_canyon"),
-        // Turn east and walk out up the stepped end of the canyon.
-        Look { yaw: east, pitch: 0.5, distance: 16.0 },
-        Wait(0.3),
+        Shot("walk_02_at_the_edge"),
+        // Once the casket is across, the bridge stands: walk over it to the north island.
+        Solve(4),
+        UntilWoken { stage: 4, within: 240.0 },
+        WaitWakeEnd(60.0),
+        GoTo(bridge_foot),
+        Look { yaw: north, pitch: 0.5, distance: 16.0 },
+        Wait(0.5),
         Key(KeyCode::KeyW, true),
-        UntilStandingAt { height: ground, within: 20.0, what: "walk out of the canyon" },
+        UntilNorthOf { z: far_bank, within: 20.0, what: "cross the bridge" },
         Key(KeyCode::KeyW, false),
         Wait(0.3),
+        ExpectStanding { height: ground, what: "stand on the north island" },
+        Shot("walk_03_over_the_bridge"),
+        Look { yaw: east, pitch: 0.5, distance: 16.0 },
         // A jump leaves the ground and comes back to it.
         Key(KeyCode::Space, true),
         UntilAirborneAbove { height: ground + 0.5, within: 2.0 },
@@ -647,7 +669,7 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         Key(KeyCode::Space, false),
         UntilStandingAt { height: ground, within: 4.0, what: "land after the jump" },
         expect_activity(Activity::Idle),
-        Shot("walk_03_out_again"),
+        Shot("walk_04_a_jump"),
         Quit,
     ]
 }
@@ -694,12 +716,13 @@ fn way(sites: &Sites) -> Vec<Step> {
     use Step::*;
     let way = &sites.way;
     let mut steps = vec![Start, UntilPlaying { within: 10.0 }, Windows { notebook: false, handbook: false, tutor: false }];
-    let views: [(&'static str, Vec3, f32, f32, f32); 9] = [
+    let views: [(&'static str, Vec3, f32, f32, f32); 10] = [
         ("01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
         ("02_crane", way.crane_pivot.lerp(sites.crane_foot, 0.5), 0.6, 0.4, 16.0),
         ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
-        ("04_ramp", sites.canyon_launch.origin - sites.canyon_launch.direction * 18.0, 2.6, 0.45, 26.0),
-        ("05_canyon", sites.canyon_launch.origin, 1.9, 0.5, 34.0),
+        ("04_ramp", sites.channel_launch.origin - sites.channel_launch.direction * 18.0, 2.6, 0.45, 26.0),
+        ("05_channel", sites.channel_launch.origin, 1.9, 0.5, 34.0),
+        ("05b_bridge", way.bridge.centre(), -0.8, 0.4, 36.0),
         ("06_pad", sites.ridge_launch.origin.lerp(sites.slipway, 0.4), 1.6, 0.6, 50.0),
         ("06b_seal", way.seal.centre(), 1.2, 0.4, 24.0),
         ("07_north_gate", way.north_gate, 0.25, 0.25, 30.0),
@@ -713,11 +736,15 @@ fn way(sites: &Sites) -> Vec<Step> {
         steps.push(Watch(None));
     };
     photograph(&mut steps, "asleep");
-    // Three wakes as they play: the light running, the machine waking, its console lighting, the
-    // camera on its way home.
-    for stage in [1, 3, 5] {
+    // Four wakes as they play: the light running, the machine waking, its console lighting, the
+    // camera on its way home. At the casket's pass the bridge rises first, while both banks light,
+    // and at the tiller's the seal sinks first, while the landing circle lights.
+    for stage in [1, 3, 4, 5] {
         let wake = Timeline::new(stage, way);
-        let moments = [wake.wake_starts() * 0.6, wake.wake_starts() + 0.6, wake.console_lights() + 0.4, wake.length() - 0.5];
+        let mut moments = vec![wake.wake_starts() * 0.6, wake.wake_starts() + 0.6, wake.console_lights() + 0.4, wake.length() - 0.5];
+        if stage >= 4 {
+            moments.splice(0..0, [1.2, 2.4, 3.6]);
+        }
         steps.extend([Solve(stage - 1), UntilWoken { stage: stage - 1, within: 240.0 }, WaitWakeEnd(240.0), Solve(stage)]);
         for (i, at) in moments.into_iter().enumerate() {
             let shot: &'static str = Box::leak(format!("way_wake_{stage}_{i}").into_boxed_str());
@@ -734,7 +761,7 @@ fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
     let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
-    let at_pile = Vec3::new(pile_west - 0.6, sites.canyon_well.y as f32, pile_row + 0.5);
+    let at_pile = Vec3::new(pile_west - 0.6, sites.channel_well.y as f32, pile_row + 0.5);
     let (at_frame, to_frame) = at_the_frame(sites);
     let (cargo_at, cart_at) = by_the_rail(sites);
     let close = Look { yaw: 0.0, pitch: 0.2, distance: 4.5 };
@@ -987,6 +1014,17 @@ fn run(
                 assert!(left > 0.0, "the avatar did not {what}: it is at {} (height {y}, wanted {height})", player.1.translation);
                 script.steps.push_front(Step::UntilStandingAt { height, within: left, what });
             }
+        }
+        Step::UntilNorthOf { z, within, what } => {
+            if player.1.translation.z > z {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the avatar did not {what}: it is at {}", player.1.translation);
+                script.steps.push_front(Step::UntilNorthOf { z, within: left, what });
+            }
+        }
+        Step::ExpectStanding { height, what } => {
+            let y = player.1.translation.y;
+            assert!(player.0.grounded && (y - height).abs() < 0.01, "the avatar did not {what}: it is at {}", player.1.translation);
         }
         Step::UntilAirborneAbove { height, within } => {
             if player.0.grounded || player.1.translation.y <= height {

@@ -84,7 +84,7 @@ pub struct Sites {
     /// Underside centre of the rail cart where it stands now: at the start, or where the last test
     /// stopped it (see `sim`).
     pub cart: Vec3,
-    /// Where the cart's cart's block stands at the start, beside the rail.
+    /// Where the cart's block stands at the start, beside the rail.
     pub cargo_cell: IVec3,
     /// Corners (inclusive) of the ground beside the rail start where the cart's block may be put down.
     pub cargo_yard: [IVec3; 2],
@@ -112,10 +112,10 @@ pub struct Sites {
     /// Lowest cell of the jack frame under the ledge launcher, at the rim; blocks stack up from it.
     pub channel_well: IVec3,
     /// Cells of the pile of blocks on the ledge: where the movable blocks lie at the start.
-    pub crate_pile: Vec<IVec3>,
+    pub block_pile: Vec<IVec3>,
     /// Corners (inclusive) of the space where blocks may be put down: the ledge west of the
     /// launcher's rail, up to three blocks high. Off the launch lines, clear of the station.
-    pub crate_yard: [IVec3; 2],
+    pub block_yard: [IVec3; 2],
     /// Index in `pins` of the ledge launcher's release point, which moves with the launcher.
     pub channel_release_pin: usize,
     pub ridge_launch: LaunchSite,
@@ -752,10 +752,10 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // lies on the ledge west of the rail, two blocks high: the blocks themselves are put there when
     // the game starts (see `carry`), since they move.
     let channel_well = channel_frame.cell(-1, 0, ledge_top);
-    let crate_pile: Vec<IVec3> =
+    let block_pile: Vec<IVec3> =
         (0..Ch1Layout::MAX_STACK as i32).map(|i| channel_frame.cell(-4 + (i / 2) % 2, -3 + i / 4, ledge_top + i % 2)).collect();
     let yard = channel_frame.rect(-(LEDGE_DEPTH - 1), -4, -2, -1);
-    let crate_yard = [IVec3::new(yard.min.x, ledge_top, yard.min.y), IVec3::new(yard.max.x, ledge_top + 2, yard.max.y)];
+    let block_yard = [IVec3::new(yard.min.x, ledge_top, yard.min.y), IVec3::new(yard.max.x, ledge_top + 2, yard.max.y)];
 
     // --- Puzzle 4: tilting launcher, ridge, pad -----------------------------------------------
     let ridge_frame = route.ridge;
@@ -1002,8 +1002,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         mast_plate,
         channel_launch,
         channel_well,
-        crate_pile,
-        crate_yard,
+        block_pile,
+        block_yard,
         channel_release_pin,
         ridge_launch,
         stations,
@@ -1819,7 +1819,7 @@ mod tests {
     }
 
     #[test]
-    fn the_crates_have_room_on_the_ledge() {
+    fn the_blocks_have_room_on_the_ledge() {
         for seed in 0..200 {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
@@ -1832,8 +1832,8 @@ mod tests {
                 assert!(!world.is_solid(sites.channel_well + IVec3::Y * k), "seed {seed}: the frame's column is blocked at {k}");
             }
             // The pile lies on the ledge's flat top, every cell free, inside the yard.
-            assert_eq!(sites.crate_pile.len(), Ch1Layout::MAX_STACK as usize);
-            let [low, high] = sites.crate_yard;
+            assert_eq!(sites.block_pile.len(), Ch1Layout::MAX_STACK as usize);
+            let [low, high] = sites.block_yard;
             for x in low.x..=high.x {
                 for z in low.z..=high.z {
                     assert!(world.is_solid(IVec3::new(x, low.y - 1, z)), "seed {seed}: the yard has a hole at ({x}, {z})");
@@ -1842,7 +1842,7 @@ mod tests {
                     }
                 }
             }
-            for cell in &sites.crate_pile {
+            for cell in &sites.block_pile {
                 assert!(cell.cmpge(low).all() && cell.cmple(high).all(), "seed {seed}: {cell} is outside the yard");
                 let bottom = IVec3::new(cell.x, ledge_top, cell.z);
                 assert!(world.is_solid(bottom - IVec3::Y), "seed {seed}: the pile at {cell} is not on the ledge");

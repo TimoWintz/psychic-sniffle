@@ -116,6 +116,10 @@ api_key_env = "OPENROUTER_API_KEY"             # name of the environment variabl
 - `api_key_env` may be omitted for a locally run model that needs no key.
 - No provider is built in. Without a `[tutor]` section the chat panel reads "Lumen is offline" and the
   handbook's concept cards remain available.
+- A request waits up to 120 s for the service to start answering. Once it has, a silence of 60 s, or
+  a reply still arriving after 300 s, ends it with a problem shown in the chat. While a reply is on
+  its way, Stop ends the wait and keeps what has arrived. An empty reply, or one the service cut off
+  at its length limit (`max_tokens`), is reported as a problem too.
 
 The slice ships one adapter, for the "chat completions" request format with streamed replies. That
 format is accepted by OpenRouter, OpenAI and most local model servers. Other connection types — a

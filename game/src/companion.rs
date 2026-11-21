@@ -24,6 +24,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use std::collections::BTreeSet;
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
+use physics_core::notebook::source;
 use physics_core::content::{RemarkWhen, Spoken};
 use physics_core::puzzle::PuzzleKind;
 
@@ -53,7 +54,7 @@ impl Landmarks {
             // The station's screen, under its column of light.
             places.push((station_name(game, i), console.as_vec3() + Vec3::new(0.5, 1.3, 0.5)));
         }
-        let pile = sites.crate_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.crate_pile.len().max(1) as f32;
+        let pile = sites.block_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.block_pile.len().max(1) as f32;
         places.push((LEDGE_BLOCKS.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
         places.push((JACK_FRAME.into(), sites.channel_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
         places.push((CART_BLOCK.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
@@ -535,8 +536,9 @@ fn direct(
     };
     match last.as_ref() {
         None => {
-            // The first frame: a greeting.
-            let fresh = game.save.puzzles.values().all(|p| p.attempts.is_empty());
+            // The first frame: a greeting. The opening plays until the player has done anything at
+            // all, so it isn't heard again by someone who has already been measuring.
+            let fresh = game.save.untouched();
             match next {
                 Some(n) if fresh => {
                     // The opening is a story: it is not cut short, and Lumen points the way after it.
@@ -738,7 +740,7 @@ fn direct(
 
 /// Nothing has been timed with the light gate yet (at the drop tower, `puzzle`).
 fn gate_pending(game: &Game, puzzle: usize) -> bool {
-    game.def(puzzle).kind == PuzzleKind::Gravity && !game.save.notebook.entries.iter().any(|e| e.source == "light gate")
+    game.def(puzzle).kind == PuzzleKind::Gravity && !game.save.notebook.entries.iter().any(|e| e.source == source::LIGHT_GATE)
 }
 
 /// After a test: the station's line on a pass; on a miss, where to look, and where to read or ask.
@@ -1229,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn at_the_channel_the_beam_shows_the_crates_and_then_the_frame() {
+    fn at_the_channel_the_beam_shows_the_blocks_and_then_the_frame() {
         let open = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
         assert_eq!(choose_gaze(&open).as_deref(), Some(LEDGE_BLOCKS));
         let built = Facts { slot_empty: false, ..open.clone() };

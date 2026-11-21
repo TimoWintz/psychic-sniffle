@@ -32,7 +32,7 @@ cargo run -p game
 ```
 
 The game opens on the title menu, with the intro playing behind it: how the castaway's ship broke up
-and came down, seen from orbit, over the mainland and on the island. Start (or Enter) begins.
+and came down, seen from orbit, over the mainland and on the island. Start (or Enter or Space) begins.
 
 ![The title menu, with the intro in orbit behind it](docs/screenshots/intro.png)
 
@@ -79,7 +79,7 @@ variable it names. No model vendor is built in; see [docs/tutor.md](docs/tutor.m
 cargo test --workspace
 ```
 
-Three scripted runs drive the real game and fail loudly if something is off:
+Five scripted runs drive the real game and fail loudly if something is off:
 
 ```bash
 GAME_SCRIPT=tour GAME_SEED=7 GAME_SAVE=/tmp/fp-tour.ron cargo run -p game
@@ -97,6 +97,10 @@ GAME_SCRIPT=intro GAME_SEED=7 GAME_SAVE=/tmp/fp-intro.ron cargo run -p game
 GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 ```
 
+```bash
+GAME_SCRIPT=way GAME_SEED=7 GAME_SAVE=/tmp/fp-way.ron cargo run -p game
+```
+
 `tour` plays the chapter with the expressions a player would type, loads the rail cart, times the
 crawler and catches it (once too soon, once on the marker), times drops
 with the light gate at two notches, photographs each handbook page as it is found and answers the
@@ -105,8 +109,8 @@ screenshots to `shots/`;
 `walk` drives the avatar by key presses over steps, a drop and a jump; `intro` photographs the intro,
 presses Start and checks that the game takes over; `pose` films the avatar's animations up close
 (standing, walking, running, jumping, carrying a block, at a console, watching a test, a miss and a
-pass). `tour`, `walk`
-and `pose` press Start first.
+pass); `way` photographs each of the way's machines asleep in a new game, then with every puzzle
+solved. All but `intro` press Start first.
 
 To play by hand without the bookkeeping, `prefill` puts the tour's ruler readings in the notebook
 and keeps each station's blueprint (and the calculator, at the haul track and the channel) filled

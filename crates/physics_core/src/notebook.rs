@@ -11,8 +11,21 @@ pub struct Entry {
     /// What was measured, in words.
     pub label: String,
     pub quantity: Quantity,
-    /// Instrument or origin: "ruler", "stopwatch", "calculated".
+    /// Instrument or origin, one of [`source`]'s names: "ruler", "stopwatch", "calculated".
     pub source: String,
+}
+
+/// Where a notebook entry came from. Saved as text, so these are the words the save holds.
+pub mod source {
+    pub const RULER: &str = "ruler";
+    pub const STOPWATCH: &str = "stopwatch";
+    pub const LIGHT_GATE: &str = "light gate";
+    /// The ledge launcher's rating plate.
+    pub const PLATE: &str = "plate";
+    /// The calculator.
+    pub const CALCULATED: &str = "calculated";
+    /// The player's own g, from a pass at the drop tower.
+    pub const CALIBRATED: &str = "calibrated";
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -23,6 +36,11 @@ pub struct Notebook {
 impl Notebook {
     pub fn get(&self, name: &str) -> Option<&Entry> {
         self.entries.iter().find(|e| e.name == name)
+    }
+
+    /// Whether the notebook already holds this reading: the same label and the same value.
+    pub fn has_reading(&self, label: &str, quantity: Quantity) -> bool {
+        self.entries.iter().any(|e| e.label == label && e.quantity == quantity)
     }
 
     /// Record a reading under `name`, replacing an earlier entry with the same name.
@@ -93,6 +111,15 @@ mod tests {
         nb.add_numbered("t", "fall time", Quantity::seconds(2.0), "stopwatch");
         let pair = nb.add_pair(("h", "drop to the gate", Quantity::metres(9.0)), ("t", "time to the gate", Quantity::seconds(1.4)), "light gate");
         assert_eq!(pair, ("h4".to_string(), "t4".to_string()), "t3 is taken, so the pair skips to 4");
+    }
+
+    #[test]
+    fn a_reading_is_known_by_its_label_and_value() {
+        let mut nb = Notebook::default();
+        nb.add_numbered("t", "fall time", Quantity::seconds(2.0), "stopwatch");
+        assert!(nb.has_reading("fall time", Quantity::seconds(2.0)));
+        assert!(!nb.has_reading("fall time", Quantity::seconds(2.1)));
+        assert!(!nb.has_reading("rise time", Quantity::seconds(2.0)));
     }
 
     #[test]

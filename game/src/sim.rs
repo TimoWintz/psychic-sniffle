@@ -13,6 +13,7 @@ use crate::state::{Game, PageEvent, RECHARGE_SECONDS, Ui};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use physics_core::notebook::source;
 use physics_core::ballistics::{Flight, Projectile};
 use physics_core::demo::{DemoPlayback, Shot};
 use physics_core::expr::evaluate;
@@ -316,15 +317,11 @@ fn rest_transform(prop: Prop, sites: &Sites, game: &Game) -> Transform {
 fn shown(prop: Prop, game: &Game) -> bool {
     match prop {
         Prop::Ghost | Prop::Cargo => false,
-        Prop::Cart => !solved(game, PuzzleKind::Rail),
-        Prop::HaulCart => solved(game, PuzzleKind::Rail),
-        Prop::Tiller => solved(game, PuzzleKind::Channel) && !solved(game, PuzzleKind::Ridge),
+        Prop::Cart => !game.kind_solved(PuzzleKind::Rail),
+        Prop::HaulCart => game.kind_solved(PuzzleKind::Rail),
+        Prop::Tiller => game.kind_solved(PuzzleKind::Channel) && !game.kind_solved(PuzzleKind::Ridge),
         _ => true,
     }
-}
-
-fn solved(game: &Game, kind: PuzzleKind) -> bool {
-    game.chapter.puzzles.iter().position(|p| p.kind == kind).is_some_and(|i| game.solved(i))
 }
 
 /// Where a prop rests when nothing is happening: transform of its centre.
@@ -334,7 +331,7 @@ fn rest_pose(prop: Prop, sites: &Sites, game: &Game) -> Vec3 {
         Prop::TowerMass => sites.tower_release + half,
         Prop::MastMass | Prop::Ghost => sites.mast_release + half,
         // Once it has crossed, on the platform beside the tilting launcher.
-        Prop::Casket if solved(game, PuzzleKind::Channel) => sites.channel_launch.at(game.layout.platform_centre, 0.0, GROUND as f32) + half,
+        Prop::Casket if game.kind_solved(PuzzleKind::Channel) => sites.channel_launch.at(game.layout.platform_centre, 0.0, GROUND as f32) + half,
         Prop::Casket | Prop::Tiller => launch_pose(prop, sites),
         Prop::Cart => sites.rail_start + half,
         Prop::Cargo => sites.rail_start + Vec3::Y * CART_SIZE.y + half,
@@ -676,7 +673,7 @@ fn handle_requests(
                     // climbs has its top halfway along, so all three are needed.
                     let (_, apex_x, apex_y) = projectile.apex();
                     let points = [site.at(0.0, projectile.y0, ground), site.at(apex_x, apex_y, ground), site.at(flight.x, flight.y, ground)];
-                    let (low, high) = points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+                    let (low, high) = crate::stations::bounds(&points);
                     orbit.frame_side_view(low, high, site.direction, false);
                     Running::Flight { puzzle, t: 0.0, projectile, flight, site, landed: false, verdict }
                 }
@@ -1106,21 +1103,29 @@ fn advance(
 pub const CRAWLER_TIME: &str = "crawler's time between the timing posts";
 
 /// Write the stopwatch's reading of the crawler, from the first timing post to the second, into the
-/// notebook.
+/// notebook. Every run gives the same reading, so it is noted once.
 pub fn note_crawler(game: &mut Game) {
     let reading = Quantity::seconds(game.layout.crawler_time());
-    game.save.notebook.add_numbered("t", CRAWLER_TIME, reading, "stopwatch");
+    if !game.save.notebook.has_reading(CRAWLER_TIME, reading) {
+        game.save.notebook.add_numbered("t", CRAWLER_TIME, reading, source::STOPWATCH);
+    }
 }
 
 /// Write the light gate's reading of a release from the drop tower into the notebook: with the gate
 /// clamped `gate` metres below the release, the drop and the time to the gate as a pair (`h2`, `t2`).
-/// The experiment does not run without the gate, so there is nothing to note for `gate == 0`.
+/// The experiment does not run without the gate, so there is nothing to note for `gate == 0`. A pair
+/// already in the notebook is not noted again.
 pub fn note_reading(game: &mut Game, gate: u32) {
     if gate == 0 {
         return;
     }
+    const DROP: &str = "drop from the release point to the light gate";
+    const TIME: &str = "fall time to the light gate";
     let (drop, time) = (Quantity::metres(gate as f64), Quantity::seconds(game.layout.gate_time(gate)));
-    game.save.notebook.add_pair(("h", "drop from the release point to the light gate", drop), ("t", "fall time to the light gate", time), "light gate");
+    let notebook = &mut game.save.notebook;
+    if !(notebook.has_reading(DROP, drop) && notebook.has_reading(TIME, time)) {
+        notebook.add_pair(("h", DROP, drop), ("t", TIME, time), source::LIGHT_GATE);
+    }
 }
 
 /// Seconds the cart takes to roll on from the tutorial's marker, through the stone gate, to the haul
@@ -1144,16 +1149,13 @@ struct Relayed {
 /// that has just landed in the circle is not put back on the launcher.
 fn relay(
     time: Res<Time>,
-    game: Res<Game>,
-    sim: Res<Sim>,
-    sites: Res<Sites>,
-    waking: Res<crate::waking::Waking>,
+    (game, sim, sites, waking): (Res<Game>, Res<Sim>, Res<Sites>, Res<crate::waking::Waking>),
     mut carry: ResMut<Carry>,
     mut relayed: Local<Relayed>,
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
 ) {
     // The cart rolls on once its block is at the marker and the stone gate has opened for it.
-    let (rail, channel) = (solved(&game, PuzzleKind::Rail) && waking.gate_is_open(&sites.way), solved(&game, PuzzleKind::Channel));
+    let (rail, channel) = (game.kind_solved(PuzzleKind::Rail) && waking.gate_is_open(&sites.way), game.kind_solved(PuzzleKind::Channel));
     let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
     if sim.busy() {
         return;
@@ -1264,7 +1266,7 @@ fn settle(
 /// Keep the ledge launcher's load on its cradle when blocks go into or out of the jack frame, until
 /// it has been thrown across.
 fn follow_launcher(sim: Res<Sim>, sites: Res<Sites>, game: Res<Game>, mut props: Query<(&Prop, &mut Transform, &Visibility)>) {
-    if !sites.is_changed() || sim.busy() || solved(&game, PuzzleKind::Channel) {
+    if !sites.is_changed() || sim.busy() || game.kind_solved(PuzzleKind::Channel) {
         return;
     }
     for (prop, mut transform, visibility) in &mut props {
@@ -1423,7 +1425,7 @@ mod tests {
     #[test]
     fn the_light_gate_notes_a_pair() {
         let mut game = game(12);
-        game.save.notebook.add_numbered("h", "tower height", Quantity::metres(game.layout.tower_h as f64), "ruler");
+        game.save.notebook.add_numbered("h", "tower height", Quantity::metres(game.layout.tower_h as f64), source::RULER);
         note_reading(&mut game, 0);
         assert!(game.save.notebook.get("t1").is_none(), "no gate, no reading");
         note_reading(&mut game, 6);
@@ -1432,6 +1434,18 @@ mod tests {
         assert_eq!(nb.get("h2").unwrap().quantity, Quantity::metres(6.0));
         assert_eq!(nb.get("t2").unwrap().quantity, Quantity::seconds(game.layout.gate_time(6)));
         assert_eq!(nb.get("h3").unwrap().quantity, Quantity::metres(9.0));
-        assert_eq!(nb.get("t3").unwrap().source, "light gate");
+        assert_eq!(nb.get("t3").unwrap().source, source::LIGHT_GATE);
+        note_reading(&mut game, 6);
+        assert!(game.save.notebook.get("h4").is_none(), "the same reading is noted once");
+    }
+
+    #[test]
+    fn the_crawler_is_timed_into_the_notebook_once() {
+        let mut game = game(12);
+        note_crawler(&mut game);
+        note_crawler(&mut game);
+        let times: Vec<_> = game.save.notebook.entries.iter().filter(|e| e.label == CRAWLER_TIME).collect();
+        assert_eq!(times.len(), 1);
+        assert_eq!(times[0].name, "t1");
     }
 }

@@ -104,6 +104,12 @@ impl Save {
         Ok(save)
     }
 
+    /// Whether nothing has happened in this game yet: nothing measured, noted, watched, placed,
+    /// read or tested.
+    pub fn untouched(&self) -> bool {
+        *self == Save::new(self.seed)
+    }
+
     pub fn progress(&self, puzzle_id: &str) -> PuzzleProgress {
         self.puzzles.get(puzzle_id).cloned().unwrap_or_default()
     }
@@ -259,6 +265,20 @@ mod tests {
 
         assert!(attempt(&mut save, "1.1.2", PuzzleKind::Gravity, 1.0));
         assert_eq!(save.progress("1.1.2").quality(), Some(Quality::Pristine));
+    }
+
+    #[test]
+    fn a_save_is_untouched_until_anything_happens() {
+        let mut save = Save::new(5);
+        assert!(save.untouched());
+        save.notebook.set("d", "a distance", Quantity::metres(3.0), "ruler");
+        assert!(!save.untouched());
+        let mut watched = Save::new(5);
+        watched.record_demo("1.1.0", None);
+        assert!(!watched.untouched());
+        let mut placed = Save::new(5);
+        placed.placed.insert("1.1.0".into(), 1);
+        assert!(!placed.untouched());
     }
 
     #[test]

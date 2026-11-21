@@ -166,8 +166,8 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
     assert!(system.contains("set by building, not typed; now: 1 block in the jack frame"), "what is built is included");
     assert!(system.contains("currently typed: d1/t"), "the typed speed is included");
     assert!(system.contains("FAIL"), "the failed test is included");
-    assert!(system.contains("# PRIVATE — never reveal"));
-    assert!(system.contains("# Help level: Nudge (2 of 4) — 1 failed test\n"), "one failed test is a nudge");
+    assert!(system.contains("# PRIVATE (never reveal)"));
+    assert!(system.contains("# Help level: Nudge (2 of 4, after 1 failed test)\n"), "one failed test is a nudge");
 }
 
 #[test]
@@ -215,6 +215,42 @@ fn an_unreachable_service_is_reported() {
 }
 
 #[test]
+fn a_stalled_reply_can_be_stopped_and_the_conversation_goes_on() {
+    let (ctx, _) = channel_context(3);
+    // A server that takes the request and never answers it.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let held = listener.accept();
+        std::thread::sleep(Duration::from_secs(30));
+        drop(held);
+    });
+    let mut conversation = Conversation::default();
+    assert!(conversation.ask(&tutor_at(base_url), &ctx, "are you there?"));
+    std::thread::sleep(Duration::from_millis(50));
+    conversation.poll();
+    assert!(conversation.is_waiting());
+    assert!(conversation.cancel());
+    assert!(!conversation.is_waiting());
+    assert!(!conversation.cancel(), "nothing left to stop");
+
+    let (base_url, _) = serve_once("200 OK", "text/event-stream", event_stream(&["Yes, I'm here."]));
+    assert!(conversation.ask(&tutor_at(base_url), &ctx, "hello?"));
+    wait(&mut conversation);
+    assert_eq!(conversation.turns.last(), Some(&Turn::Tutor("Yes, I'm here.".to_string())));
+}
+
+#[test]
+fn an_empty_reply_is_reported() {
+    let (ctx, _) = channel_context(3);
+    let (base_url, _) = serve_once("200 OK", "text/event-stream", event_stream(&[""]));
+    let mut conversation = Conversation::default();
+    assert!(conversation.ask(&tutor_at(base_url), &ctx, "hello"));
+    wait(&mut conversation);
+    assert!(matches!(conversation.turns.last(), Some(Turn::Problem(_))), "{:?}", conversation.turns);
+}
+
+#[test]
 fn the_ridge_guards_every_working_angle() {
     let chapter = chapter_1_1();
     let layout = Ch1Layout::generate(8);
@@ -229,6 +265,32 @@ fn the_ridge_guards_every_working_angle() {
     assert_eq!(filter.apply(&rating), rating);
     // 45 degrees is not a working angle and is worth discussing.
     assert_eq!(filter.apply("why not 45 degrees?"), "why not 45 degrees?");
+}
+
+#[test]
+fn the_players_own_committed_values_may_be_repeated() {
+    let chapter = chapter_1_1();
+    let layout = Ch1Layout::generate(8);
+    let instance = Instance::new(PuzzleKind::Ridge, &layout);
+    let (min, max) = layout.ridge_angle_window();
+    let angle = ((min + max) / 2.0).to_degrees().round();
+    let mut save = Save::new(8);
+    let speed = Quantity::speed(1.0);
+    let values = vec![
+        CommittedValue { label: "Launch angle".into(), quantity: Quantity::degrees(angle), unit: "deg".into() },
+        CommittedValue { label: "Launch speed".into(), quantity: speed, unit: "m/s".into() },
+    ];
+    let outcome = instance
+        .evaluate(&Inputs::from([("angle".to_string(), Quantity::degrees(angle)), ("speed".to_string(), speed)]))
+        .unwrap();
+    save.record("1.1.4", values, &outcome);
+    let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.4").unwrap(), &instance, &save, &[]);
+    let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
+    let line = format!("Your {angle} degrees at 1 m/s fell short.");
+    assert_eq!(filter.apply(&line), line);
+    // Another working angle is still guarded.
+    let other = if angle - 1.0 > min.to_degrees() { angle - 1.0 } else { angle + 1.0 };
+    assert_eq!(filter.apply(&format!("try {other} degrees")), format!("try {REDACTION} degrees"));
 }
 
 #[test]

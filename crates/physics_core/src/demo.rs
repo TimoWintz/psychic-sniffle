@@ -85,7 +85,7 @@ impl Instance {
         self.demo_raised(0)
     }
 
-    /// The demonstration with the launcher raised on `stack` crates: the channel's test blocks leave
+    /// The demonstration with the launcher raised on `stack` blocks: the channel's test blocks leave
     /// from wherever the launcher stands. The other stations ignore it.
     pub fn demo_raised(&self, stack: u32) -> Option<DemoPlayback> {
         let l = &self.layout;
@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn the_dropped_and_the_fired_crate_reach_the_floor_together() {
+    fn the_dropped_and_the_fired_block_reach_the_floor_together() {
         for (seed, stack) in (0..SEEDS).flat_map(|seed| (0..=Ch1Layout::MAX_STACK).map(move |stack| (seed, stack))) {
             let layout = Ch1Layout::generate(seed);
             let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Channel, &layout).demo_raised(stack) else {

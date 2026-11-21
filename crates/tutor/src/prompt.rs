@@ -165,7 +165,7 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
         } else {
             format!("currently typed: {}", asked.draft)
         };
-        let _ = writeln!(w, "- {} — {} ({draft})", asked.label, asked.dimension);
+        let _ = writeln!(w, "- {}: {} ({draft})", asked.label, asked.dimension);
     }
 
     let _ = writeln!(w, "\nHandbook pages this puzzle uses:");
@@ -207,7 +207,7 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
         let _ = writeln!(w, "(empty: nothing has been measured yet)");
     }
     for line in &ctx.notebook {
-        let _ = writeln!(w, "- {} = {} — {} ({})", line.name, line.value, line.label, line.source);
+        let _ = writeln!(w, "- {} = {}: {} ({})", line.name, line.value, line.label, line.source);
     }
 
     let _ = writeln!(w, "\n# Tests so far");
@@ -229,11 +229,11 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
     let failures = ctx.attempts.iter().filter(|a| !a.pass).count();
     let _ = write!(w, "\n# Help level: {}", help.name());
     if help != HelpLevel::Review {
-        let _ = write!(w, " ({} of 4) — {} failed test{}", help as usize + 1, failures, if failures == 1 { "" } else { "s" });
+        let _ = write!(w, " ({} of 4, after {} failed test{})", help as usize + 1, failures, if failures == 1 { "" } else { "s" });
     }
     let _ = writeln!(w, "\n{}", help.instructions());
 
-    let _ = writeln!(w, "\n# PRIVATE — never reveal");
+    let _ = writeln!(w, "\n# PRIVATE (never reveal)");
     let _ = writeln!(w, "True values of what can be measured:");
     for line in &ctx.true_measurements {
         let _ = writeln!(w, "- {line}");

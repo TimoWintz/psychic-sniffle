@@ -362,6 +362,9 @@ impl Chapter {
         }
 
         let mut problems = Vec::new();
+        for puzzle in &self.puzzles {
+            problems.extend(task_style(&puzzle.task).into_iter().map(|p| format!("puzzle {} task: {p}", puzzle.id)));
+        }
         for (place, text) in &spoken {
             problems.extend(spoken_style(text).into_iter().map(|p| format!("{place}: {p}")));
         }
@@ -435,6 +438,36 @@ fn text_style(text: &str) -> Vec<String> {
     let mut problems: Vec<String> = STOCK.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("stock phrase \"{p}\"")).collect();
     if text.contains('—') || text.contains('–') || text.contains(" -- ") {
         problems.push("a dash: use a comma, a full stop or brackets".into());
+    }
+    problems
+}
+
+/// Words an imperative sentence can't start with. A program can't tell a verb from any other word,
+/// but a task that starts with one of these isn't an instruction.
+const NOT_IMPERATIVE: [&str; 24] = [
+    "the", "a", "an", "this", "that", "these", "those", "we", "we'll", "we're", "you", "you'll", "i", "it", "it's",
+    "they", "our", "your", "there", "here", "now", "next", "first", "then",
+];
+
+/// What breaks the rules for a puzzle's `task`: one imperative sentence that ends with a full stop,
+/// since Lumen reads it inside a sentence of its own ("Next we need to load the rail cart...").
+fn task_style(task: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let task = task.trim();
+    if !task.ends_with('.') {
+        problems.push("a task ends with a full stop".to_string());
+    }
+    let body = task.strip_suffix('.').unwrap_or(task);
+    if body.contains(['.', '?', '!', ';', ':']) {
+        problems.push("a task is one sentence".to_string());
+    }
+    if !task.starts_with(|c: char| c.is_uppercase()) {
+        problems.push("a task starts with a capital letter".to_string());
+    }
+    if let Some(first) = words(task).first()
+        && NOT_IMPERATIVE.contains(&first.as_str())
+    {
+        problems.push(format!("a task starts with a verb, not \"{first}\""));
     }
     problems
 }
@@ -585,6 +618,21 @@ mod tests {
     }
 
     #[test]
+    fn a_task_is_one_instruction_with_a_full_stop() {
+        assert!(task_style("Load the rail cart and send it to the orange marker.").is_empty());
+        assert!(task_style("Measure this planet's gravitational acceleration.").is_empty());
+        assert_eq!(task_style("Load the rail cart"), ["a task ends with a full stop"]);
+        assert_eq!(task_style("Load the cart. Then send it."), ["a task is one sentence"]);
+        assert_eq!(task_style("load the cart."), ["a task starts with a capital letter"]);
+        assert_eq!(task_style("The cart needs loading."), ["a task starts with a verb, not \"the\""]);
+        assert_eq!(task_style("We'll load the cart."), ["a task starts with a verb, not \"we'll\""]);
+        let mut chapter = chapter_1_1();
+        chapter.puzzles[3].task = "The casket goes across the channel".into();
+        let problems = chapter.style_problems();
+        assert!(problems.iter().any(|p| p == "puzzle 1.1.3 task: a task ends with a full stop"), "{problems:?}");
+    }
+
+    #[test]
     fn every_page_has_a_picture_and_a_short_quiz() {
         let chapter = chapter_1_1();
         for concept in &chapter.concepts {
@@ -600,7 +648,7 @@ mod tests {
 
     #[test]
     fn concept_cards_do_not_contain_worked_numbers_for_g() {
-        // The handbook must not state a value for gravity: measuring it is the first puzzle.
+        // The handbook must not state a value for gravity: measuring it is a puzzle (1.1.2).
         for concept in chapter_1_1().concepts {
             assert!(!concept.card.contains("9.8"), "{} mentions Earth's g", concept.id);
         }

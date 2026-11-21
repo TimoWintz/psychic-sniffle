@@ -31,6 +31,7 @@ use crate::state::{Game, Mode, Ui};
 use crate::voxel::VoxelWorld;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use physics_core::notebook::source;
 use physics_core::units::Quantity;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -508,8 +509,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     ];
     // Then the stack worked out, and the speed for it.
     let stack = *game.layout.channel_stacks().start();
-    let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
-    let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
+    let pile_west = sites.block_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
+    let pile_row = sites.block_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
     let ledge = sites.channel_well.y as f32;
     let at_pile = Vec3::new(pile_west - 0.6, ledge, pile_row + 0.5);
     let (at_frame, to_frame) = at_the_frame(sites);
@@ -759,8 +760,8 @@ fn way(sites: &Sites) -> Vec<Step> {
 
 fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
-    let pile_west = sites.crate_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
-    let pile_row = sites.crate_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
+    let pile_west = sites.block_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
+    let pile_row = sites.block_pile.iter().map(|c| c.z).min().expect("there is a pile") as f32;
     let at_pile = Vec3::new(pile_west - 0.6, sites.channel_well.y as f32, pile_row + 0.5);
     let (at_frame, to_frame) = at_the_frame(sites);
     let (cargo_at, cart_at) = by_the_rail(sites);
@@ -854,6 +855,10 @@ fn closed_step() -> Step {
     Step::Windows { notebook: false, handbook: false, tutor: false }
 }
 
+/// The rest of what a step touches, in one parameter: a system takes at most sixteen.
+type MoreOfTheGame<'w, 's> =
+    (Option<ResMut<'w, Intro>>, Res<'w, State<Mode>>, Single<'w, 's, &'static AvatarState>, ResMut<'w, Carry>, ResMut<'w, DirtyCells>, Res<'w, Waking>);
+
 #[allow(clippy::too_many_arguments)]
 fn run(
     time: Res<Time>,
@@ -871,7 +876,7 @@ fn run(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar, mut carry, mut dirty, waking): (Option<ResMut<Intro>>, Res<State<Mode>>, Single<&AvatarState>, ResMut<Carry>, ResMut<DirtyCells>, Res<Waking>),
+    (mut intro, mode, avatar, mut carry, mut dirty, waking): MoreOfTheGame,
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -936,7 +941,7 @@ fn run(
         Step::RulerNote(which) => {
             let m = ruler.measurement().expect("two points are picked");
             let (prefix, value) = [("d", m.horizontal), ("h", m.vertical)][which];
-            game.save.notebook.add_numbered(prefix, "measured by the script", Quantity::metres(value as f64), "ruler");
+            game.save.notebook.add_numbered(prefix, "measured by the script", Quantity::metres(value as f64), source::RULER);
         }
         Step::RulerOn => ruler.start(),
         Step::ExpectGaze { place, within } => {

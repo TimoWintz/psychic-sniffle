@@ -336,7 +336,7 @@ fn typing(t: f32) -> Pose {
     p
 }
 
-/// Carrying a crate: both arms forward and bent, hands either side of it at chest height. Only the
+/// Carrying a block: both arms forward and bent, hands either side of it at chest height. Only the
 /// arms and the back; the legs keep whatever they are doing.
 fn carrying(under: &Pose) -> Pose {
     let mut p = *under;
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn carrying_holds_the_hands_forward_either_side_of_the_crate() {
+    fn carrying_holds_the_hands_forward_either_side_of_the_block() {
         for under in [idle(0.0), gait(0.3, 0.0)] {
             let pose = planted(carrying(&under));
             let (left, right) = (pose.point(ELBOW_L, HAND), pose.point(ELBOW_R, HAND));
@@ -609,7 +609,7 @@ mod tests {
                 assert!(hand.z < -0.25, "hands in front of the body: {hand}");
                 assert!((0.75..1.35).contains(&hand.y), "hands at chest height: {hand}");
             }
-            assert!((left.x - right.x).abs() > 0.4, "hands apart, either side of the crate: {left} {right}");
+            assert!((left.x - right.x).abs() > 0.4, "hands apart, either side of the block: {left} {right}");
             // The legs keep walking.
             assert_eq!(pose.rot[HIP_L], planted(under).rot[HIP_L]);
         }

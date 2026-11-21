@@ -11,6 +11,12 @@ pub fn fall_time(h: f64, g: f64) -> f64 {
     (2.0 * h / g).sqrt()
 }
 
+/// Launch speed that carries a shot at `angle` (radians) a distance `range` over level ground:
+/// v = sqrt(g D / sin 2θ).
+pub fn level_speed(range: f64, angle: f64, g: f64) -> f64 {
+    (g * range / (2.0 * angle).sin()).sqrt()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Projectile {
     pub x0: f64,

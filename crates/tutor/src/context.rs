@@ -212,12 +212,22 @@ impl TutorContext {
             // Many angle and speed pairs work here, so guard the whole working window.
             let layout = &instance.layout;
             let (min, max) = layout.ridge_angle_window();
-            let speed_at = |angle: f64| (layout.g * layout.pad_centre / (2.0 * angle).sin()).sqrt();
+            let speed_at = |angle: f64| physics_core::ballistics::level_speed(layout.pad_centre, angle, layout.g);
             secrets.push(Secret::between(min.to_degrees(), max.to_degrees()).before(ANGLE_WORDS));
             secrets.push(Secret::between(speed_at(min), speed_at(max)).before(SPEED_WORDS));
         }
 
         let mut known_numbers: Vec<f64> = save.notebook.entries.iter().map(|e| e.quantity.value).collect();
+        // What the player committed in this puzzle's tests, in SI and in the unit it was shown in,
+        // so Lumen can repeat a near miss back to them.
+        for value in progress.attempts.iter().flat_map(|a| &a.values) {
+            known_numbers.push(value.quantity.value);
+            if let Some(unit) = physics_core::units::lookup_unit(&value.unit)
+                && unit.value != 0.0
+            {
+                known_numbers.push(value.quantity.value / unit.value);
+            }
+        }
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
         }

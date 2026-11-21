@@ -46,7 +46,8 @@ pub struct Landmarks(Vec<(String, Vec3)>);
 
 impl Landmarks {
     pub fn new(sites: &Sites, game: &Game) -> Self {
-        // Pins on things that come and go (the light gate) are not places to look at.
+        // Pins on things that come and go (the light gate) are places to look at only while they are
+        // in the world; `follow` keeps them in step.
         let mut places: Vec<(String, Vec3)> = sites.pins.iter().filter(|pin| pin.present()).map(|pin| (pin.label.to_string(), pin.position)).collect();
         for (i, console) in sites.stations.iter().enumerate() {
             // The station's screen, under its column of light.
@@ -56,7 +57,7 @@ impl Landmarks {
         places.push((LEDGE_BLOCKS.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
         places.push((JACK_FRAME.into(), sites.channel_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
         places.push((CART_BLOCK.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
-        places.push((RAIL_CART.into(), sites.rail_start + Vec3::Y * 0.8));
+        places.push((RAIL_CART.into(), sites.cart + Vec3::Y * 0.8));
         places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
         places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
@@ -72,6 +73,24 @@ impl Landmarks {
         places.push(("The seal".into(), way.seal.centre() + Vec3::Y * 0.5));
         places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
         Landmarks(places)
+    }
+
+    /// Follow what moves with what is placed: the survey pins (the ledge launcher's release point
+    /// rides up the jack frame, the light gate's comes and goes with the gate) and the rail cart,
+    /// which stays where its last run stopped.
+    pub fn follow(&mut self, sites: &Sites) {
+        for pin in &sites.pins {
+            let at = self.0.iter().position(|(name, _)| name == pin.label);
+            match (at, pin.present()) {
+                (Some(i), true) => self.0[i].1 = pin.position,
+                (Some(i), false) => {
+                    self.0.remove(i);
+                }
+                (None, true) => self.0.push((pin.label.to_string(), pin.position)),
+                (None, false) => {}
+            }
+        }
+        self.set(RAIL_CART, sites.cart + Vec3::Y * 0.8);
     }
 
     /// Move a place that moves (the light running up the road).
@@ -453,8 +472,15 @@ impl Plugin for CompanionPlugin {
         app.insert_resource(landmarks)
             .init_resource::<Companion>()
             // The greeting comes with the first frame of the game, after Start.
-            .add_systems(Update, direct.run_if(in_state(Mode::Playing)))
+            .add_systems(Update, (follow_sites, direct.run_if(in_state(Mode::Playing))).chain())
             .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
+    }
+}
+
+/// Keep the landmarks on what moves (see [`Landmarks::follow`]).
+fn follow_sites(sites: Res<Sites>, mut landmarks: ResMut<Landmarks>) {
+    if sites.is_changed() {
+        landmarks.follow(&sites);
     }
 }
 
@@ -1255,6 +1281,27 @@ mod tests {
             assert!(landmarks.position(place).is_some(), "{place}");
         }
         assert!(landmarks.position("Light gate").is_none(), "the gate's pin is away until it is clamped");
+    }
+
+    #[test]
+    fn landmarks_follow_the_launcher_and_the_light_gate() {
+        let game = Game::for_test(9);
+        let (mut world, mut sites) = island::build(&game.layout);
+        let mut landmarks = Landmarks::new(&sites, &game);
+        let release = "Ledge launcher: release point";
+        let bare = landmarks.position(release).unwrap();
+        let mut dirty = crate::carry::DirtyCells::default();
+        crate::carry::set_stack(&mut world, &mut sites, &mut dirty, 3);
+        crate::carry::set_slot(&mut world, &mut sites, &mut dirty, crate::carry::Slot::Tower, 4);
+        landmarks.follow(&sites);
+        assert_eq!(landmarks.position(release), Some(bare + Vec3::Y * 3.0), "the beam points where the ruler's pin is");
+        assert_eq!(landmarks.position("Light gate"), Some(sites.pins[sites.gate_pin].position));
+        crate::carry::set_slot(&mut world, &mut sites, &mut dirty, crate::carry::Slot::Tower, 0);
+        landmarks.follow(&sites);
+        assert!(landmarks.position("Light gate").is_none(), "unclamped, the gate is not a place");
+        sites.cart = sites.rail_start + Vec3::X * 5.0;
+        landmarks.follow(&sites);
+        assert_eq!(landmarks.position(RAIL_CART), Some(sites.cart + Vec3::Y * 0.8));
     }
 
     #[test]

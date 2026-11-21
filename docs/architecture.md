@@ -42,6 +42,11 @@ Hand-off rule: the exact simulator moves an object until the event that is judge
 At that instant the verdict is recorded and the object becomes an engine-driven body with the velocity
 it had. What the engine does afterwards cannot change the result.
 
+A test counts from the moment it is committed: its charge is used then, and the save file holds the
+whole attempt (`Game::begin_test`), so quitting while it plays cannot take it back. The game itself
+shows the verdict, and counts the puzzle solved, only once the world has played it out
+(`Game::finish_test`).
+
 ## game
 
 | Module | Contents |

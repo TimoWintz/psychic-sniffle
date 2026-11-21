@@ -355,15 +355,59 @@ fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
     assert_eq!(at(PuzzleKind::Rail, "1.1.0", &save).placed.as_deref(), Some("the block is on the cart"));
 
     // The light gate's notch is the player's own choice, in plain view: never redacted, even where
-    // it is close to g.
+    // it is close to g. A whole number in metres is not g anyway; with g's unit after it, it is.
     let notch = layout.g.round() as u32;
     let line = format!("Your gate is {notch} m below the release.");
     let unplaced = tutor::filter::LeakFilter::for_context(&at(PuzzleKind::Gravity, "1.1.2", &save), "");
-    assert_ne!(unplaced.apply(&line), line, "seed {seed}: without the gate, {notch} reads as g");
+    assert_eq!(unplaced.apply(&line), line, "seed {seed}: {notch} m is a length");
+    let rounded = format!("g is about {notch} m/s^2 here.");
+    assert_ne!(unplaced.apply(&rounded), rounded, "seed {seed}: {notch} m/s^2 reads as g");
     save.placed.insert("1.1.2".into(), notch);
     let gravity = at(PuzzleKind::Gravity, "1.1.2", &save);
     assert_eq!(gravity.placed, Some(format!("the light gate is clamped {notch} m below the release point")));
     let filter = tutor::filter::LeakFilter::for_context(&gravity, "");
     assert_eq!(filter.apply(&line), line);
     assert_eq!(at(PuzzleKind::Ridge, "1.1.4", &save).placed, None);
+}
+
+#[test]
+fn the_channel_guards_heights_stacks_and_speeds_however_they_are_written() {
+    let chapter = chapter_1_1();
+    let def = chapter.puzzle("1.1.3").unwrap();
+    for seed in 0..200 {
+        let layout = Ch1Layout::generate(seed);
+        let instance = Instance::new(PuzzleKind::Channel, &layout);
+        let filter = tutor::filter::LeakFilter::for_context(&TutorContext::build(&chapter, def, &instance, &Save::new(seed), &[]), "");
+        for stack in layout.channel_stacks() {
+            let h = layout.ledge_h + stack;
+            let v = layout.channel_speed_needed(stack);
+            for line in [
+                format!("Release from {h} m"),
+                format!("(H = {h} m)"),
+                format!("So H = {h} m?"),
+                format!("Use {stack} stone blocks."),
+                format!("Use {stack} of the blocks."),
+                format!("Set the dial to {v:.2}."),
+                format!("Set the dial to {v:.1} metres per second."),
+            ] {
+                assert!(filter.apply(&line).contains(REDACTION), "seed {seed}: {line}");
+            }
+        }
+    }
+}
+
+#[test]
+fn small_whole_numbers_in_formulas_are_left_alone() {
+    // Answers close to a whole number used to take every copy of that number with them.
+    let chapter = chapter_1_1();
+    let line = "Use x = x0 + v t, h = (1/2) g t^2, the 2 timing posts and your 3 charges. Count 7 8 9 10 11 12 13 notches.";
+    for seed in 0..1000 {
+        let layout = Ch1Layout::generate(seed);
+        for (kind, id) in [(PuzzleKind::Chase, "1.1.1"), (PuzzleKind::Gravity, "1.1.2")] {
+            let instance = Instance::new(kind, &layout);
+            let ctx = TutorContext::build(&chapter, chapter.puzzle(id).unwrap(), &instance, &Save::new(seed), &[]);
+            let filter = tutor::filter::LeakFilter::for_context(&ctx, "");
+            assert_eq!(filter.apply(line), line, "seed {seed}, {kind:?}");
+        }
+    }
 }

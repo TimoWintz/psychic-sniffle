@@ -44,7 +44,8 @@ enum Running {
     /// Two demonstration bodies fly their exact paths from a launch site.
     Pair { puzzle: usize, t: f32, shots: [Shot; 2], site: LaunchSite, offsets: [Vec3; 2], size: f32, landed: [bool; 2], guess: Option<usize> },
     MastDrop { puzzle: usize, t: f32, predicted: f32, actual: f32, verdict: Verdict },
-    Flight { puzzle: usize, t: f32, projectile: Projectile, flight: Flight, site: LaunchSite, verdict: Verdict },
+    /// A launcher's load in flight; `landed` once it has been handed to the physics engine.
+    Flight { puzzle: usize, t: f32, projectile: Projectile, flight: Flight, site: LaunchSite, landed: bool, verdict: Verdict },
     Slide { puzzle: usize, t: f32, distance: f32, duration: f32, verdict: Verdict },
     /// The haul cart and the crawler set off from their marks at steady speeds; a flash marks both at
     /// each of `flashes`. Positions are along the track (the cart's front coupler, the crawler's rear).
@@ -74,7 +75,6 @@ impl Run {
 /// A judged attempt, kept back until the world has shown what happened.
 #[derive(Clone)]
 struct Verdict {
-    values: Vec<CommittedValue>,
     outcome: Outcome,
 }
 
@@ -161,8 +161,11 @@ struct Settling {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum AfterSettling {
-    /// Removed, and the prop put back on its launcher.
+    /// Removed, and the prop put back where it rests (on its launcher, or wherever a pass has left it).
     Restore(Prop),
+    /// Removed, and the prop shown where the body came to rest (the casket beside the tilting
+    /// launcher).
+    Rest(Prop),
     /// Left where it came to rest (a load on its target).
     Stay,
     /// Removed (a demonstration body).
@@ -300,21 +303,22 @@ fn reshape_terrain(mut commands: Commands, mut reshaped: ResMut<TerrainReshaped>
 
 /// How a prop rests when nothing is happening: where its centre is, and the tiller lying along its
 /// launcher's line.
-fn rest_transform(prop: Prop, sites: &Sites) -> Transform {
-    let transform = Transform::from_translation(rest_pose(prop, sites));
+fn rest_transform(prop: Prop, sites: &Sites, game: &Game) -> Transform {
+    let transform = Transform::from_translation(rest_pose(prop, sites, game));
     if prop == Prop::Tiller { transform.with_rotation(Quat::from_rotation_arc(Vec3::X, sites.ridge_launch.direction)) } else { transform }
 }
 
 /// Whether a prop is in the world when nothing is happening. The cart runs the tutorial's stretch
 /// until it has carried its block to the marker, then waits past the stone gate as the haul cart;
-/// the tiller is on the tilting launcher once the ledge launcher has thrown its casket across the
-/// channel.
+/// the casket rides the ledge launcher, then rests on the platform it was thrown to; the tiller is on
+/// the tilting launcher from the casket's landing until it is thrown into the circle (and from there
+/// the skiff takes it).
 fn shown(prop: Prop, game: &Game) -> bool {
     match prop {
         Prop::Ghost | Prop::Cargo => false,
         Prop::Cart => !solved(game, PuzzleKind::Rail),
         Prop::HaulCart => solved(game, PuzzleKind::Rail),
-        Prop::Tiller => solved(game, PuzzleKind::Channel),
+        Prop::Tiller => solved(game, PuzzleKind::Channel) && !solved(game, PuzzleKind::Ridge),
         _ => true,
     }
 }
@@ -324,18 +328,28 @@ fn solved(game: &Game, kind: PuzzleKind) -> bool {
 }
 
 /// Where a prop rests when nothing is happening: transform of its centre.
-fn rest_pose(prop: Prop, sites: &Sites) -> Vec3 {
+fn rest_pose(prop: Prop, sites: &Sites, game: &Game) -> Vec3 {
     let half = Vec3::Y * prop_size(prop).y / 2.0;
     match prop {
         Prop::TowerMass => sites.tower_release + half,
         Prop::MastMass | Prop::Ghost => sites.mast_release + half,
-        // On the ledge launcher's cradle, which rides on the blocks in the jack frame.
-        Prop::Casket => sites.channel_launch.origin - sites.channel_launch.direction * 0.5 + half,
-        Prop::Tiller => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
+        // Once it has crossed, on the platform beside the tilting launcher.
+        Prop::Casket if solved(game, PuzzleKind::Channel) => sites.channel_launch.at(game.layout.platform_centre, 0.0, GROUND as f32) + half,
+        Prop::Casket | Prop::Tiller => launch_pose(prop, sites),
         Prop::Cart => sites.rail_start + half,
         Prop::Cargo => sites.rail_start + Vec3::Y * CART_SIZE.y + half,
         Prop::HaulCart => haul_cart_centre(sites, 0.0),
         Prop::Crawler => crawler_centre(sites, sites.crawler_start),
+    }
+}
+
+/// Where a launcher's load sits before it is thrown: the casket on the ledge launcher's cradle,
+/// which rides on the blocks in the jack frame, the tiller on the tilting launcher.
+fn launch_pose(prop: Prop, sites: &Sites) -> Vec3 {
+    let half = Vec3::Y * prop_size(prop).y / 2.0;
+    match prop {
+        Prop::Casket => sites.channel_launch.origin - sites.channel_launch.direction * 0.5 + half,
+        _ => sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5 + half,
     }
 }
 
@@ -398,7 +412,7 @@ pub(crate) fn setup(
             prop,
             Mesh3d(mesh),
             MeshMaterial3d(material.clone()),
-            rest_transform(prop, &sites),
+            rest_transform(prop, &sites, &game),
             if shown(prop, &game) { Visibility::Visible } else { Visibility::Hidden },
         ));
         if let Some(vehicle) = vehicle {
@@ -523,6 +537,40 @@ pub fn read_blueprint(game: &Game, ui: &Ui, puzzle: usize) -> Result<(Inputs, Ve
     Ok((inputs, values))
 }
 
+/// A request the station has accepted: what the world is to show.
+enum Accepted {
+    Demo { puzzle: usize, playback: DemoPlayback, guess: Option<usize> },
+    Commit { puzzle: usize, outcome: Outcome },
+}
+
+/// Whether a request runs: an experiment needs its station awake and what it reads in place; a commit
+/// is judged, and may be refused for free. Nothing in the world changes for a request that does not
+/// run, so the last test's result stays where it can be looked at. A commit that runs has used its
+/// charge from this moment (see [`Game::begin_test`]).
+fn accept(game: &mut Game, ui: &mut Ui, request: Request) -> Option<Accepted> {
+    match request {
+        Request::Demo(puzzle) => {
+            if !game.unlocked(puzzle) {
+                return None;
+            }
+            let instance = game.instance(puzzle);
+            // The drop tower's experiment waits for the light gate (the panel says so).
+            if instance.experiment_unready(game.placed(puzzle)).is_some() {
+                return None;
+            }
+            let playback = instance.demo_raised(game.placed(puzzle))?;
+            // The guess counts only before the first run.
+            let guess = if game.save.demo_watched(&game.def(puzzle).id) { None } else { ui.guess[puzzle] };
+            Some(Accepted::Demo { puzzle, playback, guess })
+        }
+        Request::Commit(puzzle) => {
+            let (outcome, values) = judge_commit(game, ui, puzzle)?;
+            game.begin_test(puzzle, values, outcome.clone());
+            Some(Accepted::Commit { puzzle, outcome })
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_requests(
     mut commands: Commands,
@@ -541,6 +589,8 @@ fn handle_requests(
     if sim.busy() {
         return;
     }
+    let Some(accepted) = accept(&mut game, &mut ui, request) else { return };
+
     // Put back anything still lying around from the previous run, so each run starts loaded.
     for (entity, body) in &settling {
         if body.after != AfterSettling::Stay {
@@ -549,84 +599,68 @@ fn handle_requests(
     }
     for (prop, mut transform, mut visibility) in &mut props {
         if !matches!(*prop, Prop::Ghost | Prop::Cargo) {
-            *transform = rest_transform(*prop, &sites);
+            *transform = rest_transform(*prop, &sites, &game);
             *visibility = if shown(*prop, &game) { Visibility::Visible } else { Visibility::Hidden };
         }
     }
     if sites.cart != sites.rail_start {
         sites.cart = sites.rail_start;
     }
-    // A run of the tutorial after it is solved fetches the cart back down the line for it.
-    if let Request::Commit(puzzle) = request
-        && game.def(puzzle).kind == PuzzleKind::Rail
-    {
-        for (prop, _, mut visibility) in &mut props {
-            match prop {
-                Prop::Cart => *visibility = Visibility::Visible,
-                Prop::HaulCart => *visibility = Visibility::Hidden,
-                _ => {}
+    let ground = GROUND as f32;
+    sim.running = Some(match accepted {
+        Accepted::Demo { puzzle, playback, guess } => match playback {
+            DemoPlayback::Strobe { .. } => {
+                for mark in &marks {
+                    commands.entity(mark).despawn();
+                }
+                sim.strobe.clear();
+                sim.gate_tripped = false;
+                orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
+                Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
             }
-        }
-    }
-    match request {
-        Request::Demo(puzzle) => {
-            if !game.unlocked(puzzle) {
-                return;
+            DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } => {
+                for mark in &marks {
+                    commands.entity(mark).despawn();
+                }
+                sim.strobe.clear();
+                let run = Run { cart_speed: cart_speed as f32, crawler_speed: crawler_speed as f32, head_start: head_start as f32, end: duration as f32 };
+                let (_, crawler_end) = run.at(run.end);
+                frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
+                sim.trails = PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect();
+                Running::Pace { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, run }
             }
+            DemoPlayback::DropAndFire { dropped, fired } => {
+                let site = sites.channel_launch;
+                let low = site.at(0.0, dropped.flight.y, ground);
+                orbit.frame_side_view(low, site.at(fired.flight.x, dropped.projectile.y0, ground), site.direction, false);
+                let mesh = meshes.add(Cuboid::from_length(0.4));
+                start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [dropped, fired], site, 0.4, guess)
+            }
+            DemoPlayback::TwoAngles { flat, steep } => {
+                let site = sites.ridge_launch;
+                let (_, _, apex) = steep.projectile.apex();
+                orbit.frame_side_view(site.at(-2.0, 0.0, ground), site.at(steep.flight.x + 2.0, apex, ground), site.direction, false);
+                let mesh = meshes.add(Cuboid::from_length(0.3));
+                start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [flat, steep], site, 0.3, guess)
+            }
+        },
+        Accepted::Commit { puzzle, outcome } => {
             let instance = game.instance(puzzle);
-            // The drop tower's experiment waits for the light gate (the panel says so).
-            if instance.experiment_unready(game.placed(puzzle)).is_some() {
-                return;
+            // A run of the tutorial after it is solved fetches the cart back down the line for it.
+            if instance.kind == PuzzleKind::Rail {
+                for (prop, _, mut visibility) in &mut props {
+                    match prop {
+                        Prop::Cart => *visibility = Visibility::Visible,
+                        Prop::HaulCart => *visibility = Visibility::Hidden,
+                        _ => {}
+                    }
+                }
             }
-            let Some(playback) = instance.demo_raised(game.placed(puzzle)) else { return };
-            // The guess counts only before the first run.
-            let guess = if game.save.demo_watched(&game.def(puzzle).id) { None } else { ui.guess[puzzle] };
-            let ground = GROUND as f32;
-            sim.running = Some(match playback {
-                DemoPlayback::Strobe { .. } => {
-                    for mark in &marks {
-                        commands.entity(mark).despawn();
-                    }
-                    sim.strobe.clear();
-                    sim.gate_tripped = false;
-                    orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
-                    Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
-                }
-                DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } => {
-                    for mark in &marks {
-                        commands.entity(mark).despawn();
-                    }
-                    sim.strobe.clear();
-                    let run = Run { cart_speed: cart_speed as f32, crawler_speed: crawler_speed as f32, head_start: head_start as f32, end: duration as f32 };
-                    let (_, crawler_end) = run.at(run.end);
-                    frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
-                    sim.trails = PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect();
-                    Running::Pace { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, run }
-                }
-                DemoPlayback::DropAndFire { dropped, fired } => {
-                    let site = sites.channel_launch;
-                    let low = site.at(0.0, dropped.flight.y, ground);
-                    orbit.frame_side_view(low, site.at(fired.flight.x, dropped.projectile.y0, ground), site.direction, false);
-                    let mesh = meshes.add(Cuboid::from_length(0.4));
-                    start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [dropped, fired], site, 0.4, guess)
-                }
-                DemoPlayback::TwoAngles { flat, steep } => {
-                    let site = sites.ridge_launch;
-                    let (_, _, apex) = steep.projectile.apex();
-                    orbit.frame_side_view(site.at(-2.0, 0.0, ground), site.at(steep.flight.x + 2.0, apex, ground), site.direction, false);
-                    let mesh = meshes.add(Cuboid::from_length(0.3));
-                    start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [flat, steep], site, 0.3, guess)
-                }
-            });
-        }
-        Request::Commit(puzzle) => {
-            let Some((outcome, values)) = judge_commit(&mut game, &mut ui, puzzle) else { return };
-            let instance = game.instance(puzzle);
-            // The verdict exists now, but it is recorded and shown only when the test has played out.
+            // The verdict exists now, but it is shown only when the test has played out.
             ui.results[puzzle] = None;
             sim.start_trail(TRAIL);
-            let ground = GROUND as f32;
-            sim.running = Some(match outcome.playback.clone() {
+            let verdict = Verdict { outcome: outcome.clone() };
+            match outcome.playback {
                 Playback::Drop { predicted_time, actual_time, .. } => {
                     for (prop, _, mut visibility) in &mut props {
                         if *prop == Prop::Ghost {
@@ -634,7 +668,7 @@ fn handle_requests(
                         }
                     }
                     orbit.frame_side_view(sites.mast_plate, sites.mast_release, Vec3::X, false);
-                    Running::MastDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, verdict: Verdict { values, outcome } }
+                    Running::MastDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, verdict }
                 }
                 Playback::Flight { projectile, flight } => {
                     let site = if instance.kind == PuzzleKind::Channel { sites.channel_launch } else { sites.ridge_launch };
@@ -644,7 +678,7 @@ fn handle_requests(
                     let points = [site.at(0.0, projectile.y0, ground), site.at(apex_x, apex_y, ground), site.at(flight.x, flight.y, ground)];
                     let (low, high) = points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
                     orbit.frame_side_view(low, high, site.direction, false);
-                    Running::Flight { puzzle, t: 0.0, projectile, flight, site, verdict: Verdict { values, outcome } }
+                    Running::Flight { puzzle, t: 0.0, projectile, flight, site, landed: false, verdict }
                 }
                 Playback::Chase { cart_speed, crawler_speed, head_start, t } => {
                     // The experiment's afterimages would stand on the track the test runs along.
@@ -654,17 +688,17 @@ fn handle_requests(
                     let run = Run { cart_speed: cart_speed as f32, crawler_speed: crawler_speed as f32, head_start: head_start as f32, end: t as f32 };
                     let (_, crawler_end) = run.at(run.end);
                     frame_track(&mut orbit, &sites, crawler_end.max(game.layout.transfer_at as f32) + CRAWLER_SIZE.x);
-                    Running::Chase { puzzle, t: 0.0, run, verdict: Verdict { values, outcome } }
+                    Running::Chase { puzzle, t: 0.0, run, verdict }
                 }
                 Playback::Slide { distance } => {
                     let reach = distance.max(game.layout.rail_target as f64) as f32;
                     orbit.frame_side_view(sites.rail_start, sites.rail_start + Vec3::new(reach, 2.0, 0.0), Vec3::X, false);
                     let duration = 1.0 + distance as f32 / 6.0;
-                    Running::Slide { puzzle, t: 0.0, distance: distance as f32, duration, verdict: Verdict { values, outcome } }
+                    Running::Slide { puzzle, t: 0.0, distance: distance as f32, duration, verdict }
                 }
-            });
+            }
         }
-    }
+    });
 }
 
 /// Look at the haul track from the side, from just behind the cart's start to `reach` metres along it.
@@ -833,7 +867,7 @@ fn advance(
             // Each flash leaves an afterimage of the mass and a tick beside its path.
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
-                let centre = rest_pose(Prop::TowerMass, &sites) - Vec3::Y * below;
+                let centre = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * below;
                 commands.spawn((StrobeMark, Mesh3d(assets.mass.clone()), MeshMaterial3d(assets.afterimage.clone()), Transform::from_translation(centre)));
                 sim.strobe.push(centre);
                 *shown += 1;
@@ -842,7 +876,7 @@ fn advance(
                 if *prop != Prop::TowerMass {
                     continue;
                 }
-                transform.translation = rest_pose(Prop::TowerMass, &sites) - Vec3::Y * fallen(g, *t, height);
+                transform.translation = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * fallen(g, *t, height);
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
@@ -949,7 +983,7 @@ fn advance(
             for (prop, mut transform, mut visibility, material) in &mut props {
                 match *prop {
                     Prop::MastMass => {
-                        transform.translation = rest_pose(Prop::MastMass, &sites) - Vec3::Y * fallen(g, *t, height);
+                        transform.translation = rest_pose(Prop::MastMass, &sites, &game) - Vec3::Y * fallen(g, *t, height);
                         sim.action = Some(transform.translation);
                         if *t >= *actual && *visibility != Visibility::Hidden {
                             *visibility = Visibility::Hidden;
@@ -957,7 +991,7 @@ fn advance(
                         }
                     }
                     Prop::Ghost => {
-                        transform.translation = rest_pose(Prop::Ghost, &sites) - Vec3::Y * fallen(g_player, *t, height);
+                        transform.translation = rest_pose(Prop::Ghost, &sites, &game) - Vec3::Y * fallen(g_player, *t, height);
                     }
                     _ => {}
                 }
@@ -966,7 +1000,7 @@ fn advance(
                 finished = Some((*puzzle, verdict.clone()));
             }
         }
-        Running::Flight { puzzle, t, projectile, flight, site, verdict } => {
+        Running::Flight { puzzle, t, projectile, flight, site, landed, verdict } => {
             // A short run-up along the rail before release, so the launch reads as a launch.
             const RUN_UP: f32 = 0.35;
             *t += dt;
@@ -976,7 +1010,8 @@ fn advance(
             let (x, y) = projectile.pos(flight_t);
             let mut centre = site.at(x, y, ground) + half;
             if *t < RUN_UP {
-                let start = rest_pose(prop, &sites);
+                // From the launcher, even when the load has been resting elsewhere since a pass.
+                let start = launch_pose(prop, &sites);
                 let progress = *t / RUN_UP;
                 centre = start.lerp(site.at(0.0, projectile.y0, ground) + half, progress * progress);
             } else if let Some((trail, _)) = sim.trails.first_mut() {
@@ -994,19 +1029,31 @@ fn advance(
                     // The tiller points along its path.
                     transform.rotation = Quat::from_rotation_arc(Vec3::X, velocity.normalize_or(Vec3::X));
                 }
-                if *t - RUN_UP >= flight.t as f32 && *visibility != Visibility::Hidden {
+                if *landed {
+                    continue;
+                }
+                // In flight even where it is not shown at rest (a test run again after a pass).
+                visibility.set_if_neq(Visibility::Visible);
+                if *t - RUN_UP >= flight.t as f32 {
+                    *landed = true;
                     *visibility = Visibility::Hidden;
                     if on_water(flight) {
                         splash(&mut commands, &assets, centre);
                     }
-                    // A load that lands on its target stays down (the casket on the platform beside
-                    // the tilting launcher, the tiller in the landing circle, until the skiff takes
-                    // it); a miss is returned to its launcher.
-                    let after = if verdict.outcome.pass { AfterSettling::Stay } else { AfterSettling::Restore(prop) };
+                    // A casket that lands on its target rests where it came down, beside the tilting
+                    // launcher. The tiller's first pass stays in the landing circle until the skiff
+                    // takes it; the skiff takes it once, so a pass run again only goes back. A miss is
+                    // returned to its launcher.
+                    let first_pass = verdict.outcome.pass && !game.solved(*puzzle);
+                    let after = match prop {
+                        Prop::Casket if verdict.outcome.pass => AfterSettling::Rest(prop),
+                        Prop::Tiller if first_pass => AfterSettling::Stay,
+                        _ => AfterSettling::Restore(prop),
+                    };
                     let (body, quartz, lit) = if prop == Prop::Tiller { &assets.tiller } else { &assets.casket };
                     let load = hand_over(&mut commands, body.clone(), prop_size(prop), centre, velocity, assets.stone.clone(), after);
                     commands.entity(load).with_child((Mesh3d(quartz.clone()), MeshMaterial3d(lit.clone())));
-                    if prop == Prop::Tiller && verdict.outcome.pass {
+                    if prop == Prop::Tiller && first_pass {
                         commands.entity(load).insert(crate::vessel::Delivered);
                     }
                 }
@@ -1021,7 +1068,7 @@ fn advance(
             *t += dt;
             let progress = (*t / *duration).min(1.0);
             let eased = progress * progress * (3.0 - 2.0 * progress);
-            let start = rest_pose(Prop::Cart, &sites);
+            let start = rest_pose(Prop::Cart, &sites, &game);
             let centre = start + Vec3::X * *distance * eased;
             sim.action = Some(centre);
             if let Some((trail, _)) = sim.trails.first_mut() {
@@ -1040,19 +1087,13 @@ fn advance(
         }
     }
 
-    let Some((puzzle, Verdict { values, outcome })) = finished else {
+    let Some((puzzle, Verdict { outcome })) = finished else {
         sim.running = Some(running);
         return;
     };
-    // The test has played out: now it counts.
+    // The test has played out: now it counts (the save file has had it since the commit).
     sim.watch_left = 2.5;
-    if outcome.pass && game.def(puzzle).kind == PuzzleKind::Gravity {
-        // The player's own measurement becomes the g that later puzzles use.
-        game.save.notebook.set("g", "gravitational acceleration (your calibration)", values[0].quantity, "calibrated");
-    }
-    let id = game.def(puzzle).id.clone();
-    game.save.record(&id, values, &outcome);
-    game.persist();
+    let outcome = game.finish_test().unwrap_or(outcome);
     for (prop, _, mut visibility, _) in &mut props {
         if *prop == Prop::Ghost {
             *visibility = Visibility::Hidden;
@@ -1120,7 +1161,7 @@ fn relay(
     let first = relayed.shown.is_none();
     let (was_rail, was_channel) = relayed.shown.unwrap_or((rail, channel));
     relayed.shown = Some((rail, channel));
-    let start = rest_pose(Prop::HaulCart, &sites);
+    let start = rest_pose(Prop::HaulCart, &sites, &game);
     if rail && !was_rail {
         let from = props.iter().find(|(p, _, _)| **p == Prop::Cart).map_or(start, |(_, t, _)| t.translation);
         relayed.rolling = Some((0.0, from));
@@ -1151,7 +1192,7 @@ fn relay(
             _ => continue,
         };
         if show && *prop == Prop::Tiller {
-            *transform = rest_transform(*prop, &sites);
+            *transform = rest_transform(*prop, &sites, &game);
         }
         visibility.set_if_neq(if show { Visibility::Visible } else { Visibility::Hidden });
     }
@@ -1172,9 +1213,18 @@ fn ride_the_cart(carry: Res<Carry>, mut props: Query<(&Prop, &mut Transform, &mu
     }
 }
 
-/// Remove settled bodies when their time is up and put the launcher's load back.
-fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settling: Query<(Entity, &mut Settling)>, mut props: Query<(&Prop, &mut Transform, &mut Visibility)>) {
-    for (entity, mut body) in &mut settling {
+/// Remove settled bodies when their time is up and put the launcher's load back, or leave it where
+/// it came to rest.
+#[allow(clippy::type_complexity)]
+fn settle(
+    time: Res<Time>,
+    mut commands: Commands,
+    sites: Res<Sites>,
+    game: Res<Game>,
+    mut settling: Query<(Entity, &mut Settling, &Transform), Without<Prop>>,
+    mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
+) {
+    for (entity, mut body, at) in &mut settling {
         body.left -= time.delta_secs();
         if body.left > 0.0 {
             continue;
@@ -1189,26 +1239,37 @@ fn settle(time: Res<Time>, mut commands: Commands, sites: Res<Sites>, mut settli
                 commands.entity(entity).despawn();
                 continue;
             }
+            AfterSettling::Rest(prop) => {
+                commands.entity(entity).despawn();
+                for (candidate, mut transform, mut visibility) in &mut props {
+                    if *candidate == prop {
+                        *transform = *at;
+                        *visibility = Visibility::Visible;
+                    }
+                }
+                continue;
+            }
             AfterSettling::Restore(prop) => prop,
         };
         commands.entity(entity).despawn();
         for (prop, mut transform, mut visibility) in &mut props {
             if *prop == restores {
-                *transform = rest_transform(restores, &sites);
-                *visibility = Visibility::Visible;
+                *transform = rest_transform(restores, &sites, &game);
+                *visibility = if shown(restores, &game) { Visibility::Visible } else { Visibility::Hidden };
             }
         }
     }
 }
 
-/// Keep the ledge launcher's load on its cradle when blocks go into or out of the jack frame.
-fn follow_launcher(sim: Res<Sim>, sites: Res<Sites>, mut props: Query<(&Prop, &mut Transform, &Visibility)>) {
-    if !sites.is_changed() || sim.busy() {
+/// Keep the ledge launcher's load on its cradle when blocks go into or out of the jack frame, until
+/// it has been thrown across.
+fn follow_launcher(sim: Res<Sim>, sites: Res<Sites>, game: Res<Game>, mut props: Query<(&Prop, &mut Transform, &Visibility)>) {
+    if !sites.is_changed() || sim.busy() || solved(&game, PuzzleKind::Channel) {
         return;
     }
     for (prop, mut transform, visibility) in &mut props {
         if *prop == Prop::Casket && *visibility != Visibility::Hidden {
-            transform.translation = rest_pose(Prop::Casket, &sites);
+            transform.translation = launch_pose(Prop::Casket, &sites);
         }
     }
 }
@@ -1280,6 +1341,82 @@ mod tests {
         let (outcome, values) = judge_commit(&mut game, &mut ui, 0).expect("a loaded cart runs");
         assert!(outcome.pass && ui.refusal.is_none());
         assert_eq!(values.len(), 1);
+        let _ = std::fs::remove_file(&game.save_path);
+    }
+
+    /// Mark the puzzle of `kind` solved.
+    fn solve(game: &mut Game, kind: PuzzleKind) {
+        let id = game.chapter.puzzles.iter().find(|p| p.kind == kind).unwrap().id.clone();
+        game.save.puzzles.entry(id).or_default().solved = true;
+    }
+
+    #[test]
+    fn the_helm_is_in_one_place_at_a_time() {
+        let mut game = game(13);
+        let (_, sites) = crate::island::build(&game.layout);
+        let platform = sites.channel_launch.at(game.layout.platform_centre, 0.0, GROUND as f32);
+        // Before the channel: the casket rides the ledge launcher, and the tiller is in it.
+        assert!(shown(Prop::Casket, &game) && !shown(Prop::Tiller, &game));
+        assert_eq!(rest_pose(Prop::Casket, &sites, &game), launch_pose(Prop::Casket, &sites));
+        // Across: the casket rests on the platform, and the tiller waits on the tilting launcher.
+        for kind in [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Channel] {
+            solve(&mut game, kind);
+        }
+        assert!(shown(Prop::Casket, &game) && shown(Prop::Tiller, &game));
+        assert!(rest_pose(Prop::Casket, &sites, &game).xz().distance(platform.xz()) < 1e-4, "the casket is on the platform");
+        assert_ne!(rest_pose(Prop::Casket, &sites, &game), launch_pose(Prop::Casket, &sites));
+        // Over the ridge: the skiff has the tiller, so the launcher is empty.
+        solve(&mut game, PuzzleKind::Ridge);
+        assert!(!shown(Prop::Tiller, &game), "the tiller is in the skiff, not on the launcher");
+        assert!(shown(Prop::Casket, &game));
+    }
+
+    #[test]
+    fn a_test_counts_in_the_save_file_from_the_moment_it_is_committed() {
+        let mut game = game(14);
+        let gravity = game.chapter.puzzles.iter().position(|p| p.kind == PuzzleKind::Gravity).unwrap();
+        let mut ui = Ui::default();
+        ui.drafts[gravity] = vec![format!("{} m/s^2", game.layout.g)];
+        for kind in [PuzzleKind::Rail, PuzzleKind::Chase] {
+            solve(&mut game, kind);
+        }
+        let Some(Accepted::Commit { outcome, .. }) = accept(&mut game, &mut ui, Request::Commit(gravity)) else { panic!("the commit runs") };
+        assert!(outcome.pass);
+        // The charge is used at once, but the game shows the pass only once the test has played out.
+        assert_eq!(game.charges_left(gravity), 2);
+        assert!(!game.solved(gravity) && game.save.notebook.get("g").is_none());
+        // Quitting now: the save file already holds the whole test.
+        let on_disk = physics_core::progress::Save::from_ron(&std::fs::read_to_string(&game.save_path).unwrap()).unwrap();
+        assert!(on_disk.is_solved(&game.def(gravity).id), "a test cannot be taken back by quitting");
+        assert_eq!(on_disk.progress(&game.def(gravity).id).attempts.len(), 1);
+        assert!(on_disk.notebook.get("g").is_some(), "the calibrated g is noted with it");
+        // Played out: the game counts it, once.
+        assert_eq!(game.finish_test().map(|o| o.pass), Some(true));
+        assert!(game.solved(gravity) && game.save.notebook.get("g").is_some());
+        assert_eq!(game.save.progress(&game.def(gravity).id).attempts.len(), 1);
+        assert_eq!(game.charges_left(gravity), 2);
+        assert_eq!(physics_core::progress::Save::from_ron(&std::fs::read_to_string(&game.save_path).unwrap()).unwrap(), game.save);
+        assert!(game.finish_test().is_none());
+        let _ = std::fs::remove_file(&game.save_path);
+    }
+
+    #[test]
+    fn a_refused_request_runs_nothing() {
+        let mut game = game(15);
+        let mut ui = Ui::default();
+        // The tutorial, solved, with its block taken off the cart: refused, and nothing is charged.
+        solve(&mut game, PuzzleKind::Rail);
+        ui.drafts[0] = vec![format!("{} m", game.layout.rail_target)];
+        assert!(accept(&mut game, &mut ui, Request::Commit(0)).is_none());
+        assert!(ui.refusal.is_some());
+        assert!(game.pending.is_none());
+        assert_eq!(game.charges_left(0), 3);
+        // The drop tower's experiment waits for the light gate.
+        let gravity = game.chapter.puzzles.iter().position(|p| p.kind == PuzzleKind::Gravity).unwrap();
+        solve(&mut game, PuzzleKind::Chase);
+        assert!(accept(&mut game, &mut ui, Request::Demo(gravity)).is_none());
+        game.save.placed.insert(game.def(gravity).id.clone(), 5);
+        assert!(matches!(accept(&mut game, &mut ui, Request::Demo(gravity)), Some(Accepted::Demo { .. })));
         let _ = std::fs::remove_file(&game.save_path);
     }
 

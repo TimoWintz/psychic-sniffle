@@ -175,8 +175,19 @@ impl Save {
 
     /// Record a judged test: uses one charge and marks the puzzle solved on a pass.
     pub fn record(&mut self, puzzle_id: &str, values: Vec<CommittedValue>, outcome: &Outcome) {
+        self.use_charge(puzzle_id);
+        self.record_attempt(puzzle_id, values, outcome);
+    }
+
+    /// Use one of a station's charges, as committing a test does.
+    pub fn use_charge(&mut self, puzzle_id: &str) {
+        self.puzzles.entry(puzzle_id.to_string()).or_default().charges_used += 1;
+    }
+
+    /// Record what a test showed, without using a charge ([`Save::use_charge`] did that at commit),
+    /// and mark the puzzle solved on a pass.
+    pub fn record_attempt(&mut self, puzzle_id: &str, values: Vec<CommittedValue>, outcome: &Outcome) {
         let progress = self.puzzles.entry(puzzle_id.to_string()).or_default();
-        progress.charges_used += 1;
         progress.solved |= outcome.pass;
         progress.attempts.push(Attempt {
             values,

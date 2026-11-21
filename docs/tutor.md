@@ -89,8 +89,12 @@ before it is shown:
 
 - every number in the reply is compared with the private answer values (in SI and in the units a
   player would naturally use, such as degrees for an angle);
-- a number within 2 % of an answer is replaced with `[yours to work out]`;
-- where many answers work (the ridge), the whole working range is guarded when followed by its unit;
+- a number within 2 % of an answer is replaced with `[yours to work out]`. For an answer that is
+  measured rather than counted (a speed, g, an angle), a number written without decimals counts only
+  with the answer's unit after it, so "about 12 m/s" is caught but the 2 in "(1/2) g t^2" is not;
+- where many answers work (the ridge, the channel), the whole working range is guarded when followed
+  by its unit. A unit counts as a whole word ("8 m" and "(8 m)", not "8 m/s"), and a count of blocks
+  may have a couple of words before its noun ("5 stone blocks");
 - numbers the player already has (notebook readings, values in the brief, the experiment's question
   and choices, numbers they typed in the chat) are never redacted;
 - while a reply is still streaming, a number that is still arriving is held back until it is complete.

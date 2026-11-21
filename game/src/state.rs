@@ -3,8 +3,8 @@
 
 use bevy::prelude::*;
 use physics_core::content::{Chapter, Found, PuzzleDef, Tier, chapter_1_1, tier_1};
-use physics_core::progress::Save;
-use physics_core::puzzle::{Ch1Layout, Instance, Outcome};
+use physics_core::progress::{CommittedValue, Save};
+use physics_core::puzzle::{Ch1Layout, Instance, Outcome, PuzzleKind};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -29,6 +29,18 @@ pub struct Game {
     pub save_path: PathBuf,
     /// Set if the save could not be read or written; shown in the interface.
     pub save_problem: Option<String>,
+    /// A test committed and judged, still playing out in the world. Its charge is already used, and
+    /// the save file holds it as if it had finished, so quitting mid-test does not take it back; the
+    /// game itself counts it only once it has played out (see [`Game::finish_test`]).
+    pub pending: Option<PendingTest>,
+}
+
+/// A judged test that has not been shown yet.
+#[derive(Clone, Debug)]
+pub struct PendingTest {
+    pub puzzle: usize,
+    pub values: Vec<CommittedValue>,
+    pub outcome: Outcome,
 }
 
 impl Game {
@@ -56,14 +68,14 @@ impl Game {
         });
         let chapter = chapter_1_1();
         assert_eq!(chapter.puzzles.len(), PUZZLES, "the chapter's puzzles and the island's stations must match");
-        Game { tier: tier_1(), chapter, layout: Ch1Layout::generate(save.seed), save, save_path, save_problem }
+        Game { tier: tier_1(), chapter, layout: Ch1Layout::generate(save.seed), save, save_path, save_problem, pending: None }
     }
 
     /// A new game on `seed` that saves to a scratch file, for tests.
     #[cfg(test)]
     pub fn for_test(seed: u64) -> Self {
         let save_path = std::env::temp_dir().join(format!("fp-test-{seed}-{}-{:?}.ron", std::process::id(), std::thread::current().id()));
-        Game { tier: tier_1(), chapter: chapter_1_1(), layout: Ch1Layout::generate(seed), save: Save::new(seed), save_path, save_problem: None }
+        Game { tier: tier_1(), chapter: chapter_1_1(), layout: Ch1Layout::generate(seed), save: Save::new(seed), save_path, save_problem: None, pending: None }
     }
 
     pub fn def(&self, puzzle: usize) -> &PuzzleDef {
@@ -123,15 +135,48 @@ impl Game {
         new
     }
 
-    /// Write the save file. A failure is kept for display rather than stopping the game.
+    /// A test has been committed: use its charge now and keep the verdict until the world has shown
+    /// it. The save file gets the whole test at once.
+    pub fn begin_test(&mut self, puzzle: usize, values: Vec<CommittedValue>, outcome: Outcome) {
+        let id = self.def(puzzle).id.clone();
+        self.save.use_charge(&id);
+        self.pending = Some(PendingTest { puzzle, values, outcome });
+        self.persist();
+    }
+
+    /// The test has played out: now it counts. Returns its outcome.
+    pub fn finish_test(&mut self) -> Option<Outcome> {
+        let test = self.pending.take()?;
+        let outcome = test.outcome.clone();
+        apply_test(&self.chapter, &mut self.save, test);
+        self.persist();
+        Some(outcome)
+    }
+
+    /// Write the save file, with any test still playing out counted as finished. A failure is kept
+    /// for display rather than stopping the game.
     pub fn persist(&mut self) {
-        let result = self
-            .save_path
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|()| std::fs::write(&self.save_path, self.save.to_ron()));
+        let text = match &self.pending {
+            Some(test) => {
+                let mut save = self.save.clone();
+                apply_test(&self.chapter, &mut save, test.clone());
+                save.to_ron()
+            }
+            None => self.save.to_ron(),
+        };
+        let result = self.save_path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&self.save_path, text));
         self.save_problem = result.err().map(|e| format!("Could not save to {}: {e}", self.save_path.display()));
     }
+}
+
+/// Count a test that has been shown (its charge is already used): the attempt, and on a pass at the
+/// drop tower the player's own g, which later puzzles use.
+fn apply_test(chapter: &Chapter, save: &mut Save, test: PendingTest) {
+    let def = &chapter.puzzles[test.puzzle];
+    if test.outcome.pass && def.kind == PuzzleKind::Gravity {
+        save.notebook.set("g", "gravitational acceleration (your calibration)", test.values[0].quantity, "calibrated");
+    }
+    save.record_attempt(&def.id, test.values, &test.outcome);
 }
 
 /// What happened at a station that may write handbook pages.

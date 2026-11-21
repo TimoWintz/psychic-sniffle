@@ -72,8 +72,9 @@ every island test checks that world. `waking::settle` puts it to the save's stag
 anything is meshed or collides; a test checks that sleeping and waking stage by stage gives back the
 island as built, that the ledge is out of reach until the ramp rises, that the north island is
 out of reach until the bridge stands (the channel runs from coast to coast, and the avatar stops at
-water too deep to wade, `island::too_deep`), that the skiff is out of reach until the seal sinks (the spine runs from coast to coast, a reef under the water at both
-ends, and nothing climbs it), and that neither launcher's line is touched by the way at any stage.
+water too deep to wade, `island::too_deep`), that the skiff is out of reach until the seal sinks after the last
+puzzle (the spine runs from coast to coast, a reef under the water at both ends, and nothing climbs
+it), and that neither launcher's line is touched by the way at any stage.
 When the way's blocks change for good (as a wake ends, or on a new game), `sim` builds the physics
 engine's static collider again, so tumbling debris meets the island the avatar walks on.
 

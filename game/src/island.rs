@@ -182,7 +182,8 @@ pub struct Way {
     pub ramp: Stonework,
     /// The stone gate's leaf, in the rail between its posts: it sinks as the haul track's wakes.
     pub leaf: Stonework,
-    /// The seal in the pass through the spine: it sinks as the ridge's machine wakes.
+    /// The seal in the pass through the spine, between the tilting launcher and the quay: it sinks
+    /// once the tiller is in the landing circle, before the light runs through the pass.
     pub seal: Stonework,
     /// The builders' bridge over the channel to the north island: it rises as the casket lands on the
     /// platform, before the light runs over it to the tilting launcher.
@@ -209,7 +210,8 @@ pub struct Stonework {
     pub stage: usize,
     pub rises: bool,
     /// Whether it moves while the machine whose job was just done lights up, before the light runs on
-    /// (the bridge, which the light runs over), rather than as the next machine wakes.
+    /// (the bridge and the seal, which the light runs over and through), rather than as the next
+    /// machine wakes.
     pub with_glow: bool,
 }
 
@@ -927,10 +929,12 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     }
 
     // The seal: a slab of stone filling the pass through the spine where the road crosses it, between
-    // two standing stones (see `spine`). The island is built awake, so it is listed, not laid.
+    // two standing stones (see `spine`). The island is built awake, so it is listed, not laid. It
+    // sinks once the tiller is in the landing circle, before the light runs through the pass.
     let seal = Stonework {
         cells: (PASS_X - 1..=PASS_X + 1).flat_map(|x| (GROUND..GROUND + SEAL_H).map(move |y| (IVec3::new(x, y, ridge_row), Material::Limestone))).collect(),
-        stage: 4,
+        stage: 5,
+        with_glow: true,
         ..default()
     };
     // The bridge as built, with the road's stone and quartz on its deck: it stands once the casket

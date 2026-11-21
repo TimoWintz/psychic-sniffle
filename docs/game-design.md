@@ -42,7 +42,8 @@ other line in the game is written, is set out in [writing.md](writing.md).
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
 - **Closing.** When the chapter's part is installed, and what woke along the way with it.
 - **Remarks.** A handful of lines about places (the wreck on the road, the shore facing the strait,
-  the ledge over the channel, the bridge once it stands, the ridge, the skiff on the old quay), each
+  the ledge over the channel, the bridge once it stands, the ridge, the shut seal in the pass,
+  the skiff on the old quay), each
   said once a session when the player comes near. Lumen makes a
   remark only when nothing is going on: no station open, no test or experiment running, the ruler
   away, nothing carried, its conversation closed, and nothing said for 40 seconds.
@@ -161,7 +162,7 @@ and each station is the next machine along it. At the start all of it is asleep;
 console glows. Each other console lights as its machine wakes. The road crosses the channel by the
 builders' bridge, which sleeps until the casket is across. On the north island the ridge runs on as a
 wall, the spine, from coast to coast (a reef under the water at both ends), and the road crosses it
-by one pass, which a stone seal closes.
+by one pass, which a stone seal closes until the tiller is in the landing circle.
 
 1. The road's rail runs east from the wreck. Its first stretch is the supply rail; past a stone gate
    the same rail is the haul track, where the same cart chases the crawler to the transfer crane.
@@ -178,27 +179,28 @@ few seconds), the way wakes, in a short scene behind letterbox bars:
 
 1. The machine whose job was done lights up (and, after the crawler's pass, the crane swings the
    sight off its back and sets it down at its foot; after the casket's, the bridge's pylons rise out
-   of the water and its deck runs out from both banks to meet in the middle, so the light can cross).
+   of the water and its deck runs out from both banks to meet in the middle, so the light can cross;
+   after the tiller's, the seal in the pass sinks, so the light can run through it).
 2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
 3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
-   cart rolls through, the ramp's steps rise out of the ground, the seal in the pass sinks, the
-   north gate's beam reaches across the strait). Its console's face and its lamp light with it.
+   cart rolls through, the ramp's steps rise out of the ground, the north gate's beam reaches
+   across the strait). Its console's face and its lamp light with it.
 4. The camera glides back to the player's own view, and the letterbox goes.
 
 Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly
 fills in from south to north. While the ramp sleeps the ledge cannot be reached at all: the outcrop
 is sheer all round, too tall to climb even with this planet's highest jump. Until the bridge stands
 the north island cannot be reached: the channel's water is too deep to wade, all the way from coast
-to coast. While the seal sleeps the north shore cannot be reached either: nothing climbs the spine,
-and nothing goes round it.
+to coast. While the seal sleeps the quay and the skiff cannot be reached either: nothing climbs the
+spine, and nothing goes round it. The castaway reaches the skiff only once its helm is home.
 
 | Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
 | The supply rail | their cart, and the one console that still glows; the cart will not run empty, so a block of theirs goes on it (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
 | Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
 | Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
-| Across the channel | the helm, in its casket, has to cross the channel to the north island; the first real shot with the player's g | both banks light and the bridge rises across the channel; the casket stays on the platform and the tiller waits on the tilting launcher; the seal in the pass through the spine sinks (it only ever stood in the castaway's way, not the helm's) |
-| Over the ridge | the tiller itself, on to the skiff | the tiller lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff takes its helm, which settles into the socket at the stern, and the helm's quartz lights (the rest of the skiff stays dark); Lumen hears the core for the first time |
+| Across the channel | the helm, in its casket, has to cross the channel to the north island; the first real shot with the player's g | both banks light and the bridge rises across the channel; the casket stays on the platform and the tiller waits on the tilting launcher |
+| Over the ridge | the tiller itself, on to the skiff | the tiller lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff takes its helm, which settles into the socket at the stern, and the helm's quartz lights (the rest of the skiff stays dark); Lumen hears the core for the first time; the seal in the pass through the spine sinks, and the castaway can walk to the skiff (the seal only ever stood in the castaway's way, not the helm's) |
 
 ## Pillars
 

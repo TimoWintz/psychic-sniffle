@@ -22,12 +22,12 @@ Chapter(
     ],
     remarks: [
         Remark(near: "The wreck", radius: 7.0, when: Always, line: Spoken(text: "That's the forward section, or what's left of it. I'm running on its cells. I'm sorry we landed on their road. I hope they wouldn't mind.")),
-        Remark(near: "The shore", radius: 10.0, when: Before("1.1.4"), line: Spoken(text: "Still nothing from over there. Either the core's gone cold or my receiver has. I'd rather it was the receiver.", look: Some("The main hull, across the strait"))),
+        Remark(near: "Tilting launcher: release point", radius: 8.0, when: Before("1.1.4"), line: Spoken(text: "Still nothing from over there. Either the core's gone cold or my receiver has. I'd rather it was the receiver.", look: Some("The main hull, across the strait"))),
         Remark(near: "The shore", radius: 10.0, when: After("1.1.4"), line: Spoken(text: "The gate's still pointing over there. I've no idea what the builders meant by it, but I like where it's pointing.", look: Some("The main hull, across the strait"))),
         Remark(near: "Ledge launcher: release point", radius: 8.0, when: Before("1.1.3"), line: Spoken(text: "That's deep water down there, and there's no way across it that I can see. Nobody's carrying a casket over that, and whoever built this launcher must have thought the same.")),
         Remark(near: "The bridge", radius: 10.0, when: After("1.1.3"), line: Spoken(text: "I watched this come up out of the water and I still can't tell you what holds it. Those cables are the same light as the road. I'd love to meet whoever thought of that.")),
         Remark(near: "Ridge: foot, near side", radius: 8.0, when: Before("1.1.4"), line: Spoken(text: "The skiff's just over this ridge, and the strait right behind it. It's close enough to see, but far too steep to carry anything up.")),
-        Remark(near: "The skiff on the slipway", radius: 12.0, when: Before("1.1.4"), line: Spoken(text: "So that's their skiff. It's stone, all of it. I wouldn't have bet on stone floating, but they built it a slipway, so they must have known something I don't. There's an empty socket at the stern where the helm goes.")),
+        Remark(near: "The seal", radius: 8.0, when: Before("1.1.4"), line: Spoken(text: "The skiff's on the other side of this slab, at the top of the slipway. It's stone, all of it. I wouldn't have bet on stone floating, but they built it a slipway, so they must have known something I don't.")),
         Remark(near: "The skiff on the slipway", radius: 12.0, when: After("1.1.4"), line: Spoken(text: "The helm's lit, but the rest of her is still dark. She'll need power, a sound hull and something to push her before she can cross. The rest of me will have to wait a little longer.", look: Some("The main hull, across the strait"))),
     ],
     concepts: [

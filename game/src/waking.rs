@@ -12,8 +12,8 @@
 //! - console `i` (each machine has its own, a stone of the builders' with a quartz face) and the
 //!   lamps beside it are awake when `i ≤ k`: the first is the only one awake at the start;
 //! - the stone gate's leaf is down from stage 1, the ramp onto the outcrop stands from stage 3, the
-//!   bridge over the channel stands and the seal in the pass through the spine is down from stage 4,
-//!   and the north gate's beam shines at stage 5, when the skiff takes its helm;
+//!   bridge over the channel stands from stage 4, and at stage 5, when the skiff takes its helm, the
+//!   seal in the pass through the spine is down and the north gate's beam shines;
 //! - the launchers' sight is off the crawler and at the crane's foot from stage 2, and set on the
 //!   ledge launcher from stage 3.
 //!
@@ -135,12 +135,13 @@ pub fn settle(world: &mut VoxelWorld, way: &Way, stage: usize) -> Changes {
 /// The parts of one wake, in order.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Phase {
-    /// The machine whose job was just done lights up (and the crane lifts the sight off).
+    /// The machine whose job was just done lights up (and the crane lifts the sight off, the bridge
+    /// rises, or the seal sinks).
     Glow,
     /// The light runs up the road to the next machine.
     Run,
     /// The next machine wakes: its quartz lights and its parts move (the gate's leaf sinks, the
-    /// ramp rises, the seal sinks, the north gate's beam reaches out).
+    /// ramp rises, the north gate's beam reaches out).
     Wake,
     /// Its console has lit with it; the camera glides back to the player's own view.
     Home,
@@ -150,8 +151,9 @@ pub enum Phase {
 const GLOW: f32 = 1.0;
 /// At the crawler's pass, the crane lifts the sight off while its quartz lights.
 const GLOW_LIFT: f32 = 3.2;
-/// At the casket's pass, the bridge over the channel rises while both banks light.
-const GLOW_BRIDGE: f32 = 4.0;
+/// At the casket's pass the bridge over the channel rises while both banks light, and at the
+/// tiller's the seal in the pass sinks while the landing circle lights.
+const GLOW_MOVE: f32 = 4.0;
 /// How fast the light runs, and the shortest and longest a run may take.
 const RUN_SPEED: f32 = 14.0;
 const RUN_TIME: (f32, f32) = (2.0, 5.0);
@@ -196,7 +198,7 @@ impl Timeline {
             glow: if sight_lifted(stage) && !sight_lifted(stage - 1) {
                 GLOW_LIFT
             } else if way.stonework().into_iter().any(|work| work.with_glow && work.stage == stage) {
-                GLOW_BRIDGE
+                GLOW_MOVE
             } else {
                 GLOW
             },
@@ -543,7 +545,6 @@ fn wake_focus(stage: usize, sites: &Sites) -> Vec3 {
         // Over the gate's lintel, so the camera is not drawn in between its posts.
         1 => way.stone_gate + Vec3::Y * 4.5,
         3 => way.ramp.centre(),
-        4 => way.seal.centre(),
         5 => way.keystone,
         k => way.machines[k] + Vec3::Y * 1.5,
     }
@@ -985,7 +986,7 @@ mod tests {
     }
 
     /// The seal stands in the castaway's way: the spine runs from coast to coast, and nothing goes
-    /// round it or over it until the casket is across.
+    /// round it or over it until the tiller is in the landing circle, even with the bridge up.
     #[test]
     fn the_skiff_is_out_of_reach_until_the_seal_sinks() {
         for seed in 0..24 {
@@ -994,9 +995,9 @@ mod tests {
             let climb = climb(&layout);
             let spawn = sites.spawn.floor().as_ivec3();
             let yard = (sites.slipway + Vec3::Y * 0.5).floor().as_ivec3();
-            settle(&mut world, &sites.way, 3);
-            assert!(!reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the skiff can be reached before the seal sinks (climb {climb})");
             settle(&mut world, &sites.way, 4);
+            assert!(!reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the skiff can be reached before the seal sinks (climb {climb})");
+            settle(&mut world, &sites.way, 5);
             assert!(reachable(&world, spawn, climb).contains(&yard), "seed {seed}: the pass does not lead to the skiff");
         }
     }

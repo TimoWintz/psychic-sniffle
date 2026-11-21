@@ -192,9 +192,8 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
   shot with the player's g. The platform is beside the tilting launcher. Pass: the casket stays on
   the platform and the tiller waits on the tilting launcher.
 - **Wakes.** Both banks; the builders' suspension bridge rises out of the water across the channel
-  (its pylons first, then its deck from both banks), so the castaway can follow the helm over; the
-  seal in the pass through the spine, the ridge's wall from coast to
-  coast, sinks, and the north shore can be reached.
+  (its pylons first, then its deck from both banks), so the castaway can follow the helm over to
+  the tilting launcher.
 - **Brief.** Land the helm's casket on the strip across the channel. The ledge launcher fires
   horizontally, but its worn dial turns only within a band (`vmin` to `vmax`, found and painted on
   the rating plate by the castaway), and from the bare ledge no speed in the band reaches the strip.
@@ -233,8 +232,9 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
 
 - **Story.** The one that matters: the tiller, come across the channel, over the ridge to the skiff on
   the builders' old quay on the north shore.
-- **Wakes.** The landing circle, then the north gate, whose light points across the strait at the main
-  hull. In the closing, Lumen hears the core for the first time: faint, but there.
+- **Wakes.** The landing circle; the seal in the pass through the spine, the ridge's wall from coast
+  to coast, sinks, and the quay and the skiff can be reached; then the north gate, whose light points
+  across the strait at the main hull. In the closing, Lumen hears the core for the first time: faint, but there.
 - **Brief.** Launch the tiller over the ridge into the landing circle on the quay. The launcher has a maximum
   speed.
 - **Investigate.** Ruler: distance to the circle, distance to the ridge, height of the ridge.

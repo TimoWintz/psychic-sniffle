@@ -69,6 +69,7 @@ impl Landmarks {
         places.push(("The north gate".into(), way.keystone));
         places.push(("The ramp".into(), way.ramp.centre() + Vec3::Y * 0.5));
         places.push(("The bridge".into(), way.bridge.centre() + Vec3::Y * 1.0));
+        places.push(("The seal".into(), way.seal.centre() + Vec3::Y * 0.5));
         places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
         Landmarks(places)
     }

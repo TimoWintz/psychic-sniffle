@@ -543,7 +543,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         UntilWakeAt { stage: 4, at: 2.6, within: 30.0 },
         Shot("16a_wake_the_bridge_rises"),
         UntilWakeAt { stage: 4, at: wakes[3].wake_starts() + 1.4, within: 30.0 },
-        Shot("16b_wake_the_seal_sinks"),
+        Shot("16b_wake_the_tilting_launcher"),
         WaitWakeEnd(30.0),
         // The casket is down on the platform, and the tiller waits on the tilting launcher beside it.
         Watch(Some(sites.ridge_launch.origin - sites.ridge_launch.direction * 1.5)),
@@ -597,6 +597,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(3.0),
         Shot("19_ridge_result"),
         Station(None),
+        UntilWakeAt { stage: 5, at: 2.4, within: 30.0 },
+        Shot("19a_wake_the_seal_sinks"),
         UntilWakeAt { stage: 5, at: wakes[4].wake_starts() + 2.2, within: 30.0 },
         Shot("19_wake_north_gate"),
         WaitWakeEnd(30.0),
@@ -735,11 +737,12 @@ fn way(sites: &Sites) -> Vec<Step> {
     };
     photograph(&mut steps, "asleep");
     // Four wakes as they play: the light running, the machine waking, its console lighting, the
-    // camera on its way home. At the casket's pass the bridge rises first, while both banks light.
+    // camera on its way home. At the casket's pass the bridge rises first, while both banks light,
+    // and at the tiller's the seal sinks first, while the landing circle lights.
     for stage in [1, 3, 4, 5] {
         let wake = Timeline::new(stage, way);
         let mut moments = vec![wake.wake_starts() * 0.6, wake.wake_starts() + 0.6, wake.console_lights() + 0.4, wake.length() - 0.5];
-        if stage == 4 {
+        if stage >= 4 {
             moments.splice(0..0, [1.2, 2.4, 3.6]);
         }
         steps.extend([Solve(stage - 1), UntilWoken { stage: stage - 1, within: 240.0 }, WaitWakeEnd(240.0), Solve(stage)]);

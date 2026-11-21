@@ -198,12 +198,8 @@ pub enum Event {
     CastawayAppears,
 }
 
-const EVENTS: [(f32, Event); 4] = [
-    (BREAKUP, Event::Breakup),
-    (HULL_IMPACT, Event::HullImpact),
-    (TOUCHDOWN, Event::Touchdown),
-    (CASTAWAY, Event::CastawayAppears),
-];
+const EVENTS: [(f32, Event); 4] =
+    [(BREAKUP, Event::Breakup), (HULL_IMPACT, Event::HullImpact), (TOUCHDOWN, Event::Touchdown), (CASTAWAY, Event::CastawayAppears)];
 
 /// The events after `from` up to and including `to`, both times in the loop. `to < from` means the
 /// loop wrapped in between.

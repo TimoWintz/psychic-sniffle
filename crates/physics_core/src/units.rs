@@ -118,19 +118,11 @@ impl Dim {
 }
 
 fn wrap(parts: &[String]) -> String {
-    if parts.len() == 1 {
-        parts[0].clone()
-    } else {
-        format!("({})", parts.join(" "))
-    }
+    if parts.len() == 1 { parts[0].clone() } else { format!("({})", parts.join(" ")) }
 }
 
 fn article(word: &str) -> &'static str {
-    if word.starts_with(['a', 'e', 'i', 'o', 'u']) {
-        "an"
-    } else {
-        "a"
-    }
+    if word.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" }
 }
 
 struct Named {
@@ -195,11 +187,7 @@ impl Quantity {
     /// Format in the preferred SI unit with four significant figures: "12.50 m/s".
     pub fn display(&self) -> String {
         let unit = self.dim.unit_symbol();
-        if unit.is_empty() {
-            sig(self.value, 4)
-        } else {
-            format!("{} {}", sig(self.value, 4), unit)
-        }
+        if unit.is_empty() { sig(self.value, 4) } else { format!("{} {}", sig(self.value, 4), unit) }
     }
 
     /// Format in a named unit ("deg", "km"). Falls back to [`Quantity::display`] if the unit is unknown

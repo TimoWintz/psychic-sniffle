@@ -2,8 +2,8 @@
 //! interface is showing.
 
 use bevy::prelude::*;
-use physics_core::notebook::source;
 use physics_core::content::{Chapter, Found, PuzzleDef, Tier, chapter_1_1, tier_1};
+use physics_core::notebook::source;
 use physics_core::progress::{CommittedValue, Save};
 use physics_core::puzzle::{Ch1Layout, Instance, Outcome, PuzzleKind};
 use std::collections::BTreeMap;
@@ -55,9 +55,10 @@ impl Game {
         let save_path = PathBuf::from(std::env::var("GAME_SAVE").unwrap_or_else(|_| "saves/slot1.ron".into()));
         let opened = open_save(&save_path);
         let save = opened.save.unwrap_or_else(|| {
-            let seed = std::env::var("GAME_SEED").ok().and_then(|s| s.parse().ok()).unwrap_or_else(|| {
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64)
-            });
+            let seed = std::env::var("GAME_SEED")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64));
             Save::new(seed)
         });
         let chapter = chapter_1_1();
@@ -335,10 +336,7 @@ impl Ui {
 
     /// The puzzle the player is working on: the open station, else the one they stand at.
     pub fn focus(&self, game: &Game) -> usize {
-        self.station
-            .or(self.near_station)
-            .or(game.next_unsolved())
-            .unwrap_or(game.chapter.puzzles.len() - 1)
+        self.station.or(self.near_station).or(game.next_unsolved()).unwrap_or(game.chapter.puzzles.len() - 1)
     }
 }
 

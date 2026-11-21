@@ -72,14 +72,10 @@ pub(crate) fn spawn(
     commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(blocks.clone()), NotShadowCaster));
 
     // Islands on the horizon, larger than life so the haze softens them.
-    for (i, (centre, scale)) in [
-        (Vec3::new(-180.0, 0.0, 40.0), 3.0),
-        (Vec3::new(380.0, 0.0, -140.0), 4.0),
-        (Vec3::new(150.0, 0.0, -280.0), 3.5),
-        (Vec3::new(-110.0, 0.0, 380.0), 4.5),
-    ]
-    .into_iter()
-    .enumerate()
+    for (i, (centre, scale)) in
+        [(Vec3::new(-180.0, 0.0, 40.0), 3.0), (Vec3::new(380.0, 0.0, -140.0), 4.0), (Vec3::new(150.0, 0.0, -280.0), 3.5), (Vec3::new(-110.0, 0.0, 380.0), 4.5)]
+            .into_iter()
+            .enumerate()
     {
         let distant = distant_island(i as i32);
         let half = distant.size.as_vec3() * scale / 2.0;

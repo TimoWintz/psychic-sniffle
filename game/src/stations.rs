@@ -117,10 +117,7 @@ fn proximity(
     player: Single<&Transform, With<Player>>,
 ) {
     let position = player.translation;
-    ui.near_station = sites
-        .stations
-        .iter()
-        .position(|console| (console.as_vec3() + Vec3::splat(0.5)).distance(position + Vec3::Y * 0.5) <= REACH);
+    ui.near_station = sites.stations.iter().position(|console| (console.as_vec3() + Vec3::splat(0.5)).distance(position + Vec3::Y * 0.5) <= REACH);
     // Walking away closes the panel.
     if ui.station.is_some() && ui.station != ui.near_station {
         ui.station = None;
@@ -189,7 +186,15 @@ pub fn look_at_station(orbit: &mut OrbitCamera, game: &Game, sites: &Sites, puzz
 /// While a station is open the camera shows its puzzle, and it glides back to the avatar when the
 /// player leaves. A test borrows it meanwhile (`sim` hands it back), and a wake closes the station
 /// and borrows it itself.
-fn frame_station(game: Res<Game>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, waking: Res<Waking>, mut orbit: ResMut<OrbitCamera>, mut shown: Local<Option<usize>>) {
+fn frame_station(
+    game: Res<Game>,
+    sites: Res<Sites>,
+    ui: Res<Ui>,
+    sim: Res<Sim>,
+    waking: Res<Waking>,
+    mut orbit: ResMut<OrbitCamera>,
+    mut shown: Local<Option<usize>>,
+) {
     if ui.station == *shown {
         return;
     }

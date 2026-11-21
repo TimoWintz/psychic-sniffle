@@ -13,10 +13,10 @@ use crate::state::{Game, PageEvent, RECHARGE_SECONDS, Ui};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use physics_core::notebook::source;
 use physics_core::ballistics::{Flight, Projectile};
 use physics_core::demo::{DemoPlayback, Shot};
 use physics_core::expr::evaluate;
+use physics_core::notebook::source;
 use physics_core::progress::CommittedValue;
 use physics_core::puzzle::{Ch1Layout, InputSource, Inputs, Outcome, Playback, PuzzleKind};
 use physics_core::units::Quantity;
@@ -41,18 +41,66 @@ const TRAIL: [f32; 3] = [1.0, 0.85, 0.2];
 enum Running {
     /// The test mass falls from the drop tower; a flash marks it at each of `flashes`. The light
     /// gate is clamped `gate` metres below the release, and the stopwatch stops there.
-    Strobe { puzzle: usize, t: f32, flashes: Vec<f64>, shown: usize, guess: Option<usize>, gate: u32 },
+    Strobe {
+        puzzle: usize,
+        t: f32,
+        flashes: Vec<f64>,
+        shown: usize,
+        guess: Option<usize>,
+        gate: u32,
+    },
     /// Two demonstration bodies fly their exact paths from a launch site.
-    Pair { puzzle: usize, t: f32, shots: [Shot; 2], site: LaunchSite, offsets: [Vec3; 2], size: f32, landed: [bool; 2], guess: Option<usize> },
-    MastDrop { puzzle: usize, t: f32, predicted: f32, actual: f32, verdict: Verdict },
+    Pair {
+        puzzle: usize,
+        t: f32,
+        shots: [Shot; 2],
+        site: LaunchSite,
+        offsets: [Vec3; 2],
+        size: f32,
+        landed: [bool; 2],
+        guess: Option<usize>,
+    },
+    MastDrop {
+        puzzle: usize,
+        t: f32,
+        predicted: f32,
+        actual: f32,
+        verdict: Verdict,
+    },
     /// A launcher's load in flight; `landed` once it has been handed to the physics engine.
-    Flight { puzzle: usize, t: f32, projectile: Projectile, flight: Flight, site: LaunchSite, landed: bool, verdict: Verdict },
-    Slide { puzzle: usize, t: f32, distance: f32, duration: f32, verdict: Verdict },
+    Flight {
+        puzzle: usize,
+        t: f32,
+        projectile: Projectile,
+        flight: Flight,
+        site: LaunchSite,
+        landed: bool,
+        verdict: Verdict,
+    },
+    Slide {
+        puzzle: usize,
+        t: f32,
+        distance: f32,
+        duration: f32,
+        verdict: Verdict,
+    },
     /// The haul cart and the crawler set off from their marks at steady speeds; a flash marks both at
     /// each of `flashes`. Positions are along the track (the cart's front coupler, the crawler's rear).
-    Pace { puzzle: usize, t: f32, flashes: Vec<f64>, shown: usize, guess: Option<usize>, run: Run },
+    Pace {
+        puzzle: usize,
+        t: f32,
+        flashes: Vec<f64>,
+        shown: usize,
+        guess: Option<usize>,
+        run: Run,
+    },
     /// The haul cart sent after the crawler, until it reaches it or the crawler reaches the buffer.
-    Chase { puzzle: usize, t: f32, run: Run, verdict: Verdict },
+    Chase {
+        puzzle: usize,
+        t: f32,
+        run: Run,
+        verdict: Verdict,
+    },
 }
 
 /// The haul cart and the crawler on the move: both from their marks, each at its steady speed, for
@@ -108,9 +156,9 @@ impl Sim {
     /// The puzzle whose test is running, if one is (a demonstration is not a test).
     pub fn testing(&self) -> Option<usize> {
         match &self.running {
-            Some(
-                Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. } | Running::Chase { puzzle, .. },
-            ) => Some(*puzzle),
+            Some(Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. } | Running::Chase { puzzle, .. }) => {
+                Some(*puzzle)
+            }
             Some(Running::Strobe { .. } | Running::Pair { .. } | Running::Pace { .. }) | None => None,
         }
     }
@@ -278,10 +326,24 @@ pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Sim>()
-            .init_resource::<TerrainReshaped>()
-            .add_systems(Startup, setup)
-            .add_systems(Update, (handle_requests, advance, settle, recharge, draw_trail, follow_launcher, relay, ride_the_cart, props::spin_wheels, props::step_legs, reshape_terrain, spread_splashes).chain());
+        app.init_resource::<Sim>().init_resource::<TerrainReshaped>().add_systems(Startup, setup).add_systems(
+            Update,
+            (
+                handle_requests,
+                advance,
+                settle,
+                recharge,
+                draw_trail,
+                follow_launcher,
+                relay,
+                ride_the_cart,
+                props::spin_wheels,
+                props::step_legs,
+                reshape_terrain,
+                spread_splashes,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -377,12 +439,7 @@ pub(crate) fn setup(
     let [tiller_shaft, tiller_core] = props::tiller(TILLER_SIZE).map(|m| meshes.add(m));
     let casket = (casket_body, casket_band, trim.0[3].clone());
     let tiller = (tiller_shaft, tiller_core, trim.0[4].clone());
-    let ghost = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.4, 0.8, 1.0, 0.35),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    });
+    let ghost = materials.add(StandardMaterial { base_color: Color::srgba(0.4, 0.8, 1.0, 0.35), alpha_mode: AlphaMode::Blend, unlit: true, ..default() });
     for (prop, material) in [
         (Prop::TowerMass, stone.clone()),
         (Prop::MastMass, stone.clone()),
@@ -473,29 +530,25 @@ pub(crate) fn setup(
     for (j, ground) in sites.scrap.iter().enumerate() {
         let piece = props::debris(&mut meshes, &finishes, j);
         let lift = Vec3::Y * piece.depth(&meshes) * SCRAP_SCALE;
-        commands.spawn((
-            RigidBody::Static,
-            piece.collider,
-            Mesh3d(piece.mesh),
-            MeshMaterial3d(piece.material),
-            Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
-        ))
-        .with_children(|trim| {
-            for (mesh, material, transform) in piece.trim {
-                trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
-            }
-        });
+        commands
+            .spawn((
+                RigidBody::Static,
+                piece.collider,
+                Mesh3d(piece.mesh),
+                MeshMaterial3d(piece.material),
+                Transform::from_translation(*ground + lift).with_rotation(Quat::from_rotation_y(j as f32 * 2.1)).with_scale(Vec3::splat(SCRAP_SCALE)),
+            ))
+            .with_children(|trim| {
+                for (mesh, material, transform) in piece.trim {
+                    trim.spawn((Mesh3d(mesh), MeshMaterial3d(material), transform));
+                }
+            });
     }
     let unlit = |materials: &mut Assets<StandardMaterial>, c: [f32; 3]| {
         materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), unlit: true, ..default() })
     };
     let pair = PAIR_COLOURS.map(|c| unlit(&mut materials, c));
-    let afterimage = materials.add(StandardMaterial {
-        base_color: Color::srgba(1.0, 0.72, 0.25, 0.5),
-        alpha_mode: AlphaMode::Blend,
-        unlit: true,
-        ..default()
-    });
+    let afterimage = materials.add(StandardMaterial { base_color: Color::srgba(1.0, 0.72, 0.25, 0.5), alpha_mode: AlphaMode::Blend, unlit: true, ..default() });
     commands.insert_resource(PropAssets {
         stone,
         pair,
@@ -798,19 +851,27 @@ fn finish_demo(game: &mut Game, ui: &mut Ui, puzzle: usize, guess: Option<usize>
 
 /// Give a body to the physics engine with the velocity it has at the judged moment.
 /// Hand a body over to the physics engine: `mesh` inside a box of `size`, moving at `velocity`.
-fn hand_over(commands: &mut Commands, mesh: Handle<Mesh>, size: Vec3, centre: Vec3, velocity: Vec3, material: Handle<StandardMaterial>, after: AfterSettling) -> Entity {
+fn hand_over(
+    commands: &mut Commands,
+    mesh: Handle<Mesh>,
+    size: Vec3,
+    centre: Vec3,
+    velocity: Vec3,
+    material: Handle<StandardMaterial>,
+    after: AfterSettling,
+) -> Entity {
     commands
         .spawn((
-        RigidBody::Dynamic,
-        Collider::cuboid(size.x, size.y, size.z),
-        LinearVelocity(velocity),
-        AngularVelocity(Vec3::new(0.3, 0.2, -1.2)),
-        Restitution::new(0.25),
-        Friction::new(0.8),
-        Mesh3d(mesh),
-        MeshMaterial3d(material),
-        Transform::from_translation(centre),
-        Settling { left: 6.0, after },
+            RigidBody::Dynamic,
+            Collider::cuboid(size.x, size.y, size.z),
+            LinearVelocity(velocity),
+            AngularVelocity(Vec3::new(0.3, 0.2, -1.2)),
+            Restitution::new(0.25),
+            Friction::new(0.8),
+            Mesh3d(mesh),
+            MeshMaterial3d(material),
+            Transform::from_translation(centre),
+            Settling { left: 6.0, after },
         ))
         .id()
 }
@@ -877,7 +938,15 @@ fn advance(
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
-                    hand_over(&mut commands, assets.mass.clone(), MASS_SIZE, transform.translation, Vec3::NEG_Y * g * fall_time, material.0.clone(), AfterSettling::Restore(Prop::TowerMass));
+                    hand_over(
+                        &mut commands,
+                        assets.mass.clone(),
+                        MASS_SIZE,
+                        transform.translation,
+                        Vec3::NEG_Y * g * fall_time,
+                        material.0.clone(),
+                        AfterSettling::Restore(Prop::TowerMass),
+                    );
                 }
             }
             if *t >= fall_time {
@@ -984,7 +1053,15 @@ fn advance(
                         sim.action = Some(transform.translation);
                         if *t >= *actual && *visibility != Visibility::Hidden {
                             *visibility = Visibility::Hidden;
-                            hand_over(&mut commands, assets.mass.clone(), MASS_SIZE, transform.translation, Vec3::NEG_Y * g * *actual, material.0.clone(), AfterSettling::Restore(Prop::MastMass));
+                            hand_over(
+                                &mut commands,
+                                assets.mass.clone(),
+                                MASS_SIZE,
+                                transform.translation,
+                                Vec3::NEG_Y * g * *actual,
+                                material.0.clone(),
+                                AfterSettling::Restore(Prop::MastMass),
+                            );
                         }
                     }
                     Prop::Ghost => {

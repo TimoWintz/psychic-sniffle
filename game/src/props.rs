@@ -146,7 +146,14 @@ fn wheels(meshes: &mut Assets<Mesh>, size: Vec3, radius: f32, width: f32, xs: &[
     let mesh = meshes.add(Cylinder::new(radius, width));
     let y = -size.y / 2.0 + radius;
     xs.iter()
-        .flat_map(|&x| [z, -z].map(|z| Part { mesh: mesh.clone(), transform: Transform::from_xyz(x, y, z).with_rotation(axle_along_z()), paint: Paint::Worn, motion: Motion::Wheel(radius) }))
+        .flat_map(|&x| {
+            [z, -z].map(|z| Part {
+                mesh: mesh.clone(),
+                transform: Transform::from_xyz(x, y, z).with_rotation(axle_along_z()),
+                paint: Paint::Worn,
+                motion: Motion::Wheel(radius),
+            })
+        })
         .collect()
 }
 
@@ -232,7 +239,11 @@ pub fn crawler(meshes: &mut Assets<Mesh>, size: Vec3, front: f32) -> Vehicle {
     // little below the hips, between the legs.
     let height = size.y / 2.0 - hip_y + 0.03;
     let length = size.x - COUPLER - EYE / 2.0;
-    let body = meshes.add(Mesh::from(Cuboid::new(length, height, 2.0 * body_half_z)).translated_by(Vec3::new(front * (COUPLER - EYE / 2.0) / 2.0, size.y / 2.0 - height / 2.0, 0.0)));
+    let body = meshes.add(Mesh::from(Cuboid::new(length, height, 2.0 * body_half_z)).translated_by(Vec3::new(
+        front * (COUPLER - EYE / 2.0) / 2.0,
+        size.y / 2.0 - height / 2.0,
+        0.0,
+    )));
     // A leg: a stone shank hung from the hip, with a block of quartz at the knee, both swinging from
     // the hip.
     let shank = meshes.add(Mesh::from(Cuboid::new(LEG_W, LEG_H, LEG_W)).translated_by(Vec3::Y * -LEG_H / 2.0));
@@ -250,7 +261,11 @@ pub fn crawler(meshes: &mut Assets<Mesh>, size: Vec3, front: f32) -> Vehicle {
     // A channel of quartz along each flank, just proud of it.
     let strip = meshes.add(Cuboid::new(length * 0.7, 0.05, 0.012));
     for side in [1.0, -1.0] {
-        parts.push(Part::fixed(&strip, Transform::from_xyz(front * (COUPLER - EYE / 2.0) / 2.0, size.y / 2.0 - height * 0.45, side * (body_half_z + 0.008)), Paint::Trim));
+        parts.push(Part::fixed(
+            &strip,
+            Transform::from_xyz(front * (COUPLER - EYE / 2.0) / 2.0, size.y / 2.0 - height * 0.45, side * (body_half_z + 0.008)),
+            Paint::Trim,
+        ));
     }
     let rear = -front;
     let hitch = meshes.add(Cuboid::new(COUPLER + 0.04, 0.12, 0.2));
@@ -436,7 +451,8 @@ pub fn debris(meshes: &mut Assets<Mesh>, finishes: &Finishes, kind: usize) -> De
             let along = Quat::from_rotation_z(FRAC_PI_2);
             // Proud of the pipe's ends, so their faces do not share its caps' planes.
             let flange = meshes.add(Cylinder::new(radius + 0.08, 0.06));
-            let trim = [1.0, -1.0].map(|x| (flange.clone(), finishes.iron.clone(), Transform::from_xyz(x * (length / 2.0 - 0.02), 0.0, 0.0).with_rotation(along)));
+            let trim =
+                [1.0, -1.0].map(|x| (flange.clone(), finishes.iron.clone(), Transform::from_xyz(x * (length / 2.0 - 0.02), 0.0, 0.0).with_rotation(along)));
             Debris {
                 collider: Collider::compound(vec![(Vec3::ZERO, along, Collider::cylinder(radius + 0.08, length))]),
                 mesh: meshes.add(Mesh::from(Cylinder::new(radius, length)).rotated_by(along)),
@@ -474,7 +490,11 @@ pub fn debris(meshes: &mut Assets<Mesh>, finishes: &Finishes, kind: usize) -> De
                     (meshes.add(Cuboid::new(0.56, 0.3, 0.02)), finishes.screen.clone(), Transform::from_xyz(0.0, 0.03, size.z / 2.0 + 0.005)),
                     (meshes.add(Cuboid::new(size.x + 0.04, 0.05, size.z + 0.04)), finishes.alloy.clone(), Transform::from_xyz(0.0, size.y / 2.0 - 0.015, 0.0)),
                     // A torn cable out of its back.
-                    (meshes.add(Cylinder::new(0.025, 0.4)), finishes.copper.clone(), Transform::from_xyz(-0.2, -0.1, -size.z / 2.0 - 0.17).with_rotation(Quat::from_rotation_x(FRAC_PI_2 - 0.4))),
+                    (
+                        meshes.add(Cylinder::new(0.025, 0.4)),
+                        finishes.copper.clone(),
+                        Transform::from_xyz(-0.2, -0.1, -size.z / 2.0 - 0.17).with_rotation(Quat::from_rotation_x(FRAC_PI_2 - 0.4)),
+                    ),
                 ],
             }
         }
@@ -533,7 +553,11 @@ mod tests {
     #[test]
     fn vehicles_have_no_flickering_faces() {
         let mut meshes = Assets::<Mesh>::default();
-        let vehicles = [cart(&mut meshes, Vec3::new(0.9, 0.7, 0.9), false), cart(&mut meshes, Vec3::new(1.2, 0.7, 0.9), true), crawler(&mut meshes, Vec3::new(1.4, 0.9, 0.9), 1.0)];
+        let vehicles = [
+            cart(&mut meshes, Vec3::new(0.9, 0.7, 0.9), false),
+            cart(&mut meshes, Vec3::new(1.2, 0.7, 0.9), true),
+            crawler(&mut meshes, Vec3::new(1.4, 0.9, 0.9), 1.0),
+        ];
         for vehicle in &vehicles {
             // The body is painted with the vehicle's own stone (`None`).
             let mut pieces = vec![(None, meshes.get(&vehicle.body).unwrap(), Transform::default())];

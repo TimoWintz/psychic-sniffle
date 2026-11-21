@@ -3,7 +3,7 @@
 
 use physics_core::content::chapter_1_1;
 use physics_core::progress::{CommittedValue, Save};
-use physics_core::puzzle::{Ch1Layout, Instance, Inputs, PuzzleKind};
+use physics_core::puzzle::{Ch1Layout, Inputs, Instance, PuzzleKind};
 use physics_core::units::Quantity;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -50,18 +50,9 @@ fn serve_once(status_line: &'static str, content_type: &'static str, body: Strin
         let mut raw = vec![0u8; length];
         reader.read_exact(&mut raw).unwrap();
         let mut stream = reader.into_inner();
-        write!(
-            stream,
-            "HTTP/1.1 {status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
+        write!(stream, "HTTP/1.1 {status_line}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
         stream.flush().unwrap();
-        let _ = tx.send(Seen {
-            request_line: request_line.trim().to_string(),
-            authorization,
-            body: serde_json::from_slice(&raw).unwrap(),
-        });
+        let _ = tx.send(Seen { request_line: request_line.trim().to_string(), authorization, body: serde_json::from_slice(&raw).unwrap() });
     });
     (base_url, rx)
 }
@@ -77,12 +68,7 @@ fn event_stream(pieces: &[&str]) -> String {
 }
 
 fn tutor_at(base_url: String) -> Tutor {
-    Tutor::with_provider(Arc::new(ChatCompletions {
-        base_url,
-        model: "stand-in".into(),
-        api_key: Some("test-key".into()),
-        max_tokens: None,
-    }))
+    Tutor::with_provider(Arc::new(ChatCompletions { base_url, model: "stand-in".into(), api_key: Some("test-key".into()), max_tokens: None }))
 }
 
 /// A channel puzzle with gravity already in the notebook and one failed test on record.
@@ -173,20 +159,11 @@ fn a_reply_is_streamed_and_the_answer_is_redacted() {
 #[test]
 fn a_service_error_is_shown_and_the_conversation_recovers() {
     let (ctx, _) = channel_context(3);
-    let (base_url, _) = serve_once(
-        "401 Unauthorized",
-        "application/json",
-        r#"{"error":{"message":"No auth credentials found"}}"#.to_string(),
-    );
+    let (base_url, _) = serve_once("401 Unauthorized", "application/json", r#"{"error":{"message":"No auth credentials found"}}"#.to_string());
     let mut conversation = Conversation::default();
     assert!(conversation.ask(&tutor_at(base_url), &ctx, "why did it fall short?"));
     wait(&mut conversation);
-    assert_eq!(
-        conversation.turns.last(),
-        Some(&Turn::Problem(
-            "The tutor service answered with an error (401): No auth credentials found".to_string()
-        ))
-    );
+    assert_eq!(conversation.turns.last(), Some(&Turn::Problem("The tutor service answered with an error (401): No auth credentials found".to_string())));
 
     // The next request merges the unanswered question with the new one.
     let (base_url, seen) = serve_once("200 OK", "text/event-stream", event_stream(&["What did you observe?"]));
@@ -207,11 +184,7 @@ fn an_unreachable_service_is_reported() {
     let mut conversation = Conversation::default();
     assert!(conversation.ask(&tutor_at(format!("http://127.0.0.1:{port}/v1")), &ctx, "hello"));
     wait(&mut conversation);
-    assert!(
-        matches!(conversation.turns.last(), Some(Turn::Problem(p)) if p.starts_with("Could not reach the tutor service")),
-        "{:?}",
-        conversation.turns
-    );
+    assert!(matches!(conversation.turns.last(), Some(Turn::Problem(p)) if p.starts_with("Could not reach the tutor service")), "{:?}", conversation.turns);
 }
 
 #[test]
@@ -280,9 +253,7 @@ fn the_players_own_committed_values_may_be_repeated() {
         CommittedValue { label: "Launch angle".into(), quantity: Quantity::degrees(angle), unit: "deg".into() },
         CommittedValue { label: "Launch speed".into(), quantity: speed, unit: "m/s".into() },
     ];
-    let outcome = instance
-        .evaluate(&Inputs::from([("angle".to_string(), Quantity::degrees(angle)), ("speed".to_string(), speed)]))
-        .unwrap();
+    let outcome = instance.evaluate(&Inputs::from([("angle".to_string(), Quantity::degrees(angle)), ("speed".to_string(), speed)])).unwrap();
     save.record("1.1.4", values, &outcome);
     let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.4").unwrap(), &instance, &save, &[]);
     let filter = tutor::filter::LeakFilter::for_context(&ctx, "");

@@ -146,8 +146,7 @@ fn read_event_stream(reader: impl BufRead, on_text: &mut dyn FnMut(&str) -> bool
         if data == "[DONE]" {
             break;
         }
-        let chunk: serde_json::Value =
-            serde_json::from_str(data).map_err(|e| TutorError::Protocol(format!("{e} in '{data}'")))?;
+        let chunk: serde_json::Value = serde_json::from_str(data).map_err(|e| TutorError::Protocol(format!("{e} in '{data}'")))?;
         if let Some(error) = chunk.get("error") {
             let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("unspecified error");
             return Err(TutorError::Service { status: 200, message: message.to_string() });
@@ -202,10 +201,7 @@ data: [DONE]\n\n";
     #[test]
     fn stream_errors_are_reported() {
         let stream = "data: {\"error\":{\"message\":\"model overloaded\"}}\n\n";
-        assert_eq!(
-            collect(stream),
-            Err(TutorError::Service { status: 200, message: "model overloaded".into() })
-        );
+        assert_eq!(collect(stream), Err(TutorError::Service { status: 200, message: "model overloaded".into() }));
         assert!(matches!(collect("data: not json\n\n"), Err(TutorError::Protocol(_))));
         assert!(matches!(collect(""), Err(TutorError::Protocol(_))));
         let nothing_then_done = "data: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\ndata: [DONE]\n\n";
@@ -249,18 +245,10 @@ data: [DONE]\n\n";
 
     #[test]
     fn request_body_shape() {
-        let provider = ChatCompletions {
-            base_url: "https://example.test/api/v1/".into(),
-            model: "some-model".into(),
-            api_key: None,
-            max_tokens: Some(400),
-        };
+        let provider = ChatCompletions { base_url: "https://example.test/api/v1/".into(), model: "some-model".into(), api_key: None, max_tokens: Some(400) };
         assert_eq!(provider.url(), "https://example.test/api/v1/chat/completions");
         assert_eq!(provider.describe(), "some-model at example.test");
-        let body = provider.body(&ChatRequest {
-            system: "be brief".into(),
-            messages: vec![Message { role: Role::User, content: "hi".into() }],
-        });
+        let body = provider.body(&ChatRequest { system: "be brief".into(), messages: vec![Message { role: Role::User, content: "hi".into() }] });
         assert_eq!(
             body,
             serde_json::json!({

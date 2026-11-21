@@ -217,10 +217,9 @@ pub struct CarryPlugin;
 
 impl Plugin for CarryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Carry>().init_resource::<DirtyCells>().add_systems(
-            Startup,
-            lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn),
-        );
+        app.init_resource::<Carry>()
+            .init_resource::<DirtyCells>()
+            .add_systems(Startup, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
         app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)))
             .add_systems(Update, (place_marks, hold, place_gate, draw_target));
     }
@@ -284,18 +283,16 @@ fn lay_out(
     for i in 0..=Ch1Layout::MAX_STACK as usize {
         // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
         commands
-            .spawn((
-                BlockMark(i),
-                RigidBody::Static,
-                Collider::cuboid(1.0, 1.0, 1.0),
-                Transform::from_translation(Vec3::NEG_Y * 100.0),
-                Visibility::default(),
-            ))
+            .spawn((BlockMark(i), RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0), Transform::from_translation(Vec3::NEG_Y * 100.0), Visibility::default()))
             .with_children(|c| {
                 c.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.53, 0.0)));
                 for turn in 0..4 {
                     let rotation = Quat::from_rotation_y(turn as f32 * std::f32::consts::FRAC_PI_2);
-                    c.spawn((Mesh3d(grip.clone()), MeshMaterial3d(glow.clone()), Transform::from_translation(rotation * Vec3::new(0.0, 0.18, 0.515)).with_rotation(rotation)));
+                    c.spawn((
+                        Mesh3d(grip.clone()),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_translation(rotation * Vec3::new(0.0, 0.18, 0.515)).with_rotation(rotation),
+                    ));
                 }
             });
     }
@@ -307,7 +304,11 @@ fn lay_out(
         MeshMaterial3d(stone),
         Transform::default(),
         Visibility::Hidden,
-        children![(Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, HELD_SIZE / 2.0 + 0.03, 0.0).with_scale(Vec3::splat(HELD_SIZE)))],
+        children![(
+            Mesh3d(handle.clone()),
+            MeshMaterial3d(glow.clone()),
+            Transform::from_xyz(0.0, HELD_SIZE / 2.0 + 0.03, 0.0).with_scale(Vec3::splat(HELD_SIZE))
+        )],
     ));
 
     // The light gate: two arms clamped on the tower's column either side of the fall line, an
@@ -320,17 +321,15 @@ fn lay_out(
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.
     let clamp = meshes.add(Cuboid::new(1.2, 0.4, 1.6));
     let eye = meshes.add(Cuboid::new(0.1, 0.1, 0.04));
-    commands
-        .spawn((Gate, Transform::default(), Visibility::default()))
-        .with_children(|g| {
-            g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
-            g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
-            for side in [-1.0f32, 1.0] {
-                g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-0.9, 0.0, side * 0.68)));
-                g.spawn((Mesh3d(head.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, side * 0.68)));
-                g.spawn((Mesh3d(eye.clone()), MeshMaterial3d(lens.clone()), Transform::from_xyz(0.0, 0.0, side * 0.56)));
-            }
-        });
+    commands.spawn((Gate, Transform::default(), Visibility::default())).with_children(|g| {
+        g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
+        g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
+        for side in [-1.0f32, 1.0] {
+            g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-0.9, 0.0, side * 0.68)));
+            g.spawn((Mesh3d(head.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, side * 0.68)));
+            g.spawn((Mesh3d(eye.clone()), MeshMaterial3d(lens.clone()), Transform::from_xyz(0.0, 0.0, side * 0.56)));
+        }
+    });
     // Its stand: a post with a cradle the gate's clamp rests in.
     let post = meshes.add(Cuboid::new(0.14, 1.0, 0.14));
     let cradle = meshes.add(Cuboid::new(0.5, 0.08, 0.5));
@@ -486,14 +485,7 @@ fn point(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn aim(
-    world: Res<VoxelWorld>,
-    sites: Res<Sites>,
-    ui: Res<Ui>,
-    sim: Res<Sim>,
-    mut carry: ResMut<Carry>,
-    player: Single<&Transform, With<Player>>,
-) {
+fn aim(world: Res<VoxelWorld>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, mut carry: ResMut<Carry>, player: Single<&Transform, With<Player>>) {
     let busy = ui.station.is_some() || sim.busy();
     let forward = (player.rotation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
     let target = if busy { None } else { target_for(&world, &sites, &carry, player.translation, forward, carry.aim) };
@@ -573,7 +565,11 @@ fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&BlockMar
 }
 
 /// A carried block rides in front of the avatar, between its hands.
-fn hold(carry: Res<Carry>, player: Query<&Transform, (With<Player>, Without<HeldBlock>)>, mut held: Single<(&mut Transform, &mut Visibility), With<HeldBlock>>) {
+fn hold(
+    carry: Res<Carry>,
+    player: Query<&Transform, (With<Player>, Without<HeldBlock>)>,
+    mut held: Single<(&mut Transform, &mut Visibility), With<HeldBlock>>,
+) {
     let (transform, visibility) = &mut *held;
     let Ok(avatar) = player.single() else { return };
     **visibility = if matches!(carry.holding, Some(Item::Block(_))) { Visibility::Inherited } else { Visibility::Hidden };
@@ -609,8 +605,12 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
     match target {
         Target::Take(cell) => cube(&mut gizmos, cell.as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
         Target::Put(cell) => cube(&mut gizmos, cell.as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
-        Target::PutIn(Slot::Frame, holds) => cube(&mut gizmos, (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
-        Target::TakeOut(Slot::Frame, left) => cube(&mut gizmos, (sites.channel_well + IVec3::Y * left as i32).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
+        Target::PutIn(Slot::Frame, holds) => {
+            cube(&mut gizmos, (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put)
+        }
+        Target::TakeOut(Slot::Frame, left) => {
+            cube(&mut gizmos, (sites.channel_well + IVec3::Y * left as i32).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take)
+        }
         Target::PutIn(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), put),
         Target::TakeOut(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), take),
         Target::PutIn(Slot::Tower, notch) => {

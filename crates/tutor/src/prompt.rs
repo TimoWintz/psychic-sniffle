@@ -107,26 +107,36 @@ impl HelpLevel {
     /// What Lumen may do at this level, as written into the prompt.
     pub fn instructions(self) -> &'static str {
         match self {
-            HelpLevel::Probe => "\
+            HelpLevel::Probe => {
+                "\
 Ask, do not tell. Find out what the player thinks, what they have measured and what they predict will \
 happen. Point them to the station's experiment or to a handbook page by its title. Do not introduce a \
-formula the player has not written themselves.",
-            HelpLevel::Nudge => "\
+formula the player has not written themselves."
+            }
+            HelpLevel::Nudge => {
+                "\
 If there is a failed test, start from what it showed and ask what that implies. You may name the idea \
 involved and say which notebook readings matter. Still do not introduce a formula; let the player \
-find the relation.",
-            HelpLevel::Guide => "\
+find the relation."
+            }
+            HelpLevel::Guide => {
+                "\
 You may state the relation between the quantities as a formula, and check the player's setup one step \
-at a time. Name the first step that is wrong and say why. End with one question.",
-            HelpLevel::Explain => "\
+at a time. Name the first step that is wrong and say why. End with one question."
+            }
+            HelpLevel::Explain => {
+                "\
 The player has struggled with this puzzle, so be thorough. Walk through the whole method step by step, \
 in symbols, using the player's notebook names. Say exactly where their tests or readings went wrong. \
 If a reading looks wrong, use PRIVATE to notice it but describe it only in words (\"your t looks too \
 short; time the drop again\"), never with the true value. Leave only the final substitution and the \
-arithmetic to the player. Up to about eight short lines, then invite them to try.",
-            HelpLevel::Review => "\
+arithmetic to the player. Up to about eight short lines, then invite them to try."
+            }
+            HelpLevel::Review => {
+                "\
 The puzzle is solved. Discuss the method freely and fully, and answer why-questions in depth, but \
-still do not state the numbers.",
+still do not state the numbers."
+            }
         }
     }
 }

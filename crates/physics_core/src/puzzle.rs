@@ -453,13 +453,28 @@ pub struct Comparison {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Playback {
     /// A mass released from rest at `height`; a ghost follows the player's prediction.
-    Drop { height: f64, g: f64, predicted_time: f64, actual_time: f64 },
-    Flight { projectile: Projectile, flight: Flight },
+    Drop {
+        height: f64,
+        g: f64,
+        predicted_time: f64,
+        actual_time: f64,
+    },
+    Flight {
+        projectile: Projectile,
+        flight: Flight,
+    },
     /// The rail cart drives `distance` metres along its rail and stops.
-    Slide { distance: f64 },
+    Slide {
+        distance: f64,
+    },
     /// The haul cart sets off after the crawler, each at its steady speed, both from their marks, for
     /// `t` seconds: until the cart reaches the crawler, or the crawler reaches the buffer.
-    Chase { cart_speed: f64, crawler_speed: f64, head_start: f64, t: f64 },
+    Chase {
+        cart_speed: f64,
+        crawler_speed: f64,
+        head_start: f64,
+        t: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -513,31 +528,14 @@ impl Instance {
     }
 
     pub fn inputs(&self) -> Vec<InputSpec> {
-        let speed = InputSpec {
-            key: "speed",
-            label: "Launch speed",
-            dim: Dim::SPEED,
-            unit: "m/s",
-            example: "14.2 m/s",
-            source: InputSource::Typed,
-        };
+        let speed = InputSpec { key: "speed", label: "Launch speed", dim: Dim::SPEED, unit: "m/s", example: "14.2 m/s", source: InputSource::Typed };
         match self.kind {
-            PuzzleKind::Rail => vec![InputSpec {
-                key: "distance",
-                label: "Run distance",
-                dim: Dim::LENGTH,
-                unit: "m",
-                example: "d1   or   12 m",
-                source: InputSource::Typed,
-            }],
-            PuzzleKind::Chase => vec![InputSpec {
-                key: "speed",
-                label: "Cart speed",
-                dim: Dim::SPEED,
-                unit: "m/s",
-                example: "2.6 m/s",
-                source: InputSource::Typed,
-            }],
+            PuzzleKind::Rail => {
+                vec![InputSpec { key: "distance", label: "Run distance", dim: Dim::LENGTH, unit: "m", example: "d1   or   12 m", source: InputSource::Typed }]
+            }
+            PuzzleKind::Chase => {
+                vec![InputSpec { key: "speed", label: "Cart speed", dim: Dim::SPEED, unit: "m/s", example: "2.6 m/s", source: InputSource::Typed }]
+            }
             PuzzleKind::Gravity => vec![InputSpec {
                 key: "g",
                 label: "Gravitational acceleration",
@@ -546,28 +544,12 @@ impl Instance {
                 example: "3.7 m/s^2",
                 source: InputSource::Typed,
             }],
-            PuzzleKind::Channel => vec![
-                InputSpec {
-                    key: "stack",
-                    label: "Launcher raised by",
-                    dim: Dim::LENGTH,
-                    unit: "m",
-                    example: "",
-                    source: InputSource::Placed,
-                },
-                speed,
-            ],
-            PuzzleKind::Ridge => vec![
-                InputSpec {
-                    key: "angle",
-                    label: "Launch angle",
-                    dim: Dim::NONE,
-                    unit: "deg",
-                    example: "30 deg",
-                    source: InputSource::Typed,
-                },
-                speed,
-            ],
+            PuzzleKind::Channel => {
+                vec![InputSpec { key: "stack", label: "Launcher raised by", dim: Dim::LENGTH, unit: "m", example: "", source: InputSource::Placed }, speed]
+            }
+            PuzzleKind::Ridge => {
+                vec![InputSpec { key: "angle", label: "Launch angle", dim: Dim::NONE, unit: "deg", example: "30 deg", source: InputSource::Typed }, speed]
+            }
         }
     }
 
@@ -655,9 +637,7 @@ impl Instance {
     /// wrong kind, but it is not a value committed, so it writes no handbook page.
     pub fn unready(&self, placed: u32) -> Option<String> {
         match self.kind {
-            PuzzleKind::Rail if placed == 0 => {
-                Some("Load the cart first. Pick up the block beside the rail (F), then put it on the cart (F).".into())
-            }
+            PuzzleKind::Rail if placed == 0 => Some("Load the cart first. Pick up the block beside the rail (F), then put it on the cart (F).".into()),
             _ => None,
         }
     }
@@ -683,11 +663,7 @@ impl Instance {
                 return Err(InputError::Missing { label });
             };
             if q.dim != spec.dim {
-                return Err(InputError::Dimension {
-                    label,
-                    expected: spec.dim.describe(),
-                    got: q.dim.describe(),
-                });
+                return Err(InputError::Dimension { label, expected: spec.dim.describe(), got: q.dim.describe() });
             }
             let out_of_range = |reason: String| Err(InputError::OutOfRange { label: label.clone(), reason });
             match spec.key {
@@ -696,10 +672,7 @@ impl Instance {
                         return out_of_range("the cart only runs forward, so enter a distance greater than zero.".into());
                     }
                     if q.value > Ch1Layout::RAIL_LENGTH as f64 {
-                        return out_of_range(format!(
-                            "the rail is {} m long, and the cart won't run past its end.",
-                            Ch1Layout::RAIL_LENGTH
-                        ));
+                        return out_of_range(format!("the rail is {} m long, and the cart won't run past its end.", Ch1Layout::RAIL_LENGTH));
                     }
                 }
                 "stack" => {
@@ -737,10 +710,7 @@ impl Instance {
                         }
                     }
                     if q.value > limit {
-                        return out_of_range(format!(
-                            "the {what} is rated to {} and won't {verb} any faster.",
-                            Quantity::speed(limit).display()
-                        ));
+                        return out_of_range(format!("the {what} is rated to {} and won't {verb} any faster.", Quantity::speed(limit).display()));
                     }
                 }
                 "angle" => {
@@ -771,30 +741,16 @@ impl Instance {
                 let miss = run - target;
                 let pass = miss.abs() <= Ch1Layout::RAIL_MARKER_HALF;
                 let (headline, detail) = if pass {
-                    (
-                        "On the marker".to_string(),
-                        format!("The cart ran {} m and stopped on the marker.", sig(run, 3)),
-                    )
+                    ("On the marker".to_string(), format!("The cart ran {} m and stopped on the marker.", sig(run, 3)))
                 } else {
                     let (headline, side) = if miss < 0.0 { ("Stopped short", "short of") } else { ("Overshot", "beyond") };
-                    (
-                        headline.to_string(),
-                        format!(
-                            "The cart ran {} m and stopped {} m {side} the marker centre.",
-                            sig(run, 3),
-                            sig(miss.abs(), 3)
-                        ),
-                    )
+                    (headline.to_string(), format!("The cart ran {} m and stopped {} m {side} the marker centre.", sig(run, 3), sig(miss.abs(), 3)))
                 };
                 Outcome {
                     pass,
                     headline,
                     detail,
-                    comparisons: vec![Comparison {
-                        label: "Distance run".into(),
-                        expected: Quantity::metres(target),
-                        observed: Quantity::metres(run),
-                    }],
+                    comparisons: vec![Comparison { label: "Distance run".into(), expected: Quantity::metres(target), observed: Quantity::metres(run) }],
                     playback: Playback::Slide { distance: run },
                 }
             }
@@ -807,21 +763,13 @@ impl Instance {
                 let (headline, detail) = if pass {
                     (
                         "Coupled on the marker".to_string(),
-                        format!(
-                            "The cart reached the crawler after {} s, {} m from the marker centre.",
-                            sig(run.t, 3),
-                            sig(miss.abs(), 2)
-                        ),
+                        format!("The cart reached the crawler after {} s, {} m from the marker centre.", sig(run.t, 3), sig(miss.abs(), 2)),
                     )
                 } else if run.coupled {
                     let (headline, side) = if miss < 0.0 { ("Caught it too soon", "before") } else { ("Caught it too late", "past") };
                     (
                         headline.to_string(),
-                        format!(
-                            "The cart reached the crawler after {} s, {} m {side} the marker centre.",
-                            sig(run.t, 3),
-                            sig(miss.abs(), 3)
-                        ),
+                        format!("The cart reached the crawler after {} s, {} m {side} the marker centre.", sig(run.t, 3), sig(miss.abs(), 3)),
                     )
                 } else {
                     (
@@ -851,12 +799,7 @@ impl Instance {
                     headline,
                     detail,
                     comparisons,
-                    playback: Playback::Chase {
-                        cart_speed: speed,
-                        crawler_speed: l.crawler_speed,
-                        head_start: l.head_start as f64,
-                        t: run.t,
-                    },
+                    playback: Playback::Chase { cart_speed: speed, crawler_speed: l.crawler_speed, head_start: l.head_start as f64, t: run.t },
                 }
             }
             PuzzleKind::Gravity => {
@@ -876,8 +819,7 @@ impl Instance {
                         ),
                     )
                 } else {
-                    let (speed_word, strength_word) =
-                        if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
+                    let (speed_word, strength_word) = if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
                     (
                         "Prediction doesn't match".to_string(),
                         format!(
@@ -909,38 +851,18 @@ impl Instance {
                 let (headline, detail) = if pass {
                     (
                         "On the platform".to_string(),
-                        format!(
-                            "The casket was in the air for {} s and landed {} m from the platform centre.",
-                            sig(flight.t, 3),
-                            sig(miss.abs(), 2)
-                        ),
+                        format!("The casket was in the air for {} s and landed {} m from the platform centre.", sig(flight.t, 3), sig(miss.abs(), 2)),
                     )
                 } else if on_plateau {
                     let side = if miss < 0.0 { "short of" } else { "beyond" };
                     (
                         "Missed the platform".to_string(),
-                        format!(
-                            "The casket was in the air for {} s and landed {} m {side} the platform centre.",
-                            sig(flight.t, 3),
-                            sig(miss.abs(), 3)
-                        ),
+                        format!("The casket was in the air for {} s and landed {} m {side} the platform centre.", sig(flight.t, 3), sig(miss.abs(), 3)),
                     )
                 } else if flight.end == FlightEnd::StruckFace {
-                    (
-                        "Fell short".to_string(),
-                        format!(
-                            "The casket fell short and struck the far bank {} m below the top.",
-                            sig(-flight.y, 3)
-                        ),
-                    )
+                    ("Fell short".to_string(), format!("The casket fell short and struck the far bank {} m below the top.", sig(-flight.y, 3)))
                 } else {
-                    (
-                        "Fell short".to_string(),
-                        format!(
-                            "The casket fell into the channel {} m out from the ledge.",
-                            sig(flight.x, 3)
-                        ),
-                    )
+                    ("Fell short".to_string(), format!("The casket fell into the channel {} m out from the ledge.", sig(flight.x, 3)))
                 };
                 Outcome {
                     pass,
@@ -972,25 +894,16 @@ impl Instance {
                         ),
                     )
                 } else if flight.end == FlightEnd::StruckFace {
-                    (
-                        "Struck the ridge".to_string(),
-                        format!("The tiller hit the ridge {} m below its top.", sig(ridge_h - flight.y, 3)),
-                    )
+                    ("Struck the ridge".to_string(), format!("The tiller hit the ridge {} m below its top.", sig(ridge_h - flight.y, 3)))
                 } else if flight.end == FlightEnd::Landed && flight.surface > 0.0 {
                     ("Landed on the ridge".to_string(), "The tiller came down on top of the ridge.".to_string())
                 } else if flight.x < ridge_x {
-                    (
-                        "Fell short".to_string(),
-                        format!("The tiller came down {} m before the ridge.", sig(ridge_x - flight.x, 3)),
-                    )
+                    ("Fell short".to_string(), format!("The tiller came down {} m before the ridge.", sig(ridge_x - flight.x, 3)))
                 } else {
                     let side = if miss < 0.0 { "short of" } else { "beyond" };
                     (
                         "Missed the circle".to_string(),
-                        format!(
-                            "The tiller cleared the ridge and landed {} m {side} the centre of the circle.",
-                            sig(miss.abs(), 3)
-                        ),
+                        format!("The tiller cleared the ridge and landed {} m {side} the centre of the circle.", sig(miss.abs(), 3)),
                     )
                 };
                 let mut comparisons = Vec::new();
@@ -1015,12 +928,7 @@ impl Instance {
 
     pub fn solution(&self) -> Solution {
         let l = &self.layout;
-        let answer = |key: &str, label: &str, quantity: Quantity, unit: &str| Answer {
-            key: key.into(),
-            label: label.into(),
-            quantity,
-            unit: unit.into(),
-        };
+        let answer = |key: &str, label: &str, quantity: Quantity, unit: &str| Answer { key: key.into(), label: label.into(), quantity, unit: unit.into() };
         match self.kind {
             PuzzleKind::Rail => {
                 let d = l.rail_target;
@@ -1176,21 +1084,14 @@ impl Instance {
                              i.e. theta > {} deg.",
                             sig(min.to_degrees(), 3)
                         ),
-                        format!(
-                            "The speed limit: v^2 = g D / sin(2 theta) <= {}^2 rules out theta > {} deg.",
-                            l.v_max,
-                            sig(max.to_degrees(), 3)
-                        ),
+                        format!("The speed limit: v^2 = g D / sin(2 theta) <= {}^2 rules out theta > {} deg.", l.v_max, sig(max.to_degrees(), 3)),
                         format!(
                             "Pick an angle inside the window with margin, e.g. {} deg, then v = sqrt(g D / sin(2 theta)) = {} m/s.",
                             sig(angle.to_degrees(), 3),
                             sig(v, 4)
                         ),
                     ],
-                    answers: vec![
-                        answer("angle", "Launch angle", Quantity::number(angle), "deg"),
-                        answer("speed", "Launch speed", Quantity::speed(v), "m/s"),
-                    ],
+                    answers: vec![answer("angle", "Launch angle", Quantity::number(angle), "deg"), answer("speed", "Launch speed", Quantity::speed(v), "m/s")],
                     note: format!(
                         "Any angle between about {} and {} deg works with the matching speed; the values above \
                          are one example. A 45 degree shot hits the ridge.",
@@ -1489,10 +1390,7 @@ mod tests {
     fn wrong_dimension_is_refused_with_an_explanation() {
         let puzzle = Instance::new(PuzzleKind::Ridge, &Ch1Layout::generate(1));
         let err = puzzle.evaluate(&inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::seconds(3.0))])).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "Launch speed needs to be a speed (m/s), but you entered a time (s)."
-        );
+        assert_eq!(err.to_string(), "Launch speed needs to be a speed (m/s), but you entered a time (s).");
         assert!(matches!(puzzle.evaluate(&Inputs::new()), Err(InputError::Missing { .. })));
     }
 
@@ -1500,10 +1398,7 @@ mod tests {
     fn ridge_refuses_overspeed_and_bare_degrees() {
         let layout = Ch1Layout::generate(3);
         let puzzle = Instance::new(PuzzleKind::Ridge, &layout);
-        let too_fast = inputs(&[
-            ("angle", Quantity::degrees(60.0)),
-            ("speed", Quantity::speed(layout.v_max + 0.5)),
-        ]);
+        let too_fast = inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::speed(layout.v_max + 0.5))]);
         assert!(matches!(puzzle.evaluate(&too_fast), Err(InputError::OutOfRange { .. })));
         // "58" typed without "deg" is 58 radians.
         let bare = inputs(&[("angle", Quantity::number(58.0)), ("speed", Quantity::speed(10.0))]);
@@ -1543,7 +1438,11 @@ mod tests {
                 return tests;
             }
             let short = outcome.headline == "Fell short" || outcome.detail.contains("short of");
-            if short { low = v } else { high = v }
+            if short {
+                low = v
+            } else {
+                high = v
+            }
             if (high - low) / high < 0.003 {
                 stack = if short { stack + 1 } else { stack - 1 }.min(Ch1Layout::MAX_STACK);
                 (low, high) = (layout.channel_speed_min, layout.channel_speed_max);

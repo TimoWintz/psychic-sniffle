@@ -25,9 +25,7 @@ pub struct PrefillPlugin;
 
 impl Plugin for PrefillPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Prefill>()
-            .add_systems(OnEnter(Mode::Playing), note_readings)
-            .add_systems(Update, fill.run_if(in_state(Mode::Playing)));
+        app.init_resource::<Prefill>().add_systems(OnEnter(Mode::Playing), note_readings).add_systems(Update, fill.run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -262,7 +260,10 @@ mod tests {
             let h = reading(&game.save.notebook, "h2").expect("noted");
             assert_ne!(h, "h2", "seed {seed}");
             let bare = (sites.channel_well.y as f32 - sites.pins[pin + 1].position.y).abs();
-            assert!((game.save.notebook.get(&h).expect("noted").quantity.value - bare as f64).abs() < 1e-6, "seed {seed}: the channel is measured from the bare ledge");
+            assert!(
+                (game.save.notebook.get(&h).expect("noted").quantity.value - bare as f64).abs() < 1e-6,
+                "seed {seed}: the channel is measured from the bare ledge"
+            );
         }
     }
 

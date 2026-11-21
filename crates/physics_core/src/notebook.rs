@@ -54,10 +54,7 @@ impl Notebook {
 
     /// Record a reading under the first free name `prefix1`, `prefix2`, ... and return that name.
     pub fn add_numbered(&mut self, prefix: &str, label: &str, quantity: Quantity, source: &str) -> String {
-        let name = (1..)
-            .map(|n| format!("{prefix}{n}"))
-            .find(|candidate| self.get(candidate).is_none())
-            .expect("an unused name exists");
+        let name = (1..).map(|n| format!("{prefix}{n}")).find(|candidate| self.get(candidate).is_none()).expect("an unused name exists");
         self.set(&name, label, quantity, source);
         name
     }
@@ -65,9 +62,8 @@ impl Notebook {
     /// Record two readings that belong together under the first number free for both prefixes
     /// (`h2` and `t2`), so a pair keeps one number. Returns the two names.
     pub fn add_pair(&mut self, first: (&str, &str, Quantity), second: (&str, &str, Quantity), source: &str) -> (String, String) {
-        let n = (1..)
-            .find(|n| self.get(&format!("{}{n}", first.0)).is_none() && self.get(&format!("{}{n}", second.0)).is_none())
-            .expect("an unused number exists");
+        let n =
+            (1..).find(|n| self.get(&format!("{}{n}", first.0)).is_none() && self.get(&format!("{}{n}", second.0)).is_none()).expect("an unused number exists");
         let names = (format!("{}{n}", first.0), format!("{}{n}", second.0));
         self.set(&names.0, first.1, first.2, source);
         self.set(&names.1, second.1, second.2, source);

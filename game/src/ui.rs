@@ -18,10 +18,10 @@ use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Align2, Color32, RichText};
-use physics_core::notebook::source;
 use physics_core::ballistics::FlightEnd;
-use physics_core::expr::{evaluate, is_function};
 use physics_core::content::{DemoDef, PuzzleDef};
+use physics_core::expr::{evaluate, is_function};
+use physics_core::notebook::source;
 use physics_core::progress::Quality;
 use physics_core::puzzle::{Ch1Layout, InputSource, Instance, Outcome, Playback, PuzzleKind};
 use physics_core::units::{Quantity, lookup_unit, sig};
@@ -136,9 +136,7 @@ pub fn draw(
 /// The column at the top left: where the chapter stands, then the notebook. Its place is fixed.
 fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) {
     let screen = ctx.content_rect();
-    let reserve = DOCK_BOTTOM_RESERVE
-        + if ruler.in_use() { DOCK_RULER_RESERVE } else { 0.0 }
-        + if ui_state.tutor_open { DOCK_LUMEN_RESERVE } else { 0.0 };
+    let reserve = DOCK_BOTTOM_RESERVE + if ruler.in_use() { DOCK_RULER_RESERVE } else { 0.0 } + if ui_state.tutor_open { DOCK_LUMEN_RESERVE } else { 0.0 };
     let floor = screen.bottom() - reserve;
     let area = egui::Area::new(egui::Id::new("dock")).anchor(Align2::LEFT_TOP, [10.0, 10.0]).movable(false).show(ctx, |ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
@@ -150,7 +148,15 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
                 ui.label(RichText::new(&game.chapter.goal).color(DIM));
             }
             let marks: String = (0..game.chapter.puzzles.len())
-                .map(|i| if game.solved(i) { "■ " } else if game.unlocked(i) { "□ " } else { "· " })
+                .map(|i| {
+                    if game.solved(i) {
+                        "■ "
+                    } else if game.unlocked(i) {
+                        "□ "
+                    } else {
+                        "· "
+                    }
+                })
                 .collect();
             match game.next_unsolved() {
                 Some(next) => ui.label(format!("{marks} Next: {}", game.def(next).task)),
@@ -649,57 +655,48 @@ fn chase_graph(ui: &mut egui::Ui, layout: &Ch1Layout, cart_speed: f64, crawler_s
     painter.line_segment([at(0.0, head_start), at(end, head_start + crawler_speed * end)], egui::Stroke::new(2.0, crawler));
     painter.line_segment([at(0.0, 0.0), at(end, cart_speed * end)], egui::Stroke::new(2.0, cart));
     painter.circle_filled(at(end, cart_speed * end), 4.0, if pass { GOOD } else { BAD });
-    ui.label(
-        RichText::new("Distance along the track against time. Red: the cart. Yellow: the crawler. Orange: the marker.")
-            .small()
-            .color(DIM),
-    );
+    ui.label(RichText::new("Distance along the track against time. Red: the cart. Yellow: the crawler. Orange: the marker.").small().color(DIM));
 }
 
 fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
     let mut open = true;
-    egui::Window::new("Ruler")
-        .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(Align2::LEFT_BOTTOM, [10.0, -10.0])
-        .show(ctx, |ui| {
-            let hover = ruler.hover.as_ref().map(|h| h.label.as_str());
-            match (&ruler.first, &ruler.second) {
-                (None, _) => {
-                    ui.label("Click the first point.");
-                    ui.label(RichText::new(hover.unwrap_or("Yellow pins mark surveyed points.")).color(DIM));
-                }
-                (Some(first), None) => {
-                    ui.label(format!("From: {}", first.label));
-                    ui.label(RichText::new(format!("To: {}", hover.unwrap_or("click the second point"))).color(DIM));
-                }
-                (Some(first), Some(second)) => {
-                    ui.label(format!("From: {}", first.label));
-                    ui.label(format!("To: {}", second.label));
-                }
+    egui::Window::new("Ruler").open(&mut open).collapsible(false).resizable(false).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).show(ctx, |ui| {
+        let hover = ruler.hover.as_ref().map(|h| h.label.as_str());
+        match (&ruler.first, &ruler.second) {
+            (None, _) => {
+                ui.label("Click the first point.");
+                ui.label(RichText::new(hover.unwrap_or("Yellow pins mark surveyed points.")).color(DIM));
             }
-            let (Some(m), Some(first), Some(second)) = (ruler.measurement(), ruler.first.clone(), ruler.second.clone()) else { return };
-            ui.separator();
-            let between = format!("{} to {}", first.label, second.label);
-            let mut saved = None;
-            egui::Grid::new("ruler").num_columns(3).show(ui, |ui| {
-                for (word, prefix, value) in [("Horizontal", "d", m.horizontal), ("Vertical", "h", m.vertical), ("Direct", "s", m.direct)] {
-                    ui.label(word);
-                    ui.label(RichText::new(Quantity::metres(value as f64).display()).strong());
-                    if ui.button(format!("Note as {prefix}…")).clicked() {
-                        saved = Some((prefix, word, value));
-                    }
-                    ui.end_row();
-                }
-            });
-            if let Some((prefix, word, value)) = saved {
-                let label = format!("{} distance, {between}", word.to_lowercase());
-                game.save.notebook.add_numbered(prefix, &label, Quantity::metres(value as f64), source::RULER);
-                game.persist();
+            (Some(first), None) => {
+                ui.label(format!("From: {}", first.label));
+                ui.label(RichText::new(format!("To: {}", hover.unwrap_or("click the second point"))).color(DIM));
             }
-            ui.label(RichText::new("R measures again · Esc puts the ruler away").small().color(DIM));
+            (Some(first), Some(second)) => {
+                ui.label(format!("From: {}", first.label));
+                ui.label(format!("To: {}", second.label));
+            }
+        }
+        let (Some(m), Some(first), Some(second)) = (ruler.measurement(), ruler.first.clone(), ruler.second.clone()) else { return };
+        ui.separator();
+        let between = format!("{} to {}", first.label, second.label);
+        let mut saved = None;
+        egui::Grid::new("ruler").num_columns(3).show(ui, |ui| {
+            for (word, prefix, value) in [("Horizontal", "d", m.horizontal), ("Vertical", "h", m.vertical), ("Direct", "s", m.direct)] {
+                ui.label(word);
+                ui.label(RichText::new(Quantity::metres(value as f64).display()).strong());
+                if ui.button(format!("Note as {prefix}…")).clicked() {
+                    saved = Some((prefix, word, value));
+                }
+                ui.end_row();
+            }
         });
+        if let Some((prefix, word, value)) = saved {
+            let label = format!("{} distance, {between}", word.to_lowercase());
+            game.save.notebook.add_numbered(prefix, &label, Quantity::metres(value as f64), source::RULER);
+            game.persist();
+        }
+        ui.label(RichText::new("R measures again · Esc puts the ruler away").small().color(DIM));
+    });
     if !open {
         ruler.put_away();
     }

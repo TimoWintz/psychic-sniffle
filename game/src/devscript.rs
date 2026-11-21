@@ -20,7 +20,6 @@
 
 use crate::avatar::{Activity, AvatarState};
 use crate::carry::{self, Carry, DirtyCells, Slot, Target};
-use crate::waking::{Timeline, Waking};
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
@@ -29,6 +28,7 @@ use crate::ruler::{Ruler, pick_at};
 use crate::sim::{Request, Sim};
 use crate::state::{Game, Mode, Ui};
 use crate::voxel::VoxelWorld;
+use crate::waking::{Timeline, Waking};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
 use physics_core::notebook::source;
@@ -43,7 +43,11 @@ enum Step {
     /// Stand beside a station's console.
     GoToStation(usize),
     GoTo(Vec3),
-    Look { yaw: f32, pitch: f32, distance: f32 },
+    Look {
+        yaw: f32,
+        pitch: f32,
+        distance: f32,
+    },
     /// Point the camera at a fixed spot instead of the avatar.
     Watch(Option<Vec3>),
     Station(Option<usize>),
@@ -54,24 +58,39 @@ enum Step {
     RulerOn,
     RulerOff,
     /// Wait until Lumen looks at this place; fail if it has not happened in time.
-    ExpectGaze { place: String, within: f32 },
+    ExpectGaze {
+        place: String,
+        within: f32,
+    },
     /// Pick a choice in a station's experiment, as a click on it would.
     Guess(usize, usize),
     /// Press the experiment's run button.
     RunDemo(usize),
     /// Wait until a handbook page has been written; fail if it has not happened in time.
-    ExpectFound { page: &'static str, within: f32 },
+    ExpectFound {
+        page: &'static str,
+        within: f32,
+    },
     /// Open the handbook at a page, as its button at the station would.
     OpenPage(&'static str),
     /// Answer a question of a handbook page's quiz, rightly or not, as a click on a choice would.
-    Quiz { page: &'static str, question: usize, right: bool },
+    Quiz {
+        page: &'static str,
+        question: usize,
+        right: bool,
+    },
     /// Fail unless every question of the page's quiz has been answered right.
     ExpectQuizDone(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
     /// Stand at `feet` facing along `facing`, with the pointer marking `aim` on the drop tower, and
     /// press F; fail unless F would do what is expected.
-    CarryAt { feet: Vec3, facing: Vec3, expect: Expect, aim: Option<f32> },
+    CarryAt {
+        feet: Vec3,
+        facing: Vec3,
+        expect: Expect,
+        aim: Option<f32>,
+    },
     /// Fail unless the last commit was refused for this reason.
     ExpectRefusal(&'static str),
     /// Fail if a handbook page has been written.
@@ -82,38 +101,71 @@ enum Step {
     Calculate(String),
     /// Fail unless the puzzle is solved.
     ExpectSolved(usize),
-    Windows { notebook: bool, handbook: bool, tutor: bool },
+    Windows {
+        notebook: bool,
+        handbook: bool,
+        tutor: bool,
+    },
     Shot(&'static str),
     /// Press or release a key, as the keyboard would.
     Key(KeyCode, bool),
     /// Wait until the avatar stands at this height; fail if it has not happened in time.
-    UntilStandingAt { height: f32, within: f32, what: &'static str },
+    UntilStandingAt {
+        height: f32,
+        within: f32,
+        what: &'static str,
+    },
     /// Wait until the avatar stands north of this row (smaller z); fail if it has not in time.
-    UntilNorthOf { z: f32, within: f32, what: &'static str },
+    UntilNorthOf {
+        z: f32,
+        within: f32,
+        what: &'static str,
+    },
     /// Fail unless the avatar stands at this height now.
-    ExpectStanding { height: f32, what: &'static str },
+    ExpectStanding {
+        height: f32,
+        what: &'static str,
+    },
     /// Wait until the avatar is in the air above this height.
-    UntilAirborneAbove { height: f32, within: f32 },
+    UntilAirborneAbove {
+        height: f32,
+        within: f32,
+    },
     /// Wait until the avatar's animation shows this activity; fail if it has not happened in time.
-    ExpectActivity { activity: Activity, within: f32 },
+    ExpectActivity {
+        activity: Activity,
+        within: f32,
+    },
     /// Press Start on the title menu.
     Start,
     /// Wait until the game has taken over from the menu.
-    UntilPlaying { within: f32 },
+    UntilPlaying {
+        within: f32,
+    },
     /// Wait until the intro is this many seconds into its loop.
     UntilIntro(f32),
     /// Check that the camera stands where the player's view puts it.
     ExpectPlayerView,
     /// Wait until the avatar has moved a metre from where it stood when the step began.
-    UntilMoved { from: Option<Vec3>, within: f32 },
+    UntilMoved {
+        from: Option<Vec3>,
+        within: f32,
+    },
     /// Mark the first `n` puzzles solved, as passes would, without playing them.
     Solve(usize),
     /// Wait until no wake is playing; fail if one still is after this many seconds.
     WaitWakeEnd(f32),
     /// Wait until the way shows this stage; fail if it has not happened in time.
-    UntilWoken { stage: usize, within: f32 },
+    UntilWoken {
+        stage: usize,
+        within: f32,
+    },
     /// Wait until the wake to this stage has played this many seconds; fail if it has not in time.
-    UntilWakeAt { stage: usize, at: f32, within: f32 },
+    UntilWakeAt {
+        stage: usize,
+        at: f32,
+        within: f32,
+    },
     Quit,
 }
 
@@ -207,7 +259,8 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let at_stand = sites.gate_stand - Vec3::X * 1.0;
     let at_tower = sites.tower_plate + Vec3::Z * 1.8;
     let (short, long) = (3, game.layout.tower_h - 2);
-    let clamp = |notch: u32| Step::CarryAt { feet: at_tower, facing: Vec3::NEG_Z, expect: Expect::Clamp(notch), aim: Some(sites.tower_release.y - notch as f32) };
+    let clamp =
+        |notch: u32| Step::CarryAt { feet: at_tower, facing: Vec3::NEG_Z, expect: Expect::Clamp(notch), aim: Some(sites.tower_release.y - notch as f32) };
     // When things happen in each wake, to photograph them.
     let wakes: Vec<Timeline> = (1..=crate::state::PUZZLES).map(|stage| Timeline::new(stage, &sites.way)).collect();
     let mut steps = vec![
@@ -993,7 +1046,9 @@ fn run(
             crate::ui::note_plate(&mut game);
         }
         Step::Calculate(text) => ui.calculator = text,
-        Step::ExpectSolved(puzzle) => assert!(game.solved(puzzle), "{} is not solved: {:?}", game.def(puzzle).title, ui.results[puzzle].as_ref().map(|o| &o.detail)),
+        Step::ExpectSolved(puzzle) => {
+            assert!(game.solved(puzzle), "{} is not solved: {:?}", game.def(puzzle).title, ui.results[puzzle].as_ref().map(|o| &o.detail))
+        }
         Step::Windows { notebook, handbook, tutor } => {
             ui.notebook_open = notebook;
             ui.handbook_open = handbook;

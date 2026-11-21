@@ -82,11 +82,7 @@ impl Plugin for RulerPlugin {
 
 fn spawn_pins(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>) {
     let mesh = meshes.add(Sphere::new(0.16));
-    let material = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.9, 0.2),
-        emissive: LinearRgba::rgb(4.0, 3.0, 0.4),
-        ..default()
-    });
+    let material = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.9, 0.2), emissive: LinearRgba::rgb(4.0, 3.0, 0.4), ..default() });
     for (i, pin) in sites.pins.iter().enumerate() {
         commands.spawn((PinMark(i), Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), Transform::from_translation(pin.position)));
     }

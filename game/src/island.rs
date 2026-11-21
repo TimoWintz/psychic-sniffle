@@ -752,8 +752,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // lies on the ledge west of the rail, two blocks high: the blocks themselves are put there when
     // the game starts (see `carry`), since they move.
     let channel_well = channel_frame.cell(-1, 0, ledge_top);
-    let block_pile: Vec<IVec3> =
-        (0..Ch1Layout::MAX_STACK as i32).map(|i| channel_frame.cell(-4 + (i / 2) % 2, -3 + i / 4, ledge_top + i % 2)).collect();
+    let block_pile: Vec<IVec3> = (0..Ch1Layout::MAX_STACK as i32).map(|i| channel_frame.cell(-4 + (i / 2) % 2, -3 + i / 4, ledge_top + i % 2)).collect();
     let yard = channel_frame.rect(-(LEDGE_DEPTH - 1), -4, -2, -1);
     let block_yard = [IVec3::new(yard.min.x, ledge_top, yard.min.y), IVec3::new(yard.max.x, ledge_top + 2, yard.max.y)];
 
@@ -764,7 +763,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     ridge_frame.fill(&mut world, (pad_mid - 2, -2, GROUND - 1), (pad_mid + 2, 2, GROUND - 1), Material::Marker);
     // The landing circle's rim of quartz, either side of the pad, which lights when the tiller lands
     // in it; and quartz either side of the breech, which lights as the launcher wakes.
-    let circle_quartz: Vec<IVec3> = (pad_mid - 2..=pad_mid + 2).flat_map(|a| [ridge_frame.cell(a, -3, GROUND - 1), ridge_frame.cell(a, 3, GROUND - 1)]).collect();
+    let circle_quartz: Vec<IVec3> =
+        (pad_mid - 2..=pad_mid + 2).flat_map(|a| [ridge_frame.cell(a, -3, GROUND - 1), ridge_frame.cell(a, 3, GROUND - 1)]).collect();
     let breech_quartz = vec![ridge_frame.cell(-3, -1, GROUND - 1), ridge_frame.cell(-3, 1, GROUND - 1)];
     for &q in circle_quartz.iter().chain(&breech_quartz) {
         world.set(q, Material::Quartz);
@@ -778,10 +778,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     world.fill(IVec3::new(breech.x + 1, GROUND - 1, breech.z), IVec3::new(platform_cell.x - 2, GROUND - 1, breech.z), Material::Steel);
     let ridge_launch = ridge_frame.launch(ground);
     pins.push(Pin { position: ridge_launch.origin, label: "Tilting launcher: release point" });
-    pins.push(Pin {
-        position: ridge_launch.at(layout.ridge_x as f64, layout.ridge_h as f64, ground),
-        label: "Ridge: top, near edge",
-    });
+    pins.push(Pin { position: ridge_launch.at(layout.ridge_x as f64, layout.ridge_h as f64, ground), label: "Ridge: top, near edge" });
     pins.push(Pin { position: ridge_launch.at(layout.ridge_x as f64, 0.0, ground), label: "Ridge: foot, near side" });
     pins.push(Pin { position: ridge_launch.at(layout.pad_centre, 0.0, ground), label: "Landing circle: centre" });
     let station3 = ridge_frame.cell(-5, 4, GROUND);
@@ -875,7 +872,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // The spine: the ridge carried on as a wall from coast to coast, so the only way north is the
     // pass, which the seal closes. It loops north round the ledge launcher's line where that line's
     // level run reaches past the ridge, and crosses it only beyond the run's end.
-    let run_end = (channel_launch.origin.z - Instance::new(PuzzleKind::Channel, layout).profile().expect("the channel has a profile").heights.len() as f32).floor() as i32;
+    let run_end = (channel_launch.origin.z - Instance::new(PuzzleKind::Channel, layout).profile().expect("the channel has a profile").heights.len() as f32)
+        .floor() as i32;
     let pocket_top = (run_end - 2).min(ridge_row);
     let spine_cells = spine(&mut world, ridge_row, pocket_top, channel_frame.origin.x, ridge_frame.col(layout.ridge_x as i32, 0).x);
     let prelude = road(&mut world, &[(wreck.x + 9, row - 3), (rail_x + 2, row - 2)]);
@@ -1469,7 +1467,10 @@ fn flora(world: &mut VoxelWorld, plan: &Plan, spine: &HashSet<IVec2>) {
                     let s = world.surface(x + dx, z + dz);
                     let below = world.get(IVec3::new(x + dx, s - 1, z + dz));
                     level &= (s - y).abs() <= 1
-                        && !matches!(below, Material::Soil | Material::HullAlloy | Material::Concrete | Material::Steel | Material::Limestone | Material::Quartz);
+                        && !matches!(
+                            below,
+                            Material::Soil | Material::HullAlloy | Material::Concrete | Material::Steel | Material::Limestone | Material::Quartz
+                        );
                 }
             }
             if !level {
@@ -1643,10 +1644,7 @@ mod tests {
             assert_eq!(columns(&world, &sites.ridge_launch, ridge.heights.len()), ridge.heights, "seed {seed}: ridge");
 
             // The drops are clear all the way down and exactly as tall as the layout says.
-            for (release, plate, height) in [
-                (sites.tower_release, sites.tower_plate, layout.tower_h),
-                (sites.mast_release, sites.mast_plate, layout.mast_h),
-            ] {
+            for (release, plate, height) in [(sites.tower_release, sites.tower_plate, layout.tower_h), (sites.mast_release, sites.mast_plate, layout.mast_h)] {
                 assert_eq!(release.y - plate.y, height as f32);
                 let hit = world.raycast(release + Vec3::Y * 0.5, Vec3::NEG_Y, 80.0).unwrap();
                 assert!((hit.point.y - plate.y).abs() < 1e-4, "seed {seed}: something is in the way of the drop");
@@ -1707,7 +1705,11 @@ mod tests {
             for console in sites.stations {
                 assert!(flat(sites.slipway).distance(flat(hull)) < console.as_vec3().xz().distance(flat(hull)), "seed {seed}");
             }
-            assert!(flat(sites.shore).distance(flat(sites.slipway)) < 32.0, "seed {seed}: the skiff is {} from the strait", flat(sites.shore).distance(flat(sites.slipway)));
+            assert!(
+                flat(sites.shore).distance(flat(sites.slipway)) < 32.0,
+                "seed {seed}: the skiff is {} from the strait",
+                flat(sites.shore).distance(flat(sites.slipway))
+            );
             assert!(sites.shore.z < sites.slipway.z, "seed {seed}: the shore is not north of the skiff");
 
             // The tiller lands beside the tilting launcher, and the dolly rail between them is flush.
@@ -1940,7 +1942,11 @@ mod tests {
             for k in -2..=(end * 2.0) as i32 {
                 let p = sites.haul_at(k as f64 / 2.0);
                 assert_eq!(world.surface(p.x.floor() as i32, p.z.floor() as i32), GROUND, "seed {seed}: track blocked at {} m", k as f64 / 2.0);
-                assert!(!world.box_collides(p + Vec3::new(-0.45, 0.01, -0.45), p + Vec3::new(0.45, 1.0, 0.45)), "seed {seed}: something on the track at {} m", k as f64 / 2.0);
+                assert!(
+                    !world.box_collides(p + Vec3::new(-0.45, 0.01, -0.45), p + Vec3::new(0.45, 1.0, 0.45)),
+                    "seed {seed}: something on the track at {} m",
+                    k as f64 / 2.0
+                );
             }
             let buffer = sites.haul_at(end + 0.6).floor().as_ivec3();
             assert!(world.is_solid(buffer), "seed {seed}: no buffer at the track's end");

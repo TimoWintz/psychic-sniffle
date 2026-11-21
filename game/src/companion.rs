@@ -22,11 +22,11 @@ use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use std::collections::BTreeSet;
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
-use physics_core::notebook::source;
 use physics_core::content::{RemarkWhen, Spoken};
+use physics_core::notebook::source;
 use physics_core::puzzle::PuzzleKind;
+use std::collections::BTreeSet;
 
 /// How long Lumen keeps looking where the tutor pointed, in seconds.
 const MODEL_LOOK_SECONDS: f32 = 9.0;
@@ -601,17 +601,22 @@ fn direct(
                 // The drop tower's experiment times nothing without the light gate, so the gate comes first.
                 let gate_first = kind == PuzzleKind::Gravity && gate_pending(&game, p) && carry.gate_on_stand();
                 let nudge = if gate_first {
-                    Some((Nudge::Build, "The tower won't time anything without its light gate. See it on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one."))
+                    Some((
+                        Nudge::Build,
+                        "The tower won't time anything without its light gate. See it on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one.",
+                    ))
                 } else if game.def(p).demo.is_some() && !now.watched[p] {
                     Some((Nudge::Experiment, "Try the experiment before any numbers. Make a guess first. It doesn't cost anything."))
                 } else {
                     match kind {
-                        PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => {
-                            Some((Nudge::Build, "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart."))
-                        }
-                        PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => {
-                            Some((Nudge::Build, "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher."))
-                        }
+                        PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => Some((
+                            Nudge::Build,
+                            "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart.",
+                        )),
+                        PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => Some((
+                            Nudge::Build,
+                            "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher.",
+                        )),
                         _ => None,
                     }
                 };
@@ -1081,14 +1086,11 @@ fn draw(
 
     // The eye itself, which can be clicked to talk.
     let reach = EYE + 16.0;
-    let area = egui::Area::new(egui::Id::new("lumen-eye"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(centre - vec2(reach, reach))
-        .show(&ctx, |ui| {
-            let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
-            paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
-            response.on_hover_text("Lumen. Click here or press T to talk to me.")
-        });
+    let area = egui::Area::new(egui::Id::new("lumen-eye")).order(egui::Order::Foreground).fixed_pos(centre - vec2(reach, reach)).show(&ctx, |ui| {
+        let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
+        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
+        response.on_hover_text("Lumen. Click here or press T to talk to me.")
+    });
     if area.inner.clicked() {
         ui_state.tutor_open = !ui_state.tutor_open;
     }
@@ -1099,11 +1101,8 @@ fn draw(
         let anchor = bubble_anchor(rest);
         let room = (anchor.y - ui_state.dock_bottom - 140.0).clamp(60.0, 300.0);
         let stroke = Stroke::new(1.5, tint(colour, 0.8));
-        let panel = egui::Area::new(egui::Id::new("lumen-panel"))
-            .order(egui::Order::Foreground)
-            .pivot(egui::Align2::LEFT_BOTTOM)
-            .fixed_pos(anchor)
-            .show(&ctx, |ui| {
+        let panel =
+            egui::Area::new(egui::Id::new("lumen-panel")).order(egui::Order::Foreground).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(anchor).show(&ctx, |ui| {
                 egui::Frame::new().fill(BUBBLE_FILL).stroke(stroke).corner_radius(8.0).inner_margin(10.0).show(ui, |ui| {
                     if crate::ui::dock_header(ui, "Lumen", "T", true, None) {
                         ui_state.tutor_open = false;
@@ -1198,7 +1197,11 @@ fn paint_eye(painter: &egui::Painter, c: Pos2, colour: [f32; 3], mood: Mood, clo
             mesh.add_triangle(base, base + 1, base + 2);
             mesh.add_triangle(base, base + 2, base + 3);
             let edge_point = pos2(c.x + x0, c.y + edge(x0));
-            if top { upper_edge.push(edge_point) } else { lower_edge.push(edge_point) }
+            if top {
+                upper_edge.push(edge_point)
+            } else {
+                lower_edge.push(edge_point)
+            }
             if i == strips - 1 {
                 let last = pos2(c.x + x1, c.y + edge(x1));
                 if top { upper_edge.push(last) } else { lower_edge.push(last) }
@@ -1359,7 +1362,10 @@ mod tests {
         lumen.frame += 1;
         lumen.say("Why this station.");
         lumen.say("Try the experiment.");
-        assert_eq!(lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["Once upon a time.", "Then this.", "Why this station.", "Try the experiment."]);
+        assert_eq!(
+            lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+            ["Once upon a time.", "Then this.", "Why this station.", "Try the experiment."]
+        );
     }
 
     #[test]
@@ -1480,7 +1486,11 @@ mod tests {
             let bar = crate::cinematic::letterbox_height(screen, 1.0);
             for forward in [0.0, 1.0] {
                 let eye = eye_place(screen, lift_for(bar, false), forward, screen.right());
-                assert!(eye.y + EYE_REACH <= screen.bottom() - bar, "{w}x{h}: the eye reaches {} below the bar's top", eye.y + EYE_REACH - (screen.bottom() - bar));
+                assert!(
+                    eye.y + EYE_REACH <= screen.bottom() - bar,
+                    "{w}x{h}: the eye reaches {} below the bar's top",
+                    eye.y + EYE_REACH - (screen.bottom() - bar)
+                );
             }
         }
         // With no letterbox the eye stays where it was; the ruler still lifts it.

@@ -119,7 +119,13 @@ pub(crate) fn spawn(
     let back_stop = meshes.add(Cuboid::new(0.08, 0.5, 0.96));
     let facing = Quat::from_rotation_arc(Vec3::X, ledge.direction);
     commands
-        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(stone.clone()), Transform::from_translation(cradle_at(&sites)).with_rotation(facing), Visibility::default()))
+        .spawn((
+            Cradle,
+            Mesh3d(cradle),
+            MeshMaterial3d(stone.clone()),
+            Transform::from_translation(cradle_at(&sites)).with_rotation(facing),
+            Visibility::default(),
+        ))
         .with_children(|c| {
             c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.5, 0.3, 0.0)));
         });

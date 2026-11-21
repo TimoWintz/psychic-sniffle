@@ -119,13 +119,12 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ExprError> {
                 }
             }
             let text: String = chars[start..i].iter().collect();
-            let value = text
-                .parse::<f64>()
-                .map_err(|_| ExprError::Syntax { pos, msg: format!("'{text}' isn't a number.") })?;
+            let value = text.parse::<f64>().map_err(|_| ExprError::Syntax { pos, msg: format!("'{text}' isn't a number.") })?;
             if after_number {
                 return Err(ExprError::Syntax {
                     pos,
-                    msg: "two numbers follow each other. Write a number without spaces (1000, not 1 000), or put * between two numbers to multiply them.".into(),
+                    msg: "two numbers follow each other. Write a number without spaces (1000, not 1 000), or put * between two numbers to multiply them."
+                        .into(),
                 });
             }
             out.push(Token { tok: Tok::Num(value), pos });
@@ -208,11 +207,7 @@ impl Parser<'_> {
             self.at += 1;
             let right = self.term()?;
             if left.dim != right.dim {
-                return Err(ExprError::Mismatch {
-                    op,
-                    left: left.dim.describe(),
-                    right: right.dim.describe(),
-                });
+                return Err(ExprError::Mismatch { op, left: left.dim.describe(), right: right.dim.describe() });
             }
             left = Quantity::new(left.value + sign * right.value, left.dim);
         }
@@ -311,9 +306,7 @@ fn pow(base: Quantity, exponent: f64) -> Result<Quantity, ExprError> {
     let dim = if base.dim.is_none() {
         Dim::NONE
     } else if (doubled - doubled.round()).abs() < 1e-9 {
-        base.dim
-            .pow_ratio(doubled.round() as i32, 2)
-            .ok_or_else(|| ExprError::BadPower(base.dim.describe()))?
+        base.dim.pow_ratio(doubled.round() as i32, 2).ok_or_else(|| ExprError::BadPower(base.dim.describe()))?
     } else {
         return Err(ExprError::BadPower(base.dim.describe()));
     };
@@ -327,10 +320,7 @@ fn pow(base: Quantity, exponent: f64) -> Result<Quantity, ExprError> {
 /// Whether `name` is one of the calculator's functions (`sqrt`, `sin`...), which a notebook entry
 /// can't be called.
 pub fn is_function(name: &str) -> bool {
-    matches!(
-        name,
-        "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "ln" | "exp" | "abs"
-    )
+    matches!(name, "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "ln" | "exp" | "abs")
 }
 
 fn call(name: &str, arg: Quantity) -> Result<Quantity, ExprError> {
@@ -408,10 +398,7 @@ mod tests {
     #[test]
     fn mismatched_dimensions_are_explained() {
         let err = eval("3 m + 2 s").unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "You can't add a length (m) and a time (s), because their dimensions differ."
-        );
+        assert_eq!(err.to_string(), "You can't add a length (m) and a time (s), because their dimensions differ.");
         assert!(matches!(eval("sin(3 m)"), Err(ExprError::NeedsNumber { .. })));
         assert!(matches!(eval("2^(1 s)"), Err(ExprError::DimensionedExponent(_))));
     }
@@ -456,10 +443,7 @@ mod tests {
     #[test]
     fn a_function_without_brackets_is_named_as_one() {
         assert_eq!(eval("sin 30"), Err(ExprError::FunctionNeedsBrackets("sin".into())));
-        assert_eq!(
-            eval("sqrt 4").unwrap_err().to_string(),
-            "sqrt is a function, so put what it works on in brackets, like sqrt(30 deg)."
-        );
+        assert_eq!(eval("sqrt 4").unwrap_err().to_string(), "sqrt is a function, so put what it works on in brackets, like sqrt(30 deg).");
         // A notebook entry may not be called like a function, but if one were, it would win.
         let env = |name: &str| (name == "sin").then_some(Quantity::number(2.0));
         assert_eq!(evaluate("sin 3", &env).unwrap().value, 6.0);

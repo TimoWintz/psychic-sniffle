@@ -266,12 +266,7 @@ impl TutorContext {
                 .concepts
                 .iter()
                 .filter_map(|id| chapter.concept(id))
-                .map(|c| ConceptCard {
-                    title: c.title.clone(),
-                    card: c.card.clone(),
-                    found: save.is_found(chapter, &c.id),
-                    hint: c.hint.clone(),
-                })
+                .map(|c| ConceptCard { title: c.title.clone(), card: c.card.clone(), found: save.is_found(chapter, &c.id), hint: c.hint.clone() })
                 .collect(),
             experiment: def.demo.as_ref().map(|demo| ExperimentLine {
                 question: demo.question.clone(),
@@ -287,11 +282,7 @@ impl TutorContext {
                 .enumerate()
                 .map(|(i, spec)| AskedValue {
                     label: spec.label.to_string(),
-                    dimension: if spec.unit == "deg" {
-                        "an angle (enter with 'deg')".to_string()
-                    } else {
-                        spec.dim.describe()
-                    },
+                    dimension: if spec.unit == "deg" { "an angle (enter with 'deg')".to_string() } else { spec.dim.describe() },
                     draft: drafts.get(i).cloned().unwrap_or_default(),
                     built: (spec.source == InputSource::Placed).then(|| placed.clone().unwrap_or_default()),
                 })
@@ -300,22 +291,13 @@ impl TutorContext {
                 .notebook
                 .entries
                 .iter()
-                .map(|e| NotebookLine {
-                    name: e.name.clone(),
-                    label: e.label.clone(),
-                    value: e.quantity.display(),
-                    source: e.source.clone(),
-                })
+                .map(|e| NotebookLine { name: e.name.clone(), label: e.label.clone(), value: e.quantity.display(), source: e.source.clone() })
                 .collect(),
             attempts: progress
                 .attempts
                 .iter()
                 .map(|a| AttemptLine {
-                    committed: a
-                        .values
-                        .iter()
-                        .map(|v| format!("{} = {}", v.label, v.quantity.display_in(&v.unit)))
-                        .collect(),
+                    committed: a.values.iter().map(|v| format!("{} = {}", v.label, v.quantity.display_in(&v.unit))).collect(),
                     pass: a.pass,
                     headline: a.headline.clone(),
                     detail: a.detail.clone(),
@@ -324,17 +306,9 @@ impl TutorContext {
             solved: progress.solved,
             charges_left: save.charges_left(chapter, &def.id),
             solution_steps: solution.steps.clone(),
-            solution_answers: solution
-                .answers
-                .iter()
-                .map(|a| format!("{} = {}", a.label, a.quantity.display_in(&a.unit)))
-                .collect(),
+            solution_answers: solution.answers.iter().map(|a| format!("{} = {}", a.label, a.quantity.display_in(&a.unit))).collect(),
             solution_note: solution.note.clone(),
-            true_measurements: instance
-                .givens()
-                .iter()
-                .map(|g| format!("{} = {}", g.label, g.quantity.display()))
-                .collect(),
+            true_measurements: instance.givens().iter().map(|g| format!("{} = {}", g.label, g.quantity.display())).collect(),
             landmarks: Vec::new(),
             secrets,
             known_numbers,

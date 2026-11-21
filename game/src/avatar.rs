@@ -31,19 +31,20 @@ const ELBOW_R: usize = 10;
 const JOINTS: usize = 11;
 
 /// Each joint's parent (`None`: the body root) and its place in the parent's frame at rest.
-const PARENT: [Option<usize>; JOINTS] = [None, Some(PELVIS), Some(SPINE), Some(PELVIS), Some(HIP_L), Some(PELVIS), Some(HIP_R), Some(SPINE), Some(SHOULDER_L), Some(SPINE), Some(SHOULDER_R)];
+const PARENT: [Option<usize>; JOINTS] =
+    [None, Some(PELVIS), Some(SPINE), Some(PELVIS), Some(HIP_L), Some(PELVIS), Some(HIP_R), Some(SPINE), Some(SHOULDER_L), Some(SPINE), Some(SHOULDER_R)];
 const REST: [Vec3; JOINTS] = [
-    Vec3::new(0.0, 0.8, 0.0),     // pelvis, at the top of the legs
-    Vec3::new(0.0, 0.04, 0.0),    // spine, at the waist
-    Vec3::new(0.0, 0.6, 0.0),     // neck, at the top of the chest
-    Vec3::new(-0.14, 0.0, 0.0),   // left hip
-    Vec3::new(0.0, -0.42, 0.0),   // left knee
-    Vec3::new(0.14, 0.0, 0.0),    // right hip
-    Vec3::new(0.0, -0.42, 0.0),   // right knee
-    Vec3::new(-0.37, 0.5, 0.0),   // left shoulder
-    Vec3::new(0.0, -0.28, 0.0),   // left elbow
-    Vec3::new(0.37, 0.5, 0.0),    // right shoulder
-    Vec3::new(0.0, -0.28, 0.0),   // right elbow
+    Vec3::new(0.0, 0.8, 0.0),   // pelvis, at the top of the legs
+    Vec3::new(0.0, 0.04, 0.0),  // spine, at the waist
+    Vec3::new(0.0, 0.6, 0.0),   // neck, at the top of the chest
+    Vec3::new(-0.14, 0.0, 0.0), // left hip
+    Vec3::new(0.0, -0.42, 0.0), // left knee
+    Vec3::new(0.14, 0.0, 0.0),  // right hip
+    Vec3::new(0.0, -0.42, 0.0), // right knee
+    Vec3::new(-0.37, 0.5, 0.0), // left shoulder
+    Vec3::new(0.0, -0.28, 0.0), // left elbow
+    Vec3::new(0.37, 0.5, 0.0),  // right shoulder
+    Vec3::new(0.0, -0.28, 0.0), // right elbow
 ];
 
 /// Underside of a boot, front and back, in the knee's frame.

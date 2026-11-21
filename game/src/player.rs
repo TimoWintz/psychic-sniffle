@@ -170,7 +170,13 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, mut camera: ResMut<OrbitCamera>) {
+fn spawn(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    sites: Res<Sites>,
+    mut camera: ResMut<OrbitCamera>,
+) {
     let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
     crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;

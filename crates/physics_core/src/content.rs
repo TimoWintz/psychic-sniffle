@@ -388,16 +388,14 @@ fn has_digit(text: &str) -> bool {
 
 /// Phrases Lumen says as one word: it talks like a person, with contractions. See `docs/writing.md`.
 const UNCONTRACTED: [&str; 21] = [
-    "i am", "i have not", "i do not", "i did not", "i will", "i would", "do not", "does not", "did not", "is not",
-    "are not", "was not", "cannot", "can not", "will not", "would not", "it is", "that is", "we are", "you are",
-    "let us",
+    "i am", "i have not", "i do not", "i did not", "i will", "i would", "do not", "does not", "did not", "is not", "are not", "was not", "cannot", "can not",
+    "will not", "would not", "it is", "that is", "we are", "you are", "let us",
 ];
 
 /// Words and phrases that mark text as machine-written, wherever they appear. See `docs/writing.md`.
 const STOCK: [&str; 18] = [
-    "delve", "tapestry", "testament", "crucial", "pivotal", "seamless", "seamlessly", "vibrant", "showcase",
-    "underscore", "embark", "journey", "realm", "moreover", "furthermore", "additionally", "not just",
-    "it's worth",
+    "delve", "tapestry", "testament", "crucial", "pivotal", "seamless", "seamlessly", "vibrant", "showcase", "underscore", "embark", "journey", "realm",
+    "moreover", "furthermore", "additionally", "not just", "it's worth",
 ];
 
 /// The longest line Lumen says, in words: its lines play in a bubble, one after another.
@@ -405,11 +403,7 @@ const LONGEST_SPOKEN: usize = 60;
 
 /// The text's words, lower case, with apostrophes kept inside them.
 fn words(text: &str) -> Vec<String> {
-    text.replace('’', "'")
-        .split(|c: char| !(c.is_alphanumeric() || c == '\''))
-        .map(|w| w.trim_matches('\'').to_lowercase())
-        .filter(|w| !w.is_empty())
-        .collect()
+    text.replace('’', "'").split(|c: char| !(c.is_alphanumeric() || c == '\'')).map(|w| w.trim_matches('\'').to_lowercase()).filter(|w| !w.is_empty()).collect()
 }
 
 /// Whether the words of `phrase` appear in a row among `words`.
@@ -421,8 +415,7 @@ fn has_phrase(words: &[String], phrase: &str) -> bool {
 /// What breaks the rules for a line Lumen says.
 fn spoken_style(text: &str) -> Vec<String> {
     let found = words(text);
-    let mut problems: Vec<String> =
-        UNCONTRACTED.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("\"{p}\" should be a contraction")).collect();
+    let mut problems: Vec<String> = UNCONTRACTED.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("\"{p}\" should be a contraction")).collect();
     if text.matches(':').count() > 1 {
         problems.push("more than one colon in a spoken line".into());
     }
@@ -445,8 +438,8 @@ fn text_style(text: &str) -> Vec<String> {
 /// Words an imperative sentence can't start with. A program can't tell a verb from any other word,
 /// but a task that starts with one of these isn't an instruction.
 const NOT_IMPERATIVE: [&str; 24] = [
-    "the", "a", "an", "this", "that", "these", "those", "we", "we'll", "we're", "you", "you'll", "i", "it", "it's",
-    "they", "our", "your", "there", "here", "now", "next", "first", "then",
+    "the", "a", "an", "this", "that", "these", "those", "we", "we'll", "we're", "you", "you'll", "i", "it", "it's", "they", "our", "your", "there", "here",
+    "now", "next", "first", "then",
 ];
 
 /// What breaks the rules for a puzzle's `task`: one imperative sentence that ends with a full stop,
@@ -479,8 +472,7 @@ pub fn tier_1() -> Tier {
 
 /// Tier 1, chapter 1: The Helm.
 pub fn chapter_1_1() -> Chapter {
-    Chapter::from_ron(include_str!("../../../assets/curriculum/tier1_ch1.ron"))
-        .expect("assets/curriculum/tier1_ch1.ron is valid")
+    Chapter::from_ron(include_str!("../../../assets/curriculum/tier1_ch1.ron")).expect("assets/curriculum/tier1_ch1.ron is valid")
 }
 
 #[cfg(test)]

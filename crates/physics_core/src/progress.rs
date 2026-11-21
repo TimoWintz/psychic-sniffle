@@ -195,12 +195,7 @@ impl Save {
     pub fn record_attempt(&mut self, puzzle_id: &str, values: Vec<CommittedValue>, outcome: &Outcome) {
         let progress = self.puzzles.entry(puzzle_id.to_string()).or_default();
         progress.solved |= outcome.pass;
-        progress.attempts.push(Attempt {
-            values,
-            pass: outcome.pass,
-            headline: outcome.headline.clone(),
-            detail: outcome.detail.clone(),
-        });
+        progress.attempts.push(Attempt { values, pass: outcome.pass, headline: outcome.headline.clone(), detail: outcome.detail.clone() });
     }
 }
 

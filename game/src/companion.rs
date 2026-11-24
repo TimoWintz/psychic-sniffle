@@ -242,6 +242,11 @@ impl Companion {
     /// While a story is being told (lines said with `keep`), nothing cuts it short: a new line waits
     /// behind it, and replaces what was waiting there from an earlier moment, so what is said after
     /// the story is still about what just happened.
+    /// Whether a story (the opening) is still being told.
+    pub fn telling(&self) -> bool {
+        self.lines.iter().any(|l| l.keep)
+    }
+
     fn say(&mut self, text: impl Into<String>) {
         self.speak(text.into(), None, false);
     }

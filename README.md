@@ -112,6 +112,16 @@ presses Start and checks that the game takes over; `pose` films the avatar's ani
 pass); `way` photographs each of the way's machines asleep in a new game, then with every puzzle
 solved. All but `intro` press Start first.
 
+`look` is the benchmark for how the game looks and how fast it draws. It photographs the same views
+every time (each of the way's machines asleep and awake, the whole island, the ringed giant, the
+first wake as its light runs) and times the frames at each while the camera turns slowly. The frame
+rates go to `look.txt` beside the shots, so two versions can be compared picture by picture and
+number by number. Build with `--release` for numbers worth comparing.
+
+```bash
+GAME_SCRIPT=look GAME_SEED=7 GAME_SAVE=/tmp/fp-look.ron cargo run --release -p game
+```
+
 To play by hand without the bookkeeping, `prefill` puts the tour's ruler readings in the notebook
 and keeps each station's blueprint (and the calculator, at the haul track and the channel) filled
 with the tour's formula. A formula appears once the readings it needs exist: the chase waits for

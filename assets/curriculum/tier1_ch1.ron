@@ -29,6 +29,8 @@ Chapter(
         Remark(near: "Ridge: foot, near side", radius: 8.0, when: Before("1.1.4"), line: Spoken(text: "The skiff's just over this ridge, and the strait right behind it. It's close enough to see, but far too steep to carry anything up.")),
         Remark(near: "The seal", radius: 8.0, when: Before("1.1.4"), line: Spoken(text: "The skiff's on the other side of this slab, at the top of the slipway. It's stone, all of it. I wouldn't have bet on stone floating, but they built it a slipway, so they must have known something I don't.")),
         Remark(near: "The skiff on the slipway", radius: 12.0, when: After("1.1.4"), line: Spoken(text: "The helm's lit, but the rest of her is still dark. She'll need power, a sound hull and something to push her before she can cross. The rest of me will have to wait a little longer.", look: Some("The main hull, across the strait"))),
+        Remark(near: "The beam", radius: 9.0, when: Before("1.1.s1"), line: Spoken(text: "That's one of theirs too, a long beam on a post, with a few of their blocks on one end. Nothing on the road seems to need it, but its console's glowing.")),
+        Remark(near: "The beam", radius: 9.0, when: After("1.1.s1"), line: Spoken(text: "I keep wondering about this beam. If they built it to practise on, maybe the whole road's a lesson, and we're just the latest pupils.")),
     ],
     concepts: [
         Concept(
@@ -279,6 +281,37 @@ Chapter(
                 ),
             ],
         ),
+        Concept(
+            id: "a_rule_predicts",
+            title: "A rule is a guess until it predicts",
+            found: Side("1.1.s1"),
+            hint: "Wake the builders' beam, north of the railway between the wreck and the drop tower.",
+            card: "When you try something a few times and watch what happens, you often notice a pattern. A pattern seen in a few cases is a guess about every case. Write it down as a rule, so that you can test it.\n\nTo test a rule, use it to predict. Pick a case you haven't tried, work out what the rule says will happen, and only then try it. If the world does what the rule said, the rule has earned some trust. If it doesn't, the rule is wrong or only works for some cases, and you have learned something either way.\n\nWhile you look for a pattern, change one thing at a time. If you change two things at once and the result changes, you can't tell which of them did it.\n\nA rule that has passed many tests is still a guess, though it is one you have good reasons to use.",
+            illustration: Some(Illustration(
+                scene: Bounce,
+                caption: "On Earth, a ball dropped onto a hard floor. Each bounce rises to about the same fraction of the one before, so the dashed line, drawn before the ball gets there, predicts the next bounce.",
+            )),
+            quiz: [
+                QuizQuestion(
+                    question: "You guess that heavier balls bounce higher. Which test checks your guess?",
+                    choices: ["Drop a heavy ball from high up and a light ball from low down.", "Drop a heavy ball and a light one from the same height onto the same floor.", "Drop the heavy ball twice from the same height."],
+                    answer: 1,
+                    explain: "Only the weight should change between the two drops. If the heights differ too, you can't tell whether the weight or the height made the difference.",
+                ),
+                QuizQuestion(
+                    question: "Your rule says a bounce will rise to 60 cm. It rises to 35 cm. What should you do?",
+                    choices: ["Measure again, and if it's still 35 cm, change the rule and test it again.", "Keep the rule, because it worked for the bounces you tried before.", "Leave this bounce out of your notes."],
+                    answer: 0,
+                    explain: "A failed prediction is information. Check the measurement first. If it holds, the rule is wrong or only works for some cases, so it needs changing.",
+                ),
+                QuizQuestion(
+                    question: "You found a rule from three bounces. What is the best test of it?",
+                    choices: ["Repeat one of the three bounces.", "Ask a friend whether the rule sounds right.", "Predict a bounce you haven't tried yet, then try it."],
+                    answer: 2,
+                    explain: "The three bounces gave you the rule, so they can't test it. A new bounce can, because the rule might fail there.",
+                ),
+            ],
+        ),
     ],
     puzzles: [
         PuzzleDef(
@@ -385,6 +418,18 @@ Chapter(
                 answer: 2,
                 reveal: "They land in the same place. The steep shot climbs higher and stays up longer, but it covers less ground each second, while the flat one is quicker and comes down sooner. A flat angle and a steep angle can share the same range.",
             )),
+        ),
+    ],
+    // The builders' side-machines off the road: optional, answered by moving things (see
+    // "Side-machines" in docs/game-design.md).
+    sides: [
+        SideDef(
+            id: "1.1.s1",
+            kind: Beam,
+            title: "The beam",
+            brief: "Make the beam hold level. The machine has set its own blocks on a seat of the west arm. Carry blocks from the pile nearby onto any seat of either arm (F), up to three on a seat, then come back here and release the beam. A release costs nothing, so try as often as you like. Each time the beam holds, the machine sets a new load, three in all.",
+            why: "This one's off the road, and nothing further on seems to need it. It's a beam on a pivot, with their blocks already on one arm. I'd love to know what it's for. Let's see if we can make it hold level.",
+            done: "It's awake, and look, the light's running down to the road! So it was on the road after all. I wonder if they built this one to learn on.",
         ),
     ],
 )

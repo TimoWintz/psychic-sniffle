@@ -444,3 +444,21 @@ fn small_whole_numbers_in_formulas_are_left_alone() {
         }
     }
 }
+
+#[test]
+fn lumen_knows_of_the_beam_and_not_to_solve_it() {
+    let chapter = chapter_1_1();
+    let layout = Ch1Layout::generate(3);
+    let instance = Instance::new(PuzzleKind::Rail, &layout);
+    let mut save = Save::new(3);
+    let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.0").unwrap(), &instance, &save, &[]);
+    assert_eq!(ctx.side_machines, [("The beam".to_string(), false)]);
+    let prompt = tutor::prompt::system_prompt(&ctx, HelpLevel::Probe);
+    assert!(prompt.contains("- The beam (asleep)"), "{prompt}");
+    assert!(prompt.contains("Never say what to put where"), "{prompt}");
+    // Nothing of its loads goes in: the snapshot is the station's, and the beam isn't one.
+    assert!(!prompt.contains("seat 2") && !prompt.contains("seat 3"), "{prompt}");
+    save.sides.entry("1.1.s1".into()).or_default().woken = true;
+    let ctx = TutorContext::build(&chapter, chapter.puzzle("1.1.0").unwrap(), &instance, &save, &[]);
+    assert!(tutor::prompt::system_prompt(&ctx, HelpLevel::Probe).contains("- The beam (awake: the player has solved it)"));
+}

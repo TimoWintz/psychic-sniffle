@@ -21,12 +21,13 @@ Nothing depends on `game`.
 | `units` | `Dim` (exponents over the SI base units), `Quantity` (SI value + `Dim`), unit table, formatting |
 | `expr` | calculator: parser and evaluator for expressions with units and named variables; reports dimension errors |
 | `ballistics` | closed-form projectile motion: position at a time, time and place of landing, height at a distance |
+| `beam` | the beam, chapter 1.1's side-machine: its seeded loads, what a release does with the blocks on its seats, and the tests that the last load can't be fiddled into |
 | `materials` | the materials table (density, specific heat, conductivity, resistivity, colour) |
 | `puzzle` | chapter and puzzle definitions, seeded instance generation, evaluation of committed inputs, worked solutions |
 | `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired blocks, the two-angle shots |
-| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions |
+| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions, the side-machines off the road |
 | `notebook` | named readings; the calculator's variables |
-| `progress` | the save: seed, attempts, completed puzzles, notebook, pages found, demonstrations watched, what is placed, quiz questions answered right |
+| `progress` | the save: seed, attempts, completed puzzles, notebook, pages found, demonstrations watched, what is placed, quiz questions answered right, each side-machine's blocks, loads held and wake |
 
 A puzzle is a **kind** (Rust code: how to generate numbers from a seed, how to judge an attempt, how to
 write the worked solution) plus **content** (data: title, brief, concept cards, number ranges). Adding a
@@ -64,7 +65,8 @@ shows the verdict, and counts the puzzle solved, only once the world has played 
 | `sim` | experiment and test playback, hand-off to the physics engine (whose view of the island is built again when the way's blocks come or go), handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
-| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block, the light gate's notch on the drop tower, the ledge launcher's jack frame, which raises it) |
+| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block, the light gate's notch on the drop tower, the ledge launcher's jack frame, which raises it), and the beam's seats |
+| `beam` | the beam off the road: its console and panel, the beam and its blocks as entities that turn together on a release, a stud lit for each load held, and its wake (its quartz and lamp, then the path to the road, lit while the player watches, with no letterbox) |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
 | `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
 | `vessel` | the builders' skiff on its slipway, which takes its helm once the north gate wakes, and the sight the crawler carries (where it is, `waking` says) |
@@ -132,6 +134,25 @@ Rules learned the hard way:
    a `BlockMark`, put in after `sim::setup` so the physics engine's static collider never contains it.
    Something that is not a whole block (the light gate, the block riding the cart) is an entity.
 
+## Building side-machines
+
+A side-machine (see the game design) is not a puzzle: it has no index among the stations, no stage of
+the way and no charges, so nothing that counts puzzles sees it.
+
+- Its words are a `SideDef` in the chapter's `sides`, and its page is found by `Found::Side(id)`.
+  `Chapter::problems` checks that each writes a page, that no puzzle needs that page, and that its
+  spoken lines hold no digits; remarks may name it in `Before` and `After`.
+- The save keeps it in `Save::sides`: what is built on it, how many of its cases have held, whether
+  it has woken. `Save::is_found` counts a woken one's page as found.
+- Its logic lives in its own `physics_core` module (`beam`), with a test that the last case can't
+  be reached from the one before by one move, and that few of everything the pile allows solve it.
+- In the game it is one module (`beam`): its place in `Sites` (built by `island`, with a zone of
+  flat ground and a path of quartz to the road, which `beam::settle` darkens in `main` until it wakes),
+  its console (`Ui::beam_open` and `Ui::near_beam`; `Ui::at_console` covers stations and it alike,
+  for what freezes the avatar or quiets Lumen), and its own pieces of `carry` (a `Yard`, and targets
+  of its own instead of a `Slot`). Lumen's director watches its releases and its wake; the tutor's
+  snapshot names it, and whether it is awake, and nothing more.
+
 The game starts in `Mode::Menu` (title menu, intro playing). The avatar, camera, stations, panels and
 Lumen only run in `Mode::Playing`, which Start switches to once the camera has glided to the player's
 view. Everything the intro made is despawned then, except the mainland, which stays as the far shore of
@@ -157,7 +178,7 @@ CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy` with wa
 - `cargo test -p game` — the island against the simulators' assumptions, the intro's timeline (pieces
   land at their wrecks, nothing flies through the ground, no visible jumps, the hand-over ends on the
   player's view).
-- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`, `way`) that drives
+- `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`, `way`, `beam`) that drives
   the game and writes screenshots. The tour loads the rail cart, times the crawler and catches it,
   times drops with the light gate at two notches, and carries the ledge's blocks into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`

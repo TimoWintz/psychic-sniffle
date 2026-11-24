@@ -49,6 +49,9 @@ pub fn timing(scene: Scene) -> Timing {
         Scene::TableEdge => Timing { duration: (2.0 * TABLE / EARTH_G).sqrt(), slow: 4.0, strobe: 0.05 },
         Scene::KickSplit => Timing { duration: kick().1, slow: 1.0, strobe: 0.25 },
         Scene::TwinKicks => Timing { duration: twin(1).1, slow: 1.0, strobe: 0.25 },
+        Scene::Bounce => {
+            Timing { duration: bounce_peaks().last().map_or(0.0, |&(peak, h)| peak + (2.0 * h / EARTH_G).sqrt()), slow: 1.0, strobe: f64::INFINITY }
+        }
     }
 }
 
@@ -71,6 +74,7 @@ pub fn view(scene: Scene) -> [f64; 4] {
         Scene::TableEdge => [-1.3, 1.6, -0.12, 1.25],
         Scene::KickSplit => [-2.0, 36.0, -1.5, 11.0],
         Scene::TwinKicks => [-2.0, 26.0, -1.0, 11.5],
+        Scene::Bounce => [-0.5, 2.2, -0.12, 1.85],
     }
 }
 
@@ -87,6 +91,34 @@ const GREEN_TIME: f64 = 5.0;
 const BALCONY: f64 = 20.0;
 const TABLE: f64 = 1.0;
 const ROLL: f64 = 1.5;
+
+/// The bouncing ball: the height it is dropped from, the share of each bounce's height the next one
+/// rises to, how fast it drifts sideways, and how many bounces are shown.
+const BOUNCE_DROP: f64 = 1.6;
+const BOUNCE_KEEP: f64 = 0.6;
+const BOUNCE_DRIFT: f64 = 0.45;
+const BOUNCES: usize = 4;
+
+/// When the ball is at the top of each flight, and how high: the drop first, then each bounce.
+fn bounce_peaks() -> Vec<(f64, f64)> {
+    let mut peaks = vec![(0.0, BOUNCE_DROP)];
+    let mut landed = (2.0 * BOUNCE_DROP / EARTH_G).sqrt();
+    for k in 1..=BOUNCES {
+        let h = BOUNCE_DROP * BOUNCE_KEEP.powi(k as i32);
+        let rise = (2.0 * h / EARTH_G).sqrt();
+        peaks.push((landed + rise, h));
+        landed += 2.0 * rise;
+    }
+    peaks
+}
+
+/// The ball's height `t` seconds after it is let go.
+fn bounce_height(t: f64) -> f64 {
+    let peaks = bounce_peaks();
+    // The flight it is in: the last one whose top is no later than a fall's length from now.
+    let (peak, h) = peaks.iter().rev().find(|&&(peak, h)| t >= peak - (2.0 * h / EARTH_G).sqrt() - 1e-9).copied().unwrap_or(peaks[0]);
+    (h - 0.5 * EARTH_G * (t - peak).powi(2)).max(0.0)
+}
 
 /// The kick split into its parts, and how long it is in the air.
 fn kick() -> (Projectile, f64) {
@@ -137,6 +169,8 @@ pub fn tracks(scene: Scene, t: f64) -> Vec<Track> {
                 track(&|t| p.pos(t.min(flight)))
             })
             .collect(),
+        // The ball's underside, drifting a little sideways so its bounces spread out.
+        Scene::Bounce => vec![track(&|t| (BOUNCE_DRIFT * t, bounce_height(t)))],
     }
 }
 
@@ -147,9 +181,13 @@ pub fn body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f32) {
         ui.label(RichText::new("Pages").strong());
         ui.label(RichText::new("A page is written once you've seen what it describes happen in the world.").small().color(DIM));
         let focus = ui_state.handbook_focus.take();
-        // A page is listed once a puzzle that uses it is open; it can be read once found.
+        // A page is listed once a puzzle that uses it is open; it can be read once found. A
+        // side-machine's page is listed only once it is found: nothing points the player to one.
         let mut shown: Vec<String> = Vec::new();
-        let ids: Vec<String> = (0..game.chapter.puzzles.len()).filter(|&i| game.unlocked(i)).flat_map(|i| game.def(i).concepts.clone()).collect();
+        let mut ids: Vec<String> = (0..game.chapter.puzzles.len()).filter(|&i| game.unlocked(i)).flat_map(|i| game.def(i).concepts.clone()).collect();
+        ids.extend(
+            game.chapter.concepts.iter().filter(|c| matches!(c.found, physics_core::content::Found::Side(_)) && game.page_found(&c.id)).map(|c| c.id.clone()),
+        );
         for id in ids {
             if shown.contains(&id) {
                 continue;
@@ -199,8 +237,9 @@ fn page(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, concept: &Concept
         let anim = ui_state.anims.entry(concept.id.clone()).or_insert(Anim { start: now, paused_at: None });
         picture(ui, illustration, anim, now);
     }
-    if let Some(at) = game.chapter.puzzle(concept.found.puzzle()) {
-        ui.label(RichText::new(format!("Found at: {}", at.title)).small().color(DIM));
+    let place = game.chapter.puzzle(concept.found.puzzle()).map(|p| &p.title).or(game.chapter.side(concept.found.puzzle()).map(|s| &s.title));
+    if let Some(title) = place {
+        ui.label(RichText::new(format!("Found at: {title}")).small().color(DIM));
     }
     if !concept.quiz.is_empty() {
         quiz(ui, game, ui_state, concept);
@@ -258,6 +297,7 @@ fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now:
         Scene::TableEdge => table_edge(&pen, &tracks),
         Scene::KickSplit => kick_split(&pen, &tracks, t),
         Scene::TwinKicks => twin_kicks(&pen, &tracks),
+        Scene::Bounce => bounce(&pen, &tracks, t),
     }
     // The scene's clock, and how much it is slowed.
     let timing = timing(scene);
@@ -617,6 +657,35 @@ fn feather(pen: &Pen, at: (f64, f64), alpha: u8) {
     }
 }
 
+/// A ball bouncing on a hard floor. A mark stays at the top of each flight once the ball has been
+/// there; from the second bounce on, a dashed line shows where the next top should be, drawn before
+/// the ball gets there.
+fn bounce(pen: &Pen, tracks: &[Track], t: f64) {
+    let [x0, x1, ..] = view(Scene::Bounce);
+    pen.rect((x0, 0.0), (x1, -0.12), 0.0, Color32::from_rgb(150, 140, 128));
+    // A measuring stick on the wall, in half metres.
+    pen.line((-0.25, 0.0), (-0.25, 1.7), Stroke::new(1.5, INK));
+    for half in 0..=3 {
+        let y = half as f64 * 0.5;
+        pen.line((-0.3, y), (-0.2, y), Stroke::new(1.0, INK));
+        pen.text((-0.33, y), Align2::RIGHT_CENTER, format!("{} m", y), 9.0, INK);
+    }
+    let peaks = bounce_peaks();
+    let mark = |x: f64| (x - 0.12, x + 0.12);
+    for (k, &(at, h)) in peaks.iter().enumerate() {
+        let (a, b) = mark(BOUNCE_DRIFT * at);
+        if t >= at {
+            pen.line((a, h), (b, h), Stroke::new(2.0, INK));
+        } else if k >= 2 && t >= peaks[k - 1].0 {
+            // Two tops seen are enough for a guess at the next: the same share again.
+            let guess = peaks[k - 1].1 * peaks[k - 1].1 / peaks[k - 2].1;
+            pen.dashed((a, guess), (b, guess), Color32::from_rgb(200, 60, 40));
+            pen.text((b + 0.03, guess), Align2::LEFT_CENTER, "predicted", 9.0, Color32::from_rgb(200, 60, 40));
+        }
+    }
+    ball(pen, tracks[0].now, 6.0, Color32::from_rgb(230, 120, 40), false);
+}
+
 fn table_edge(pen: &Pen, tracks: &[Track]) {
     let [x0, x1, ..] = view(Scene::TableEdge);
     pen.rect((x0, 1.25), (x1, 0.0), 0.0, Color32::from_rgb(232, 220, 200));
@@ -765,8 +834,17 @@ fn materials(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
-    const ALL: [Scene; 8] =
-        [Scene::Tape, Scene::Cyclist, Scene::Overtake, Scene::GreenLight, Scene::AppleDrop, Scene::TableEdge, Scene::KickSplit, Scene::TwinKicks];
+    const ALL: [Scene; 9] = [
+        Scene::Tape,
+        Scene::Cyclist,
+        Scene::Overtake,
+        Scene::GreenLight,
+        Scene::AppleDrop,
+        Scene::TableEdge,
+        Scene::KickSplit,
+        Scene::TwinKicks,
+        Scene::Bounce,
+    ];
 
     fn samples(scene: Scene) -> impl Iterator<Item = f64> {
         let duration = timing(scene).duration;
@@ -785,6 +863,22 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn each_bounce_rises_to_the_same_share_of_the_one_before() {
+        let peaks = bounce_peaks();
+        for pair in peaks.windows(2) {
+            assert!((pair[1].1 / pair[0].1 - BOUNCE_KEEP).abs() < 1e-9);
+            // The ball is at the top of each flight when the picture says.
+            assert!((bounce_height(pair[1].0) - pair[1].1).abs() < 1e-6, "{pair:?}");
+        }
+        // It starts at the drop height, touches the floor between flights and ends on it.
+        assert!((bounce_height(0.0) - BOUNCE_DROP).abs() < 1e-9);
+        assert!(bounce_height(timing(Scene::Bounce).duration) < 1e-6);
+        let landing = (2.0 * BOUNCE_DROP / EARTH_G).sqrt();
+        assert!(bounce_height(landing) < 1e-6);
+        assert!(bounce_height(landing + 0.05) > 0.0, "it goes up again");
     }
 
     #[test]
@@ -871,7 +965,9 @@ mod tests {
             let formulas = concept.card.split("\n\n").filter(|p| p.starts_with("    ")).count();
             let words = concept.card.split("\n\n").filter(|p| !p.starts_with("    ")).count();
             assert!(words >= 1, "{} has words", concept.id);
-            if concept.id != "units" {
+            // The first page and the side-machines' pages, about how science is done, have none.
+            let method = matches!(concept.found, physics_core::content::Found::Side(_));
+            if concept.id != "units" && !method {
                 assert!(formulas >= 1, "{} sets its relation apart", concept.id);
             }
         }

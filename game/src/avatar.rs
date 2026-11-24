@@ -507,7 +507,8 @@ fn animate(
     }
 
     // What to look at, most important first.
-    let console = ui.station.map(|i| sites.stations[i].as_vec3() + Vec3::new(0.5, 1.3, 0.5));
+    let console =
+        ui.station.map(|i| sites.stations[i]).or(ui.beam_open.then_some(sites.beam.console)).map(|console| console.as_vec3() + Vec3::new(0.5, 1.3, 0.5));
     let action = sim.action_point();
     let gaze = companion.gaze.as_deref().and_then(|name| landmarks.position(name)).filter(|p| p.distance(feet) < GAZE_REACH);
     let target = action.or(console).or(if run < 0.5 { gaze } else { None });

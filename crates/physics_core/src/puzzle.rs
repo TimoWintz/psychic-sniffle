@@ -4,7 +4,7 @@
 //! `assets/curriculum`. The numbers come from a per-save layout which the island generator also reads,
 //! so what the player measures in the world is what the simulator uses.
 
-use crate::ballistics::{Flight, FlightEnd, Profile, Projectile, fall_time, fly};
+use crate::ballistics::{Flight, FlightEnd, Profile, Projectile, fall_time, fly, level_speed};
 use crate::units::{Dim, Quantity, sig};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -87,6 +87,22 @@ pub struct Ch1Layout {
     pub v_max: f64,
 }
 
+/// A time as the island's stopwatches show it: to hundredths of a second.
+fn stopwatch(seconds: f64) -> f64 {
+    (seconds * 100.0).round() / 100.0
+}
+
+/// How the ridge's height compares with a shot's height above it: a shot from the launcher at angle θ
+/// that lands at `pad_centre` is `ridge_shape × tan θ` high over the ridge at `ridge_x`.
+fn ridge_shape(ridge_x: u32, pad_centre: f64) -> f64 {
+    ridge_x as f64 * (1.0 - ridge_x as f64 / pad_centre)
+}
+
+/// The shallowest launch angle (radians) of a shot aimed at the circle's centre that clears the ridge.
+fn ridge_min_angle(ridge_x: u32, ridge_h: u32, pad_centre: f64) -> f64 {
+    (ridge_h as f64 / ridge_shape(ridge_x, pad_centre)).atan()
+}
+
 impl Ch1Layout {
     pub const G_RANGE: (f64, f64) = (6.5, 13.5);
     /// Values this close to Earth's are skipped, so the familiar number never works.
@@ -149,12 +165,11 @@ impl Ch1Layout {
         // Choose the ridge height so that the shallowest shot that clears it and still reaches the
         // pad is between 50 and 56 degrees: a 45 degree shot never works.
         let target_min_angle = rng.range(50.0, 56.0f64).to_radians();
-        let shape = ridge_x as f64 * (1.0 - ridge_x as f64 / pad_centre);
-        let ridge_h = (shape * target_min_angle.tan()).round() as u32;
-        let min_angle = (ridge_h as f64 / shape).atan();
+        let ridge_h = (ridge_shape(ridge_x, pad_centre) * target_min_angle.tan()).round() as u32;
+        let min_angle = ridge_min_angle(ridge_x, ridge_h, pad_centre);
         // The speed limit rules out shots steeper than about twelve degrees above that.
         let max_angle = (min_angle + 12f64.to_radians()).min(74f64.to_radians());
-        let v_max = (g * pad_centre / (2.0 * max_angle).sin()).sqrt();
+        let v_max = level_speed(pad_centre, max_angle, g);
         let v_max = (v_max * 10.0).round() / 10.0;
 
         // Drawn last, so the numbers above stay what they were for saves made before the tutorial.
@@ -246,8 +261,13 @@ impl Ch1Layout {
 
     /// The ledge launcher's shot with `stack` blocks under it, at `speed`.
     pub fn channel_shot(&self, stack: u32, speed: f64) -> (Projectile, Flight) {
+        self.channel_shot_over(&self.channel_profile(), stack, speed)
+    }
+
+    /// [`Ch1Layout::channel_shot`] over a profile already built, for loops over many shots.
+    pub fn channel_shot_over(&self, profile: &Profile, stack: u32, speed: f64) -> (Projectile, Flight) {
         let projectile = Projectile::from_angle(0.0, (self.ledge_h + stack) as f64, speed, 0.0, self.g);
-        (projectile, fly(&projectile, &self.channel_profile()))
+        (projectile, fly(&projectile, profile))
     }
 
     /// The speed that puts the casket on the platform centre with `stack` blocks under the launcher.
@@ -267,7 +287,8 @@ impl Ch1Layout {
     /// and every stack inside it, at its speed, lands on the platform past the far rim.
     fn channel_is_fair(&self) -> bool {
         let (low, high) = (self.channel_speed_min, self.channel_speed_max);
-        if high >= LAUNCHER_HARD_LIMIT || low >= high || self.channel_profile().heights.len() > Self::CHANNEL_RUN {
+        let profile = self.channel_profile();
+        if high >= LAUNCHER_HARD_LIMIT || low >= high || profile.heights.len() > Self::CHANNEL_RUN {
             return false;
         }
         let clear = |n: u32| {
@@ -278,7 +299,7 @@ impl Ch1Layout {
         !stacks.is_empty()
             && (0..=Self::MAX_STACK).all(clear)
             && stacks.clone().all(|n| {
-                let (projectile, flight) = self.channel_shot(n, self.channel_speed_needed(n));
+                let (projectile, flight) = self.channel_shot_over(&profile, n, self.channel_speed_needed(n));
                 flight.end == FlightEnd::Landed
                     && (flight.x - self.platform_centre).abs() < 0.1
                     && projectile.height_at_x(self.channel_width as f64).is_some_and(|y| y > 1.0)
@@ -289,12 +310,6 @@ impl Ch1Layout {
     pub fn posts(&self) -> (u32, u32) {
         let a = self.head_start + Self::POST_LEAD;
         (a, a + self.post_gap)
-    }
-
-    /// Puzzle 1: the crawler's time from the first timing post to the second, as the stopwatch shows it
-    /// (hundredths of a second).
-    pub fn crawler_time(&self) -> f64 {
-        (self.post_gap as f64 / self.crawler_speed * 100.0).round() / 100.0
     }
 
     /// Puzzle 1: the haul cart sent after the crawler at `speed`. Both start together and run at their
@@ -319,6 +334,11 @@ impl Ch1Layout {
         self.crawler_speed * m / (m - d)
     }
 
+    /// Puzzle 1: the crawler's time from the first timing post to the second, as the stopwatch shows it.
+    pub fn crawler_time(&self) -> f64 {
+        stopwatch(self.post_gap as f64 / self.crawler_speed)
+    }
+
     /// Fall time from the drop tower as the stopwatch shows it (hundredths of a second).
     pub fn tower_fall_time(&self) -> f64 {
         self.gate_time(self.tower_h)
@@ -328,7 +348,7 @@ impl Ch1Layout {
     /// (one of the notches `1..=tower_h`; the last is at the landing plate): the time from the release
     /// until the mass reaches the gate, as the stopwatch shows it (hundredths of a second).
     pub fn gate_time(&self, drop: u32) -> f64 {
-        (fall_time(drop as f64, self.g) * 100.0).round() / 100.0
+        stopwatch(fall_time(drop as f64, self.g))
     }
 
     /// Puzzle 2: the notches the light gate can be clamped at, as drops below the release point.
@@ -339,8 +359,7 @@ impl Ch1Layout {
     /// Launch angles (radians) between which a shot aimed at the centre of the circle clears the ridge and
     /// stays within the launcher's rating.
     pub fn ridge_angle_window(&self) -> (f64, f64) {
-        let shape = self.ridge_x as f64 * (1.0 - self.ridge_x as f64 / self.pad_centre);
-        let min = (self.ridge_h as f64 / shape).atan();
+        let min = ridge_min_angle(self.ridge_x, self.ridge_h, self.pad_centre);
         // v^2 = g D / sin(2 theta) <= v_max^2, on the steep side of 45 degrees.
         let s = (self.g * self.pad_centre / (self.v_max * self.v_max)).min(1.0);
         let max = (std::f64::consts::PI - s.asin()) / 2.0;
@@ -434,13 +453,28 @@ pub struct Comparison {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Playback {
     /// A mass released from rest at `height`; a ghost follows the player's prediction.
-    Drop { height: f64, g: f64, predicted_time: f64, actual_time: f64 },
-    Flight { projectile: Projectile, flight: Flight },
+    Drop {
+        height: f64,
+        g: f64,
+        predicted_time: f64,
+        actual_time: f64,
+    },
+    Flight {
+        projectile: Projectile,
+        flight: Flight,
+    },
     /// The rail cart drives `distance` metres along its rail and stops.
-    Slide { distance: f64 },
+    Slide {
+        distance: f64,
+    },
     /// The haul cart sets off after the crawler, each at its steady speed, both from their marks, for
     /// `t` seconds: until the cart reaches the crawler, or the crawler reaches the buffer.
-    Chase { cart_speed: f64, crawler_speed: f64, head_start: f64, t: f64 },
+    Chase {
+        cart_speed: f64,
+        crawler_speed: f64,
+        head_start: f64,
+        t: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -494,31 +528,14 @@ impl Instance {
     }
 
     pub fn inputs(&self) -> Vec<InputSpec> {
-        let speed = InputSpec {
-            key: "speed",
-            label: "Launch speed",
-            dim: Dim::SPEED,
-            unit: "m/s",
-            example: "14.2 m/s",
-            source: InputSource::Typed,
-        };
+        let speed = InputSpec { key: "speed", label: "Launch speed", dim: Dim::SPEED, unit: "m/s", example: "14.2 m/s", source: InputSource::Typed };
         match self.kind {
-            PuzzleKind::Rail => vec![InputSpec {
-                key: "distance",
-                label: "Run distance",
-                dim: Dim::LENGTH,
-                unit: "m",
-                example: "d1   or   12 m",
-                source: InputSource::Typed,
-            }],
-            PuzzleKind::Chase => vec![InputSpec {
-                key: "speed",
-                label: "Cart speed",
-                dim: Dim::SPEED,
-                unit: "m/s",
-                example: "2.6 m/s",
-                source: InputSource::Typed,
-            }],
+            PuzzleKind::Rail => {
+                vec![InputSpec { key: "distance", label: "Run distance", dim: Dim::LENGTH, unit: "m", example: "d1   or   12 m", source: InputSource::Typed }]
+            }
+            PuzzleKind::Chase => {
+                vec![InputSpec { key: "speed", label: "Cart speed", dim: Dim::SPEED, unit: "m/s", example: "2.6 m/s", source: InputSource::Typed }]
+            }
             PuzzleKind::Gravity => vec![InputSpec {
                 key: "g",
                 label: "Gravitational acceleration",
@@ -527,28 +544,12 @@ impl Instance {
                 example: "3.7 m/s^2",
                 source: InputSource::Typed,
             }],
-            PuzzleKind::Channel => vec![
-                InputSpec {
-                    key: "stack",
-                    label: "Launcher raised by",
-                    dim: Dim::LENGTH,
-                    unit: "m",
-                    example: "",
-                    source: InputSource::Placed,
-                },
-                speed,
-            ],
-            PuzzleKind::Ridge => vec![
-                InputSpec {
-                    key: "angle",
-                    label: "Launch angle",
-                    dim: Dim::NONE,
-                    unit: "deg",
-                    example: "30 deg",
-                    source: InputSource::Typed,
-                },
-                speed,
-            ],
+            PuzzleKind::Channel => {
+                vec![InputSpec { key: "stack", label: "Launcher raised by", dim: Dim::LENGTH, unit: "m", example: "", source: InputSource::Placed }, speed]
+            }
+            PuzzleKind::Ridge => {
+                vec![InputSpec { key: "angle", label: "Launch angle", dim: Dim::NONE, unit: "deg", example: "30 deg", source: InputSource::Typed }, speed]
+            }
         }
     }
 
@@ -636,9 +637,7 @@ impl Instance {
     /// wrong kind, but it is not a value committed, so it writes no handbook page.
     pub fn unready(&self, placed: u32) -> Option<String> {
         match self.kind {
-            PuzzleKind::Rail if placed == 0 => {
-                Some("Load the cart first. Pick up the block beside the rail (F), then put it on the cart (F).".into())
-            }
+            PuzzleKind::Rail if placed == 0 => Some("Load the cart first. Pick up the block beside the rail (F), then put it on the cart (F).".into()),
             _ => None,
         }
     }
@@ -664,11 +663,7 @@ impl Instance {
                 return Err(InputError::Missing { label });
             };
             if q.dim != spec.dim {
-                return Err(InputError::Dimension {
-                    label,
-                    expected: spec.dim.describe(),
-                    got: q.dim.describe(),
-                });
+                return Err(InputError::Dimension { label, expected: spec.dim.describe(), got: q.dim.describe() });
             }
             let out_of_range = |reason: String| Err(InputError::OutOfRange { label: label.clone(), reason });
             match spec.key {
@@ -677,10 +672,7 @@ impl Instance {
                         return out_of_range("the cart only runs forward, so enter a distance greater than zero.".into());
                     }
                     if q.value > Ch1Layout::RAIL_LENGTH as f64 {
-                        return out_of_range(format!(
-                            "the rail is {} m long, and the cart won't run past its end.",
-                            Ch1Layout::RAIL_LENGTH
-                        ));
+                        return out_of_range(format!("the rail is {} m long, and the cart won't run past its end.", Ch1Layout::RAIL_LENGTH));
                     }
                 }
                 "stack" => {
@@ -718,20 +710,14 @@ impl Instance {
                         }
                     }
                     if q.value > limit {
-                        return out_of_range(format!(
-                            "the {what} is rated to {} and won't {verb} any faster.",
-                            Quantity::speed(limit).display()
-                        ));
+                        return out_of_range(format!("the {what} is rated to {} and won't {verb} any faster.", Quantity::speed(limit).display()));
                     }
                 }
                 "angle" => {
                     let deg = q.value.to_degrees();
                     if q.value > std::f64::consts::FRAC_PI_2 * 1.0001 && q.value <= 90.0 {
-                        return out_of_range(format!(
-                            "{} radians isn't a launch angle. Did you mean {} deg?",
-                            sig(q.value, 4),
-                            sig(q.value, 4)
-                        ));
+                        // The player typed a bare number: show it back as typed ("58", not "58.00").
+                        return out_of_range(format!("{} radians isn't a launch angle. Did you mean {} deg?", q.value, q.value));
                     }
                     if !(1.0..=89.0).contains(&deg) {
                         return out_of_range("the launcher tilts between 1 and 89 degrees.".into());
@@ -755,30 +741,16 @@ impl Instance {
                 let miss = run - target;
                 let pass = miss.abs() <= Ch1Layout::RAIL_MARKER_HALF;
                 let (headline, detail) = if pass {
-                    (
-                        "On the marker".to_string(),
-                        format!("The cart ran {} m and stopped on the marker.", sig(run, 3)),
-                    )
+                    ("On the marker".to_string(), format!("The cart ran {} m and stopped on the marker.", sig(run, 3)))
                 } else {
                     let (headline, side) = if miss < 0.0 { ("Stopped short", "short of") } else { ("Overshot", "beyond") };
-                    (
-                        headline.to_string(),
-                        format!(
-                            "The cart ran {} m and stopped {} m {side} the marker centre.",
-                            sig(run, 3),
-                            sig(miss.abs(), 3)
-                        ),
-                    )
+                    (headline.to_string(), format!("The cart ran {} m and stopped {} m {side} the marker centre.", sig(run, 3), sig(miss.abs(), 3)))
                 };
                 Outcome {
                     pass,
                     headline,
                     detail,
-                    comparisons: vec![Comparison {
-                        label: "Distance run".into(),
-                        expected: Quantity::metres(target),
-                        observed: Quantity::metres(run),
-                    }],
+                    comparisons: vec![Comparison { label: "Distance run".into(), expected: Quantity::metres(target), observed: Quantity::metres(run) }],
                     playback: Playback::Slide { distance: run },
                 }
             }
@@ -791,21 +763,13 @@ impl Instance {
                 let (headline, detail) = if pass {
                     (
                         "Coupled on the marker".to_string(),
-                        format!(
-                            "The cart reached the crawler after {} s, {} m from the marker centre.",
-                            sig(run.t, 3),
-                            sig(miss.abs(), 2)
-                        ),
+                        format!("The cart reached the crawler after {} s, {} m from the marker centre.", sig(run.t, 3), sig(miss.abs(), 2)),
                     )
                 } else if run.coupled {
                     let (headline, side) = if miss < 0.0 { ("Caught it too soon", "before") } else { ("Caught it too late", "past") };
                     (
                         headline.to_string(),
-                        format!(
-                            "The cart reached the crawler after {} s, {} m {side} the marker centre.",
-                            sig(run.t, 3),
-                            sig(miss.abs(), 3)
-                        ),
+                        format!("The cart reached the crawler after {} s, {} m {side} the marker centre.", sig(run.t, 3), sig(miss.abs(), 3)),
                     )
                 } else {
                     (
@@ -835,12 +799,7 @@ impl Instance {
                     headline,
                     detail,
                     comparisons,
-                    playback: Playback::Chase {
-                        cart_speed: speed,
-                        crawler_speed: l.crawler_speed,
-                        head_start: l.head_start as f64,
-                        t: run.t,
-                    },
+                    playback: Playback::Chase { cart_speed: speed, crawler_speed: l.crawler_speed, head_start: l.head_start as f64, t: run.t },
                 }
             }
             PuzzleKind::Gravity => {
@@ -860,8 +819,7 @@ impl Instance {
                         ),
                     )
                 } else {
-                    let (speed_word, strength_word) =
-                        if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
+                    let (speed_word, strength_word) = if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
                     (
                         "Prediction doesn't match".to_string(),
                         format!(
@@ -893,38 +851,18 @@ impl Instance {
                 let (headline, detail) = if pass {
                     (
                         "On the platform".to_string(),
-                        format!(
-                            "The casket was in the air for {} s and landed {} m from the platform centre.",
-                            sig(flight.t, 3),
-                            sig(miss.abs(), 2)
-                        ),
+                        format!("The casket was in the air for {} s and landed {} m from the platform centre.", sig(flight.t, 3), sig(miss.abs(), 2)),
                     )
                 } else if on_plateau {
                     let side = if miss < 0.0 { "short of" } else { "beyond" };
                     (
                         "Missed the platform".to_string(),
-                        format!(
-                            "The casket was in the air for {} s and landed {} m {side} the platform centre.",
-                            sig(flight.t, 3),
-                            sig(miss.abs(), 3)
-                        ),
+                        format!("The casket was in the air for {} s and landed {} m {side} the platform centre.", sig(flight.t, 3), sig(miss.abs(), 3)),
                     )
                 } else if flight.end == FlightEnd::StruckFace {
-                    (
-                        "Fell short".to_string(),
-                        format!(
-                            "The casket fell short and struck the far bank {} m below the top.",
-                            sig(-flight.y, 3)
-                        ),
-                    )
+                    ("Fell short".to_string(), format!("The casket fell short and struck the far bank {} m below the top.", sig(-flight.y, 3)))
                 } else {
-                    (
-                        "Fell short".to_string(),
-                        format!(
-                            "The casket fell into the channel {} m out from the ledge.",
-                            sig(flight.x, 3)
-                        ),
-                    )
+                    ("Fell short".to_string(), format!("The casket fell into the channel {} m out from the ledge.", sig(flight.x, 3)))
                 };
                 Outcome {
                     pass,
@@ -956,25 +894,16 @@ impl Instance {
                         ),
                     )
                 } else if flight.end == FlightEnd::StruckFace {
-                    (
-                        "Struck the ridge".to_string(),
-                        format!("The tiller hit the ridge {} m below its top.", sig(ridge_h - flight.y, 3)),
-                    )
+                    ("Struck the ridge".to_string(), format!("The tiller hit the ridge {} m below its top.", sig(ridge_h - flight.y, 3)))
                 } else if flight.end == FlightEnd::Landed && flight.surface > 0.0 {
                     ("Landed on the ridge".to_string(), "The tiller came down on top of the ridge.".to_string())
                 } else if flight.x < ridge_x {
-                    (
-                        "Fell short".to_string(),
-                        format!("The tiller came down {} m before the ridge.", sig(ridge_x - flight.x, 3)),
-                    )
+                    ("Fell short".to_string(), format!("The tiller came down {} m before the ridge.", sig(ridge_x - flight.x, 3)))
                 } else {
                     let side = if miss < 0.0 { "short of" } else { "beyond" };
                     (
                         "Missed the circle".to_string(),
-                        format!(
-                            "The tiller cleared the ridge and landed {} m {side} the centre of the circle.",
-                            sig(miss.abs(), 3)
-                        ),
+                        format!("The tiller cleared the ridge and landed {} m {side} the centre of the circle.", sig(miss.abs(), 3)),
                     )
                 };
                 let mut comparisons = Vec::new();
@@ -999,12 +928,7 @@ impl Instance {
 
     pub fn solution(&self) -> Solution {
         let l = &self.layout;
-        let answer = |key: &str, label: &str, quantity: Quantity, unit: &str| Answer {
-            key: key.into(),
-            label: label.into(),
-            quantity,
-            unit: unit.into(),
-        };
+        let answer = |key: &str, label: &str, quantity: Quantity, unit: &str| Answer { key: key.into(), label: label.into(), quantity, unit: unit.into() };
         match self.kind {
             PuzzleKind::Rail => {
                 let d = l.rail_target;
@@ -1117,7 +1041,8 @@ impl Instance {
                             if stacks.end() == &1 { "" } else { "s" }
                         ),
                         format!(
-                            "With {stack} blocks H = {} m, t = {} s and v = d / t = {} m/s.",
+                            "With {stack} block{} H = {} m, t = {} s and v = d / t = {} m/s.",
+                            if stack == 1 { "" } else { "s" },
                             ledge + stack as f64,
                             sig(fall_time(ledge + stack as f64, l.g), 4),
                             sig(v, 4)
@@ -1133,7 +1058,8 @@ impl Instance {
                         if others.is_empty() {
                             String::new()
                         } else {
-                            format!("{} blocks with the matching speed works too. ", others.join(" or "))
+                            let plural = if others.len() == 1 && others[0] == "1" { "" } else { "s" };
+                            format!("{} block{plural} with the matching speed works too. ", others.join(" or "))
                         },
                         2.0 * l.platform_half,
                         l.platform_half
@@ -1143,7 +1069,7 @@ impl Instance {
             PuzzleKind::Ridge => {
                 let (min, max) = l.ridge_angle_window();
                 let angle = (min + max) / 2.0;
-                let v = (l.g * l.pad_centre / (2.0 * angle).sin()).sqrt();
+                let v = level_speed(l.pad_centre, angle, l.g);
                 let (d, xr, hr) = (l.pad_centre, l.ridge_x as f64, l.ridge_h as f64);
                 Solution {
                     steps: vec![
@@ -1158,21 +1084,14 @@ impl Instance {
                              i.e. theta > {} deg.",
                             sig(min.to_degrees(), 3)
                         ),
-                        format!(
-                            "The speed limit: v^2 = g D / sin(2 theta) <= {}^2 rules out theta > {} deg.",
-                            l.v_max,
-                            sig(max.to_degrees(), 3)
-                        ),
+                        format!("The speed limit: v^2 = g D / sin(2 theta) <= {}^2 rules out theta > {} deg.", l.v_max, sig(max.to_degrees(), 3)),
                         format!(
                             "Pick an angle inside the window with margin, e.g. {} deg, then v = sqrt(g D / sin(2 theta)) = {} m/s.",
                             sig(angle.to_degrees(), 3),
                             sig(v, 4)
                         ),
                     ],
-                    answers: vec![
-                        answer("angle", "Launch angle", Quantity::number(angle), "deg"),
-                        answer("speed", "Launch speed", Quantity::speed(v), "m/s"),
-                    ],
+                    answers: vec![answer("angle", "Launch angle", Quantity::number(angle), "deg"), answer("speed", "Launch speed", Quantity::speed(v), "m/s")],
                     note: format!(
                         "Any angle between about {} and {} deg works with the matching speed; the values above \
                          are one example. A 45 degree shot hits the ridge.",
@@ -1220,9 +1139,10 @@ mod tests {
                 assert_eq!(v, (v * 10.0).round() / 10.0, "the rating plate reads to 0.1 m/s");
             }
             // The launch line, out to the furthest shot, fits on the flat ground the island keeps for it.
-            assert!(l.channel_profile().heights.len() <= Ch1Layout::CHANNEL_RUN, "seed {seed}: {} m", l.channel_profile().heights.len());
+            let profile = l.channel_profile();
+            assert!(profile.heights.len() <= Ch1Layout::CHANNEL_RUN, "seed {seed}: {} m", profile.heights.len());
             for stack in 0..=Ch1Layout::MAX_STACK {
-                assert_ne!(l.channel_shot(stack, high).1.end, FlightEnd::LeftTerrain, "seed {seed}: {stack} blocks");
+                assert_ne!(l.channel_shot_over(&profile, stack, high).1.end, FlightEnd::LeftTerrain, "seed {seed}: {stack} blocks");
             }
             // The haul track: whole metres, the posts and the marker on the track, a speed the cart can make.
             assert!((1.2..=2.4).contains(&l.crawler_speed), "seed {seed}: crawler {}", l.crawler_speed);
@@ -1297,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn the_jack_frame_takes_whole_crates_and_the_dial_its_band() {
+    fn the_jack_frame_takes_whole_blocks_and_the_dial_its_band() {
         let l = Ch1Layout::generate(2);
         let channel = Instance::new(PuzzleKind::Channel, &l);
         let v = l.channel_speed_min;
@@ -1370,7 +1290,7 @@ mod tests {
 
             let (min, max) = layout.ridge_angle_window();
             let angle = (min + max) / 2.0;
-            let v = (g_measured * layout.pad_centre / (2.0 * angle).sin()).sqrt();
+            let v = level_speed(layout.pad_centre, angle, g_measured);
             let ridge = Instance::new(PuzzleKind::Ridge, &layout);
             let attempt = inputs(&[("angle", Quantity::number(angle)), ("speed", Quantity::speed(v))]);
             assert!(ridge.evaluate(&attempt).unwrap().pass, "seed {seed}");
@@ -1470,10 +1390,7 @@ mod tests {
     fn wrong_dimension_is_refused_with_an_explanation() {
         let puzzle = Instance::new(PuzzleKind::Ridge, &Ch1Layout::generate(1));
         let err = puzzle.evaluate(&inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::seconds(3.0))])).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "Launch speed needs to be a speed (m/s), but you entered a time (s)."
-        );
+        assert_eq!(err.to_string(), "Launch speed needs to be a speed (m/s), but you entered a time (s).");
         assert!(matches!(puzzle.evaluate(&Inputs::new()), Err(InputError::Missing { .. })));
     }
 
@@ -1481,15 +1398,14 @@ mod tests {
     fn ridge_refuses_overspeed_and_bare_degrees() {
         let layout = Ch1Layout::generate(3);
         let puzzle = Instance::new(PuzzleKind::Ridge, &layout);
-        let too_fast = inputs(&[
-            ("angle", Quantity::degrees(60.0)),
-            ("speed", Quantity::speed(layout.v_max + 0.5)),
-        ]);
+        let too_fast = inputs(&[("angle", Quantity::degrees(60.0)), ("speed", Quantity::speed(layout.v_max + 0.5))]);
         assert!(matches!(puzzle.evaluate(&too_fast), Err(InputError::OutOfRange { .. })));
         // "58" typed without "deg" is 58 radians.
         let bare = inputs(&[("angle", Quantity::number(58.0)), ("speed", Quantity::speed(10.0))]);
         let err = puzzle.evaluate(&bare).unwrap_err().to_string();
-        assert!(err.contains("Did you mean 58.00 deg?"), "{err}");
+        assert!(err.contains("58 radians isn't a launch angle. Did you mean 58 deg?"), "{err}");
+        let bare = inputs(&[("angle", Quantity::number(42.5)), ("speed", Quantity::speed(10.0))]);
+        assert!(puzzle.evaluate(&bare).unwrap_err().to_string().contains("Did you mean 42.5 deg?"));
     }
 
     #[test]
@@ -1522,7 +1438,11 @@ mod tests {
                 return tests;
             }
             let short = outcome.headline == "Fell short" || outcome.detail.contains("short of");
-            if short { low = v } else { high = v }
+            if short {
+                low = v
+            } else {
+                high = v
+            }
             if (high - low) / high < 0.003 {
                 stack = if short { stack + 1 } else { stack - 1 }.min(Ch1Layout::MAX_STACK);
                 (low, high) = (layout.channel_speed_min, layout.channel_speed_max);
@@ -1542,6 +1462,38 @@ mod tests {
         println!("guessing: {mean:.2} tests on average, {:.0}% within three", lucky * 100.0);
         assert!(mean >= 6.0, "a guesser needs only {mean:.2} tests on average");
         assert!(lucky <= 0.35, "a guesser lands within three tests {:.0}% of the time", lucky * 100.0);
+    }
+
+    /// A guesser at the drop tower: commit a value, read the mast's fall time off the result (as shown,
+    /// to three figures), work g out from it, commit that.
+    fn gravity_tests_by_guessing(layout: &Ch1Layout, first_guess: f64) -> u32 {
+        let gravity = Instance::new(PuzzleKind::Gravity, layout);
+        let mut g = first_guess;
+        for tests in 1..=60 {
+            let outcome = gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g))])).unwrap();
+            if outcome.pass {
+                return tests;
+            }
+            let shown = outcome.detail.split(" mast in ").nth(1).and_then(|rest| rest.split(" s,").next()).expect("the time is shown");
+            let t: f64 = shown.parse().expect("a number");
+            g = 2.0 * layout.mast_h as f64 / (t * t);
+        }
+        60
+    }
+
+    /// The open question in docs/handover.md: unlike the other stations, a failed test here reports
+    /// enough to solve the puzzle (the mast's fall time), so a guesser needs two tests, within the
+    /// station's three charges. This records how it plays now; if the result is made to say less,
+    /// raise the bar here to match the other guesser tests.
+    #[test]
+    fn guessing_at_the_drop_tower_takes_two_tests() {
+        for seed in 0..SEEDS {
+            let layout = Ch1Layout::generate(seed);
+            for first_guess in [9.81, 5.0, 20.0] {
+                let tests = gravity_tests_by_guessing(&layout, first_guess);
+                assert!(tests <= 2, "seed {seed}, first guess {first_guess}: {tests} tests");
+            }
+        }
     }
 
     #[test]

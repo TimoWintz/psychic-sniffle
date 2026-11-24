@@ -118,19 +118,11 @@ impl Dim {
 }
 
 fn wrap(parts: &[String]) -> String {
-    if parts.len() == 1 {
-        parts[0].clone()
-    } else {
-        format!("({})", parts.join(" "))
-    }
+    if parts.len() == 1 { parts[0].clone() } else { format!("({})", parts.join(" ")) }
 }
 
 fn article(word: &str) -> &'static str {
-    if word.starts_with(['a', 'e', 'i', 'o', 'u']) {
-        "an"
-    } else {
-        "a"
-    }
+    if word.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" }
 }
 
 struct Named {
@@ -195,11 +187,7 @@ impl Quantity {
     /// Format in the preferred SI unit with four significant figures: "12.50 m/s".
     pub fn display(&self) -> String {
         let unit = self.dim.unit_symbol();
-        if unit.is_empty() {
-            sig(self.value, 4)
-        } else {
-            format!("{} {}", sig(self.value, 4), unit)
-        }
+        if unit.is_empty() { sig(self.value, 4) } else { format!("{} {}", sig(self.value, 4), unit) }
     }
 
     /// Format in a named unit ("deg", "km"). Falls back to [`Quantity::display`] if the unit is unknown
@@ -221,16 +209,31 @@ impl fmt::Display for Quantity {
 }
 
 /// Format with `digits` significant figures, without scientific notation for everyday magnitudes.
+/// Whole numbers with more digits than that are rounded too ("123500").
 pub fn sig(value: f64, digits: usize) -> String {
     if value == 0.0 || !value.is_finite() {
         return format!("{value}");
     }
-    let magnitude = value.abs().log10().floor() as i32;
-    if !(-4..9).contains(&magnitude) {
-        return format!("{:.*e}", digits.saturating_sub(1), value);
+    let digits = digits.max(1) as i32;
+    let magnitude = |v: f64| v.abs().log10().floor() as i32;
+    let round_at = |v: f64, places: i32| {
+        if places >= 0 {
+            let scale = 10f64.powi(places);
+            (v * scale).round() / scale
+        } else {
+            let scale = 10f64.powi(-places);
+            (v / scale).round() * scale
+        }
+    };
+    let mut rounded = round_at(value, digits - 1 - magnitude(value));
+    // Rounding can carry into a new leading digit (9.9996 becomes 10.00), so measure again.
+    let places = digits - 1 - magnitude(rounded);
+    rounded = round_at(rounded, places);
+    if !(-4..9).contains(&magnitude(rounded)) {
+        return format!("{:.*e}", (digits - 1) as usize, rounded);
     }
-    let decimals = (digits as i32 - 1 - magnitude).max(0) as usize;
-    format!("{value:.decimals$}")
+    let decimals = places.max(0) as usize;
+    format!("{rounded:.decimals$}")
 }
 
 /// A unit or constant by symbol. The value is the factor to SI ("km" is 1000 with [`Dim::LENGTH`]).
@@ -311,6 +314,12 @@ mod tests {
         assert_eq!(Quantity::degrees(55.0).display_in("deg"), "55.00 deg");
         assert_eq!(Quantity::metres(1500.0).display_in("km"), "1.500 km");
         assert_eq!(sig(0.012345, 3), "0.0123");
-        assert_eq!(sig(123456.0, 4), "123456");
+        assert_eq!(sig(123456.0, 4), "123500");
+        assert_eq!(sig(9.9996, 4), "10.00");
+        assert_eq!(sig(-9.9996, 4), "-10.00");
+        assert_eq!(sig(0.99996, 4), "1.000");
+        assert_eq!(sig(999.96, 4), "1000");
+        assert_eq!(sig(58.0, 4), "58.00");
+        assert_eq!(sig(1.0e-7, 3), "1.00e-7");
     }
 }

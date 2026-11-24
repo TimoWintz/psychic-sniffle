@@ -37,6 +37,8 @@ pub enum TutorError {
     Protocol(String),
     #[error("Tutor settings: {0}")]
     Settings(String),
+    #[error("The reply was cut off because it reached the length limit (max_tokens in settings.toml).")]
+    CutOff,
 }
 
 pub trait Provider: Send + Sync {
@@ -84,6 +86,10 @@ impl Provider for ChatCompletions {
             .tls_config(TlsConfig::builder().root_certs(RootCerts::PlatformVerifier).build())
             .timeout_connect(Some(Duration::from_secs(20)))
             .timeout_recv_response(Some(Duration::from_secs(120)))
+            // A reply streams in small pieces (and keep-alive comments), so a long silence means
+            // the service has stalled; the whole reply gets a generous limit too.
+            .timeout_per_read(Some(Duration::from_secs(60)))
+            .timeout_recv_body(Some(Duration::from_secs(300)))
             .build()
             .into();
 
@@ -127,19 +133,20 @@ fn error_message(body: &str) -> String {
         .unwrap_or_else(fallback)
 }
 
-/// Read a server-sent event stream of chat completion chunks.
+/// Read a server-sent event stream of chat completion chunks. A reply with no text, or one the
+/// service stopped at its length limit, is an error (after any text has been passed on).
 fn read_event_stream(reader: impl BufRead, on_text: &mut dyn FnMut(&str) -> bool) -> Result<(), TutorError> {
     let mut received_anything = false;
+    let mut cut_off = false;
     for line in reader.lines() {
         let line = line.map_err(|e| TutorError::Network(e.to_string()))?;
         // Blank lines separate events; lines starting with ':' are keep-alive comments.
         let Some(data) = line.strip_prefix("data:") else { continue };
         let data = data.trim();
         if data == "[DONE]" {
-            return Ok(());
+            break;
         }
-        let chunk: serde_json::Value =
-            serde_json::from_str(data).map_err(|e| TutorError::Protocol(format!("{e} in '{data}'")))?;
+        let chunk: serde_json::Value = serde_json::from_str(data).map_err(|e| TutorError::Protocol(format!("{e} in '{data}'")))?;
         if let Some(error) = chunk.get("error") {
             let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("unspecified error");
             return Err(TutorError::Service { status: 200, message: message.to_string() });
@@ -152,12 +159,17 @@ fn read_event_stream(reader: impl BufRead, on_text: &mut dyn FnMut(&str) -> bool
                 return Ok(());
             }
         }
+        if chunk.pointer("/choices/0/finish_reason").and_then(|r| r.as_str()) == Some("length") {
+            cut_off = true;
+        }
     }
-    if received_anything {
-        // Some servers close the connection without the final marker.
-        Ok(())
-    } else {
+    // Some servers close the connection without the final marker, which is fine if text came.
+    if !received_anything {
         Err(TutorError::Protocol("the reply was empty".into()))
+    } else if cut_off {
+        Err(TutorError::CutOff)
+    } else {
+        Ok(())
     }
 }
 
@@ -189,12 +201,26 @@ data: [DONE]\n\n";
     #[test]
     fn stream_errors_are_reported() {
         let stream = "data: {\"error\":{\"message\":\"model overloaded\"}}\n\n";
-        assert_eq!(
-            collect(stream),
-            Err(TutorError::Service { status: 200, message: "model overloaded".into() })
-        );
+        assert_eq!(collect(stream), Err(TutorError::Service { status: 200, message: "model overloaded".into() }));
         assert!(matches!(collect("data: not json\n\n"), Err(TutorError::Protocol(_))));
         assert!(matches!(collect(""), Err(TutorError::Protocol(_))));
+        let nothing_then_done = "data: {\"choices\":[{\"delta\":{\"content\":\"\"}}]}\n\ndata: [DONE]\n\n";
+        assert!(matches!(collect(nothing_then_done), Err(TutorError::Protocol(_))));
+    }
+
+    #[test]
+    fn a_reply_cut_off_at_the_length_limit_is_reported_after_its_text() {
+        let stream = "\
+data: {\"choices\":[{\"delta\":{\"content\":\"What have \"}}]}\n\n\
+data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n\
+data: [DONE]\n\n";
+        let mut seen = String::new();
+        let result = read_event_stream(stream.as_bytes(), &mut |t| {
+            seen.push_str(t);
+            true
+        });
+        assert_eq!(seen, "What have ");
+        assert_eq!(result, Err(TutorError::CutOff));
     }
 
     #[test]
@@ -219,18 +245,10 @@ data: [DONE]\n\n";
 
     #[test]
     fn request_body_shape() {
-        let provider = ChatCompletions {
-            base_url: "https://example.test/api/v1/".into(),
-            model: "some-model".into(),
-            api_key: None,
-            max_tokens: Some(400),
-        };
+        let provider = ChatCompletions { base_url: "https://example.test/api/v1/".into(), model: "some-model".into(), api_key: None, max_tokens: Some(400) };
         assert_eq!(provider.url(), "https://example.test/api/v1/chat/completions");
         assert_eq!(provider.describe(), "some-model at example.test");
-        let body = provider.body(&ChatRequest {
-            system: "be brief".into(),
-            messages: vec![Message { role: Role::User, content: "hi".into() }],
-        });
+        let body = provider.body(&ChatRequest { system: "be brief".into(), messages: vec![Message { role: Role::User, content: "hi".into() }] });
         assert_eq!(
             body,
             serde_json::json!({

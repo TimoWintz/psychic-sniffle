@@ -59,11 +59,8 @@ impl Mainland {
                 let hills = fbm(xf / 11.0, zf / 11.0, 1211, 3);
                 let line = distance_to_segment(at, from, to);
                 let open = smoothstep(8.0, 22.0, line);
-                let mut top = if d >= 1.0 {
-                    (7.5 - (d - 1.0) * 12.0).max(2.0)
-                } else {
-                    9.0 + 3.0 * smoothstep(0.0, 0.2, rise) + rise.powf(0.9) * hills * 26.0 * open
-                };
+                let mut top =
+                    if d >= 1.0 { (7.5 - (d - 1.0) * 12.0).max(2.0) } else { 9.0 + 3.0 * smoothstep(0.0, 0.2, rise) + rise.powf(0.9) * hills * 26.0 * open };
                 if d < 1.0 {
                     top += (MAINLAND_PLAIN as f32 - top) * (1.0 - smoothstep(6.0, 12.0, line));
                 }
@@ -309,13 +306,11 @@ fn setup(
                 }
             }
         }
-        commands
-            .spawn((intro_only(), ShipPart(part), Transform::default(), Visibility::Hidden))
-            .with_children(|body| {
-                for (size, centre, material) in boxes {
-                    body.spawn((Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(material.clone()), Transform::from_translation(centre)));
-                }
-            });
+        commands.spawn((intro_only(), ShipPart(part), Transform::default(), Visibility::Hidden)).with_children(|body| {
+            for (size, centre, material) in boxes {
+                body.spawn((Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(material.clone()), Transform::from_translation(centre)));
+            }
+        });
     }
 
     let translucent = |colour: Color, unlit: bool| StandardMaterial { base_color: colour, alpha_mode: AlphaMode::Blend, unlit, ..default() };
@@ -515,11 +510,8 @@ fn play(
             physics.unpause();
         }
     } else if std::mem::take(&mut intro.start) {
-        intro.phase = if cinematic::settled(intro.clock) {
-            Phase::Glide { t: 0.0, from: (frame.eye, frame.look), fade_in: false }
-        } else {
-            Phase::Leaving { t: 0.0 }
-        };
+        intro.phase =
+            if cinematic::settled(intro.clock) { Phase::Glide { t: 0.0, from: (frame.eye, frame.look), fade_in: false } } else { Phase::Leaving { t: 0.0 } };
     }
 }
 
@@ -625,17 +617,15 @@ fn menu(mut contexts: EguiContexts, mut intro: ResMut<Intro>) -> Result {
         return Ok(());
     }
     let mut start = false;
-    egui::Area::new(egui::Id::new("title"))
-        .anchor(Align2::LEFT_CENTER, [56.0, -10.0])
-        .show(&ctx, |ui| {
-            ui.set_opacity(shown);
-            ui.label(RichText::new("First Principles").size(46.0).strong().color(Color32::from_rgb(240, 242, 245)));
-            ui.add_space(18.0);
-            let button = egui::Button::new(RichText::new("Start").size(22.0).strong()).min_size(vec2(170.0, 42.0));
-            start = ui.add(button).clicked();
-            ui.add_space(4.0);
-            ui.label(RichText::new("or press Enter").small().color(Color32::from_rgb(200, 205, 212)));
-        });
+    egui::Area::new(egui::Id::new("title")).anchor(Align2::LEFT_CENTER, [56.0, -10.0]).show(&ctx, |ui| {
+        ui.set_opacity(shown);
+        ui.label(RichText::new("First Principles").size(46.0).strong().color(Color32::from_rgb(240, 242, 245)));
+        ui.add_space(18.0);
+        let button = egui::Button::new(RichText::new("Start").size(22.0).strong()).min_size(vec2(170.0, 42.0));
+        start = ui.add(button).clicked();
+        ui.add_space(4.0);
+        ui.label(RichText::new("or press Enter").small().color(Color32::from_rgb(200, 205, 212)));
+    });
     if start && matches!(intro.phase, Phase::Attract) {
         intro.request_start();
     }

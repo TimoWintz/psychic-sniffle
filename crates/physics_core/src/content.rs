@@ -362,6 +362,9 @@ impl Chapter {
         }
 
         let mut problems = Vec::new();
+        for puzzle in &self.puzzles {
+            problems.extend(task_style(&puzzle.task).into_iter().map(|p| format!("puzzle {} task: {p}", puzzle.id)));
+        }
         for (place, text) in &spoken {
             problems.extend(spoken_style(text).into_iter().map(|p| format!("{place}: {p}")));
         }
@@ -385,16 +388,14 @@ fn has_digit(text: &str) -> bool {
 
 /// Phrases Lumen says as one word: it talks like a person, with contractions. See `docs/writing.md`.
 const UNCONTRACTED: [&str; 21] = [
-    "i am", "i have not", "i do not", "i did not", "i will", "i would", "do not", "does not", "did not", "is not",
-    "are not", "was not", "cannot", "can not", "will not", "would not", "it is", "that is", "we are", "you are",
-    "let us",
+    "i am", "i have not", "i do not", "i did not", "i will", "i would", "do not", "does not", "did not", "is not", "are not", "was not", "cannot", "can not",
+    "will not", "would not", "it is", "that is", "we are", "you are", "let us",
 ];
 
 /// Words and phrases that mark text as machine-written, wherever they appear. See `docs/writing.md`.
 const STOCK: [&str; 18] = [
-    "delve", "tapestry", "testament", "crucial", "pivotal", "seamless", "seamlessly", "vibrant", "showcase",
-    "underscore", "embark", "journey", "realm", "moreover", "furthermore", "additionally", "not just",
-    "it's worth",
+    "delve", "tapestry", "testament", "crucial", "pivotal", "seamless", "seamlessly", "vibrant", "showcase", "underscore", "embark", "journey", "realm",
+    "moreover", "furthermore", "additionally", "not just", "it's worth",
 ];
 
 /// The longest line Lumen says, in words: its lines play in a bubble, one after another.
@@ -402,11 +403,7 @@ const LONGEST_SPOKEN: usize = 60;
 
 /// The text's words, lower case, with apostrophes kept inside them.
 fn words(text: &str) -> Vec<String> {
-    text.replace('’', "'")
-        .split(|c: char| !(c.is_alphanumeric() || c == '\''))
-        .map(|w| w.trim_matches('\'').to_lowercase())
-        .filter(|w| !w.is_empty())
-        .collect()
+    text.replace('’', "'").split(|c: char| !(c.is_alphanumeric() || c == '\'')).map(|w| w.trim_matches('\'').to_lowercase()).filter(|w| !w.is_empty()).collect()
 }
 
 /// Whether the words of `phrase` appear in a row among `words`.
@@ -418,8 +415,7 @@ fn has_phrase(words: &[String], phrase: &str) -> bool {
 /// What breaks the rules for a line Lumen says.
 fn spoken_style(text: &str) -> Vec<String> {
     let found = words(text);
-    let mut problems: Vec<String> =
-        UNCONTRACTED.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("\"{p}\" should be a contraction")).collect();
+    let mut problems: Vec<String> = UNCONTRACTED.iter().filter(|p| has_phrase(&found, p)).map(|p| format!("\"{p}\" should be a contraction")).collect();
     if text.matches(':').count() > 1 {
         problems.push("more than one colon in a spoken line".into());
     }
@@ -439,6 +435,36 @@ fn text_style(text: &str) -> Vec<String> {
     problems
 }
 
+/// Words an imperative sentence can't start with. A program can't tell a verb from any other word,
+/// but a task that starts with one of these isn't an instruction.
+const NOT_IMPERATIVE: [&str; 24] = [
+    "the", "a", "an", "this", "that", "these", "those", "we", "we'll", "we're", "you", "you'll", "i", "it", "it's", "they", "our", "your", "there", "here",
+    "now", "next", "first", "then",
+];
+
+/// What breaks the rules for a puzzle's `task`: one imperative sentence that ends with a full stop,
+/// since Lumen reads it inside a sentence of its own ("Next we need to load the rail cart...").
+fn task_style(task: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let task = task.trim();
+    if !task.ends_with('.') {
+        problems.push("a task ends with a full stop".to_string());
+    }
+    let body = task.strip_suffix('.').unwrap_or(task);
+    if body.contains(['.', '?', '!', ';', ':']) {
+        problems.push("a task is one sentence".to_string());
+    }
+    if !task.starts_with(|c: char| c.is_uppercase()) {
+        problems.push("a task starts with a capital letter".to_string());
+    }
+    if let Some(first) = words(task).first()
+        && NOT_IMPERATIVE.contains(&first.as_str())
+    {
+        problems.push(format!("a task starts with a verb, not \"{first}\""));
+    }
+    problems
+}
+
 /// Tier 1: the skiff.
 pub fn tier_1() -> Tier {
     ron::from_str(include_str!("../../../assets/curriculum/tier1.ron")).expect("assets/curriculum/tier1.ron is valid")
@@ -446,8 +472,7 @@ pub fn tier_1() -> Tier {
 
 /// Tier 1, chapter 1: The Helm.
 pub fn chapter_1_1() -> Chapter {
-    Chapter::from_ron(include_str!("../../../assets/curriculum/tier1_ch1.ron"))
-        .expect("assets/curriculum/tier1_ch1.ron is valid")
+    Chapter::from_ron(include_str!("../../../assets/curriculum/tier1_ch1.ron")).expect("assets/curriculum/tier1_ch1.ron is valid")
 }
 
 #[cfg(test)]
@@ -585,6 +610,21 @@ mod tests {
     }
 
     #[test]
+    fn a_task_is_one_instruction_with_a_full_stop() {
+        assert!(task_style("Load the rail cart and send it to the orange marker.").is_empty());
+        assert!(task_style("Measure this planet's gravitational acceleration.").is_empty());
+        assert_eq!(task_style("Load the rail cart"), ["a task ends with a full stop"]);
+        assert_eq!(task_style("Load the cart. Then send it."), ["a task is one sentence"]);
+        assert_eq!(task_style("load the cart."), ["a task starts with a capital letter"]);
+        assert_eq!(task_style("The cart needs loading."), ["a task starts with a verb, not \"the\""]);
+        assert_eq!(task_style("We'll load the cart."), ["a task starts with a verb, not \"we'll\""]);
+        let mut chapter = chapter_1_1();
+        chapter.puzzles[3].task = "The casket goes across the channel".into();
+        let problems = chapter.style_problems();
+        assert!(problems.iter().any(|p| p == "puzzle 1.1.3 task: a task ends with a full stop"), "{problems:?}");
+    }
+
+    #[test]
     fn every_page_has_a_picture_and_a_short_quiz() {
         let chapter = chapter_1_1();
         for concept in &chapter.concepts {
@@ -600,7 +640,7 @@ mod tests {
 
     #[test]
     fn concept_cards_do_not_contain_worked_numbers_for_g() {
-        // The handbook must not state a value for gravity: measuring it is the first puzzle.
+        // The handbook must not state a value for gravity: measuring it is a puzzle (1.1.2).
         for concept in chapter_1_1().concepts {
             assert!(!concept.card.contains("9.8"), "{} mentions Earth's g", concept.id);
         }

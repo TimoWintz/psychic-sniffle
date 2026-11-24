@@ -18,16 +18,14 @@ use crate::island::Sites;
 use crate::sim::CRAWLER_TIME;
 use crate::state::{Game, Mode, PUZZLES, Ui};
 use bevy::prelude::*;
-use physics_core::notebook::Notebook;
+use physics_core::notebook::{Notebook, source};
 use physics_core::units::{Dim, Quantity};
 
 pub struct PrefillPlugin;
 
 impl Plugin for PrefillPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Prefill>()
-            .add_systems(OnEnter(Mode::Playing), note_readings)
-            .add_systems(Update, fill.run_if(in_state(Mode::Playing)));
+        app.init_resource::<Prefill>().add_systems(OnEnter(Mode::Playing), note_readings).add_systems(Update, fill.run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -89,10 +87,10 @@ fn write_readings(game: &mut Game, sites: &Sites) -> bool {
         }
         let d = sites.pins[b].position - from;
         let value = if vertical { d.y.abs() } else { d.with_y(0.0).length() };
-        game.save.notebook.add_numbered(&role[..1], &label, Quantity::metres(value as f64), "ruler");
+        game.save.notebook.add_numbered(&role[..1], &label, Quantity::metres(value as f64), source::RULER);
         wrote = true;
     }
-    if !game.save.notebook.entries.iter().any(|e| e.source == "plate") {
+    if !game.save.notebook.entries.iter().any(|e| e.source == source::PLATE) {
         crate::ui::write_plate(game);
         wrote = true;
     }
@@ -141,7 +139,7 @@ fn formula(game: &Game, puzzle: usize) -> Option<Vec<String>> {
             let (h, t) = notebook
                 .entries
                 .iter()
-                .filter(|e| e.source == "light gate" && e.quantity.dim == Dim::TIME)
+                .filter(|e| e.source == source::LIGHT_GATE && e.quantity.dim == Dim::TIME)
                 .filter_map(|t| {
                     let h = format!("h{}", t.name.trim_start_matches('t'));
                     notebook.get(&h).map(|drop| (drop.quantity.value, h, t.name.clone()))
@@ -201,7 +199,7 @@ mod tests {
         let (outcome, values) = judge_commit(game, ui, puzzle).unwrap_or_else(|| panic!("station {puzzle} refused: {:?}", ui.refusal));
         assert!(outcome.pass, "station {puzzle} missed: {}", outcome.detail);
         if puzzle == 2 {
-            game.save.notebook.set("g", "gravitational acceleration (your calibration)", values[0].quantity, "calibrated");
+            game.save.notebook.set("g", "gravitational acceleration (your calibration)", values[0].quantity, source::CALIBRATED);
         }
         let id = game.def(puzzle).id.clone();
         game.save.record(&id, values, &outcome);
@@ -252,8 +250,8 @@ mod tests {
             let mut game = Game::for_test(seed);
             let (_, mut sites) = crate::island::build(&game.layout);
             // The player noted other readings first, so d2 and h2 are taken.
-            game.save.notebook.set("d2", "horizontal distance, somewhere else", Quantity::metres(99.0), "ruler");
-            game.save.notebook.set("h2", "drop from the release point to the light gate", Quantity::metres(1.0), "light gate");
+            game.save.notebook.set("d2", "horizontal distance, somewhere else", Quantity::metres(99.0), source::RULER);
+            game.save.notebook.set("h2", "drop from the release point to the light gate", Quantity::metres(1.0), source::LIGHT_GATE);
             // And two blocks stand in the jack frame, raising the launcher's pin.
             let pin = sites.channel_release_pin;
             sites.pins[pin].position.y += 2.0;
@@ -262,7 +260,10 @@ mod tests {
             let h = reading(&game.save.notebook, "h2").expect("noted");
             assert_ne!(h, "h2", "seed {seed}");
             let bare = (sites.channel_well.y as f32 - sites.pins[pin + 1].position.y).abs();
-            assert!((game.save.notebook.get(&h).expect("noted").quantity.value - bare as f64).abs() < 1e-6, "seed {seed}: the channel is measured from the bare ledge");
+            assert!(
+                (game.save.notebook.get(&h).expect("noted").quantity.value - bare as f64).abs() < 1e-6,
+                "seed {seed}: the channel is measured from the bare ledge"
+            );
         }
     }
 
@@ -283,7 +284,7 @@ mod tests {
         assert_eq!(ui.drafts[0], vec!["d1".to_string()], "a cleared blueprint gets the formula back");
 
         // The channel's blueprint follows the stack in the jack frame.
-        game.save.notebook.set("g", "gravitational acceleration (your calibration)", Quantity::metres(9.8), "calibrated");
+        game.save.notebook.set("g", "gravitational acceleration (your calibration)", Quantity::metres(9.8), source::CALIBRATED);
         let stacks = game.layout.channel_stacks();
         refresh(&game, &mut ui, &mut prefill);
         assert!(ui.drafts[3][1].contains(&format!("+ {} m", stacks.start())), "{:?}", ui.drafts[3]);
@@ -296,7 +297,7 @@ mod tests {
         ui.station = Some(1);
         refresh(&game, &mut ui, &mut prefill);
         assert_eq!(ui.calculator, "u = d4/t1");
-        game.save.notebook.set("u", "d4/t1", Quantity::metres(1.0), "calculated");
+        game.save.notebook.set("u", "d4/t1", Quantity::metres(1.0), source::CALCULATED);
         ui.calculator.clear();
         refresh(&game, &mut ui, &mut prefill);
         assert!(ui.calculator.is_empty(), "a noted result is not offered again");

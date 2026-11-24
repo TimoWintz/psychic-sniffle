@@ -22,10 +22,11 @@ use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use std::collections::BTreeSet;
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
 use physics_core::content::{RemarkWhen, Spoken};
+use physics_core::notebook::source;
 use physics_core::puzzle::PuzzleKind;
+use std::collections::BTreeSet;
 
 /// How long Lumen keeps looking where the tutor pointed, in seconds.
 const MODEL_LOOK_SECONDS: f32 = 9.0;
@@ -46,17 +47,18 @@ pub struct Landmarks(Vec<(String, Vec3)>);
 
 impl Landmarks {
     pub fn new(sites: &Sites, game: &Game) -> Self {
-        // Pins on things that come and go (the light gate) are not places to look at.
+        // Pins on things that come and go (the light gate) are places to look at only while they are
+        // in the world; `follow` keeps them in step.
         let mut places: Vec<(String, Vec3)> = sites.pins.iter().filter(|pin| pin.present()).map(|pin| (pin.label.to_string(), pin.position)).collect();
         for (i, console) in sites.stations.iter().enumerate() {
             // The station's screen, under its column of light.
             places.push((station_name(game, i), console.as_vec3() + Vec3::new(0.5, 1.3, 0.5)));
         }
-        let pile = sites.crate_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.crate_pile.len().max(1) as f32;
+        let pile = sites.block_pile.iter().map(|c| c.as_vec3()).sum::<Vec3>() / sites.block_pile.len().max(1) as f32;
         places.push((LEDGE_BLOCKS.into(), pile + Vec3::new(0.5, 1.5, 0.5)));
         places.push((JACK_FRAME.into(), sites.channel_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
         places.push((CART_BLOCK.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
-        places.push((RAIL_CART.into(), sites.rail_start + Vec3::Y * 0.8));
+        places.push((RAIL_CART.into(), sites.cart + Vec3::Y * 0.8));
         places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
         places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
@@ -72,6 +74,24 @@ impl Landmarks {
         places.push(("The seal".into(), way.seal.centre() + Vec3::Y * 0.5));
         places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
         Landmarks(places)
+    }
+
+    /// Follow what moves with what is placed: the survey pins (the ledge launcher's release point
+    /// rides up the jack frame, the light gate's comes and goes with the gate) and the rail cart,
+    /// which stays where its last run stopped.
+    pub fn follow(&mut self, sites: &Sites) {
+        for pin in &sites.pins {
+            let at = self.0.iter().position(|(name, _)| name == pin.label);
+            match (at, pin.present()) {
+                (Some(i), true) => self.0[i].1 = pin.position,
+                (Some(i), false) => {
+                    self.0.remove(i);
+                }
+                (None, true) => self.0.push((pin.label.to_string(), pin.position)),
+                (None, false) => {}
+            }
+        }
+        self.set(RAIL_CART, sites.cart + Vec3::Y * 0.8);
     }
 
     /// Move a place that moves (the light running up the road).
@@ -453,8 +473,15 @@ impl Plugin for CompanionPlugin {
         app.insert_resource(landmarks)
             .init_resource::<Companion>()
             // The greeting comes with the first frame of the game, after Start.
-            .add_systems(Update, direct.run_if(in_state(Mode::Playing)))
+            .add_systems(Update, (follow_sites, direct.run_if(in_state(Mode::Playing))).chain())
             .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
+    }
+}
+
+/// Keep the landmarks on what moves (see [`Landmarks::follow`]).
+fn follow_sites(sites: Res<Sites>, mut landmarks: ResMut<Landmarks>) {
+    if sites.is_changed() {
+        landmarks.follow(&sites);
     }
 }
 
@@ -509,8 +536,9 @@ fn direct(
     };
     match last.as_ref() {
         None => {
-            // The first frame: a greeting.
-            let fresh = game.save.puzzles.values().all(|p| p.attempts.is_empty());
+            // The first frame: a greeting. The opening plays until the player has done anything at
+            // all, so it isn't heard again by someone who has already been measuring.
+            let fresh = game.save.untouched();
             match next {
                 Some(n) if fresh => {
                     // The opening is a story: it is not cut short, and Lumen points the way after it.
@@ -573,17 +601,22 @@ fn direct(
                 // The drop tower's experiment times nothing without the light gate, so the gate comes first.
                 let gate_first = kind == PuzzleKind::Gravity && gate_pending(&game, p) && carry.gate_on_stand();
                 let nudge = if gate_first {
-                    Some((Nudge::Build, "The tower won't time anything without its light gate. See it on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one."))
+                    Some((
+                        Nudge::Build,
+                        "The tower won't time anything without its light gate. See it on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one.",
+                    ))
                 } else if game.def(p).demo.is_some() && !now.watched[p] {
                     Some((Nudge::Experiment, "Try the experiment before any numbers. Make a guess first. It doesn't cost anything."))
                 } else {
                     match kind {
-                        PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => {
-                            Some((Nudge::Build, "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart."))
-                        }
-                        PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => {
-                            Some((Nudge::Build, "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher."))
-                        }
+                        PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => Some((
+                            Nudge::Build,
+                            "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart.",
+                        )),
+                        PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => Some((
+                            Nudge::Build,
+                            "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher.",
+                        )),
                         _ => None,
                     }
                 };
@@ -712,7 +745,7 @@ fn direct(
 
 /// Nothing has been timed with the light gate yet (at the drop tower, `puzzle`).
 fn gate_pending(game: &Game, puzzle: usize) -> bool {
-    game.def(puzzle).kind == PuzzleKind::Gravity && !game.save.notebook.entries.iter().any(|e| e.source == "light gate")
+    game.def(puzzle).kind == PuzzleKind::Gravity && !game.save.notebook.entries.iter().any(|e| e.source == source::LIGHT_GATE)
 }
 
 /// After a test: the station's line on a pass; on a miss, where to look, and where to read or ask.
@@ -1053,14 +1086,11 @@ fn draw(
 
     // The eye itself, which can be clicked to talk.
     let reach = EYE + 16.0;
-    let area = egui::Area::new(egui::Id::new("lumen-eye"))
-        .order(egui::Order::Foreground)
-        .fixed_pos(centre - vec2(reach, reach))
-        .show(&ctx, |ui| {
-            let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
-            paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
-            response.on_hover_text("Lumen. Click here or press T to talk to me.")
-        });
+    let area = egui::Area::new(egui::Id::new("lumen-eye")).order(egui::Order::Foreground).fixed_pos(centre - vec2(reach, reach)).show(&ctx, |ui| {
+        let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
+        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
+        response.on_hover_text("Lumen. Click here or press T to talk to me.")
+    });
     if area.inner.clicked() {
         ui_state.tutor_open = !ui_state.tutor_open;
     }
@@ -1071,11 +1101,8 @@ fn draw(
         let anchor = bubble_anchor(rest);
         let room = (anchor.y - ui_state.dock_bottom - 140.0).clamp(60.0, 300.0);
         let stroke = Stroke::new(1.5, tint(colour, 0.8));
-        let panel = egui::Area::new(egui::Id::new("lumen-panel"))
-            .order(egui::Order::Foreground)
-            .pivot(egui::Align2::LEFT_BOTTOM)
-            .fixed_pos(anchor)
-            .show(&ctx, |ui| {
+        let panel =
+            egui::Area::new(egui::Id::new("lumen-panel")).order(egui::Order::Foreground).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(anchor).show(&ctx, |ui| {
                 egui::Frame::new().fill(BUBBLE_FILL).stroke(stroke).corner_radius(8.0).inner_margin(10.0).show(ui, |ui| {
                     if crate::ui::dock_header(ui, "Lumen", "T", true, None) {
                         ui_state.tutor_open = false;
@@ -1170,7 +1197,11 @@ fn paint_eye(painter: &egui::Painter, c: Pos2, colour: [f32; 3], mood: Mood, clo
             mesh.add_triangle(base, base + 1, base + 2);
             mesh.add_triangle(base, base + 2, base + 3);
             let edge_point = pos2(c.x + x0, c.y + edge(x0));
-            if top { upper_edge.push(edge_point) } else { lower_edge.push(edge_point) }
+            if top {
+                upper_edge.push(edge_point)
+            } else {
+                lower_edge.push(edge_point)
+            }
             if i == strips - 1 {
                 let last = pos2(c.x + x1, c.y + edge(x1));
                 if top { upper_edge.push(last) } else { lower_edge.push(last) }
@@ -1203,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    fn at_the_channel_the_beam_shows_the_crates_and_then_the_frame() {
+    fn at_the_channel_the_beam_shows_the_blocks_and_then_the_frame() {
         let open = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
         assert_eq!(choose_gaze(&open).as_deref(), Some(LEDGE_BLOCKS));
         let built = Facts { slot_empty: false, ..open.clone() };
@@ -1255,6 +1286,27 @@ mod tests {
             assert!(landmarks.position(place).is_some(), "{place}");
         }
         assert!(landmarks.position("Light gate").is_none(), "the gate's pin is away until it is clamped");
+    }
+
+    #[test]
+    fn landmarks_follow_the_launcher_and_the_light_gate() {
+        let game = Game::for_test(9);
+        let (mut world, mut sites) = island::build(&game.layout);
+        let mut landmarks = Landmarks::new(&sites, &game);
+        let release = "Ledge launcher: release point";
+        let bare = landmarks.position(release).unwrap();
+        let mut dirty = crate::carry::DirtyCells::default();
+        crate::carry::set_stack(&mut world, &mut sites, &mut dirty, 3);
+        crate::carry::set_slot(&mut world, &mut sites, &mut dirty, crate::carry::Slot::Tower, 4);
+        landmarks.follow(&sites);
+        assert_eq!(landmarks.position(release), Some(bare + Vec3::Y * 3.0), "the beam points where the ruler's pin is");
+        assert_eq!(landmarks.position("Light gate"), Some(sites.pins[sites.gate_pin].position));
+        crate::carry::set_slot(&mut world, &mut sites, &mut dirty, crate::carry::Slot::Tower, 0);
+        landmarks.follow(&sites);
+        assert!(landmarks.position("Light gate").is_none(), "unclamped, the gate is not a place");
+        sites.cart = sites.rail_start + Vec3::X * 5.0;
+        landmarks.follow(&sites);
+        assert_eq!(landmarks.position(RAIL_CART), Some(sites.cart + Vec3::Y * 0.8));
     }
 
     #[test]
@@ -1310,7 +1362,10 @@ mod tests {
         lumen.frame += 1;
         lumen.say("Why this station.");
         lumen.say("Try the experiment.");
-        assert_eq!(lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["Once upon a time.", "Then this.", "Why this station.", "Try the experiment."]);
+        assert_eq!(
+            lumen.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+            ["Once upon a time.", "Then this.", "Why this station.", "Try the experiment."]
+        );
     }
 
     #[test]
@@ -1431,7 +1486,11 @@ mod tests {
             let bar = crate::cinematic::letterbox_height(screen, 1.0);
             for forward in [0.0, 1.0] {
                 let eye = eye_place(screen, lift_for(bar, false), forward, screen.right());
-                assert!(eye.y + EYE_REACH <= screen.bottom() - bar, "{w}x{h}: the eye reaches {} below the bar's top", eye.y + EYE_REACH - (screen.bottom() - bar));
+                assert!(
+                    eye.y + EYE_REACH <= screen.bottom() - bar,
+                    "{w}x{h}: the eye reaches {} below the bar's top",
+                    eye.y + EYE_REACH - (screen.bottom() - bar)
+                );
             }
         }
         // With no letterbox the eye stays where it was; the ruler still lifts it.

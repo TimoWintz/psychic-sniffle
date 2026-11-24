@@ -11,8 +11,21 @@ pub struct Entry {
     /// What was measured, in words.
     pub label: String,
     pub quantity: Quantity,
-    /// Instrument or origin: "ruler", "stopwatch", "calculated".
+    /// Instrument or origin, one of [`source`]'s names: "ruler", "stopwatch", "calculated".
     pub source: String,
+}
+
+/// Where a notebook entry came from. Saved as text, so these are the words the save holds.
+pub mod source {
+    pub const RULER: &str = "ruler";
+    pub const STOPWATCH: &str = "stopwatch";
+    pub const LIGHT_GATE: &str = "light gate";
+    /// The ledge launcher's rating plate.
+    pub const PLATE: &str = "plate";
+    /// The calculator.
+    pub const CALCULATED: &str = "calculated";
+    /// The player's own g, from a pass at the drop tower.
+    pub const CALIBRATED: &str = "calibrated";
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -23,6 +36,11 @@ pub struct Notebook {
 impl Notebook {
     pub fn get(&self, name: &str) -> Option<&Entry> {
         self.entries.iter().find(|e| e.name == name)
+    }
+
+    /// Whether the notebook already holds this reading: the same label and the same value.
+    pub fn has_reading(&self, label: &str, quantity: Quantity) -> bool {
+        self.entries.iter().any(|e| e.label == label && e.quantity == quantity)
     }
 
     /// Record a reading under `name`, replacing an earlier entry with the same name.
@@ -36,10 +54,7 @@ impl Notebook {
 
     /// Record a reading under the first free name `prefix1`, `prefix2`, ... and return that name.
     pub fn add_numbered(&mut self, prefix: &str, label: &str, quantity: Quantity, source: &str) -> String {
-        let name = (1..)
-            .map(|n| format!("{prefix}{n}"))
-            .find(|candidate| self.get(candidate).is_none())
-            .expect("an unused name exists");
+        let name = (1..).map(|n| format!("{prefix}{n}")).find(|candidate| self.get(candidate).is_none()).expect("an unused name exists");
         self.set(&name, label, quantity, source);
         name
     }
@@ -47,9 +62,8 @@ impl Notebook {
     /// Record two readings that belong together under the first number free for both prefixes
     /// (`h2` and `t2`), so a pair keeps one number. Returns the two names.
     pub fn add_pair(&mut self, first: (&str, &str, Quantity), second: (&str, &str, Quantity), source: &str) -> (String, String) {
-        let n = (1..)
-            .find(|n| self.get(&format!("{}{n}", first.0)).is_none() && self.get(&format!("{}{n}", second.0)).is_none())
-            .expect("an unused number exists");
+        let n =
+            (1..).find(|n| self.get(&format!("{}{n}", first.0)).is_none() && self.get(&format!("{}{n}", second.0)).is_none()).expect("an unused number exists");
         let names = (format!("{}{n}", first.0), format!("{}{n}", second.0));
         self.set(&names.0, first.1, first.2, source);
         self.set(&names.1, second.1, second.2, source);
@@ -93,6 +107,15 @@ mod tests {
         nb.add_numbered("t", "fall time", Quantity::seconds(2.0), "stopwatch");
         let pair = nb.add_pair(("h", "drop to the gate", Quantity::metres(9.0)), ("t", "time to the gate", Quantity::seconds(1.4)), "light gate");
         assert_eq!(pair, ("h4".to_string(), "t4".to_string()), "t3 is taken, so the pair skips to 4");
+    }
+
+    #[test]
+    fn a_reading_is_known_by_its_label_and_value() {
+        let mut nb = Notebook::default();
+        nb.add_numbered("t", "fall time", Quantity::seconds(2.0), "stopwatch");
+        assert!(nb.has_reading("fall time", Quantity::seconds(2.0)));
+        assert!(!nb.has_reading("fall time", Quantity::seconds(2.1)));
+        assert!(!nb.has_reading("rise time", Quantity::seconds(2.0)));
     }
 
     #[test]

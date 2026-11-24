@@ -53,18 +53,11 @@ impl TutorSettings {
             Some(name) => match env(name) {
                 Some(key) if !key.trim().is_empty() => Some(key.trim().to_string()),
                 _ => {
-                    return Err(TutorError::Settings(format!(
-                        "the environment variable {name} is not set, so there is no key to send"
-                    )));
+                    return Err(TutorError::Settings(format!("the environment variable {name} is not set, so there is no key to send")));
                 }
             },
         };
-        Ok(Arc::new(ChatCompletions {
-            base_url: self.base_url.clone(),
-            model: self.model.clone(),
-            api_key,
-            max_tokens: self.max_tokens,
-        }))
+        Ok(Arc::new(ChatCompletions { base_url: self.base_url.clone(), model: self.model.clone(), api_key, max_tokens: self.max_tokens }))
     }
 
     pub fn provider(&self) -> Result<Arc<dyn Provider>, TutorError> {

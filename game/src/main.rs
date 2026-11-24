@@ -14,12 +14,12 @@ mod props;
 mod rig;
 mod ruler;
 mod scenery;
-mod vessel;
 mod sim;
 mod state;
 mod stations;
 mod tutor_bridge;
 mod ui;
+mod vessel;
 mod voxel;
 mod waking;
 
@@ -36,10 +36,12 @@ fn main() {
     waking::settle(&mut world, &sites.way, waking::stage(&game));
 
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "First Principles".into(), resolution: (1920, 1080).into(), ..default() }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window { title: "First Principles".into(), resolution: (1920, 1080).into(), ..default() }),
+                ..default()
+            }),
+        )
         .add_plugins((EguiPlugin::default(), PhysicsPlugins::default()))
         .insert_resource(game)
         .insert_resource(world)

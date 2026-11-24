@@ -260,13 +260,7 @@ pub fn tint(material: Material, p: IVec3) -> [f32; 3] {
             // Layers that dip and wander a little, so cliffs read as sediment.
             let warp = (fbm(x / 24.0, z / 24.0, 41, 2) * 5.0) as i32;
             let band = (p.y + warp).div_euclid(2);
-            const STRATA: [[f32; 3]; 5] = [
-                [0.46, 0.43, 0.54],
-                [0.58, 0.42, 0.37],
-                [0.40, 0.38, 0.48],
-                [0.62, 0.58, 0.66],
-                [0.46, 0.43, 0.54],
-            ];
+            const STRATA: [[f32; 3]; 5] = [[0.46, 0.43, 0.54], [0.58, 0.42, 0.37], [0.40, 0.38, 0.48], [0.62, 0.58, 0.66], [0.46, 0.43, 0.54]];
             Vec3::from_array(STRATA[(hash01(IVec3::new(band, 7, 3)) * 5.0) as usize])
         }
         Material::Sand => base * (0.95 + 0.08 * fbm(x / 6.0, z / 6.0, 53, 2)),

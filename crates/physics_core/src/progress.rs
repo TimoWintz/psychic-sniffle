@@ -104,6 +104,12 @@ impl Save {
         Ok(save)
     }
 
+    /// Whether nothing has happened in this game yet: nothing measured, noted, watched, placed,
+    /// read or tested.
+    pub fn untouched(&self) -> bool {
+        *self == Save::new(self.seed)
+    }
+
     pub fn progress(&self, puzzle_id: &str) -> PuzzleProgress {
         self.puzzles.get(puzzle_id).cloned().unwrap_or_default()
     }
@@ -175,15 +181,21 @@ impl Save {
 
     /// Record a judged test: uses one charge and marks the puzzle solved on a pass.
     pub fn record(&mut self, puzzle_id: &str, values: Vec<CommittedValue>, outcome: &Outcome) {
+        self.use_charge(puzzle_id);
+        self.record_attempt(puzzle_id, values, outcome);
+    }
+
+    /// Use one of a station's charges, as committing a test does.
+    pub fn use_charge(&mut self, puzzle_id: &str) {
+        self.puzzles.entry(puzzle_id.to_string()).or_default().charges_used += 1;
+    }
+
+    /// Record what a test showed, without using a charge ([`Save::use_charge`] did that at commit),
+    /// and mark the puzzle solved on a pass.
+    pub fn record_attempt(&mut self, puzzle_id: &str, values: Vec<CommittedValue>, outcome: &Outcome) {
         let progress = self.puzzles.entry(puzzle_id.to_string()).or_default();
-        progress.charges_used += 1;
         progress.solved |= outcome.pass;
-        progress.attempts.push(Attempt {
-            values,
-            pass: outcome.pass,
-            headline: outcome.headline.clone(),
-            detail: outcome.detail.clone(),
-        });
+        progress.attempts.push(Attempt { values, pass: outcome.pass, headline: outcome.headline.clone(), detail: outcome.detail.clone() });
     }
 }
 
@@ -248,6 +260,20 @@ mod tests {
 
         assert!(attempt(&mut save, "1.1.2", PuzzleKind::Gravity, 1.0));
         assert_eq!(save.progress("1.1.2").quality(), Some(Quality::Pristine));
+    }
+
+    #[test]
+    fn a_save_is_untouched_until_anything_happens() {
+        let mut save = Save::new(5);
+        assert!(save.untouched());
+        save.notebook.set("d", "a distance", Quantity::metres(3.0), "ruler");
+        assert!(!save.untouched());
+        let mut watched = Save::new(5);
+        watched.record_demo("1.1.0", None);
+        assert!(!watched.untouched());
+        let mut placed = Save::new(5);
+        placed.placed.insert("1.1.0".into(), 1);
+        assert!(!placed.untouched());
     }
 
     #[test]

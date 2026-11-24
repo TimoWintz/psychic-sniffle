@@ -11,10 +11,13 @@ use thiserror::Error;
 pub enum ExprError {
     #[error("Nothing to evaluate.")]
     Empty,
-    #[error("Couldn't read the expression at position {pos}: {msg}")]
+    /// `pos` counts characters from 0; the message counts them from 1, as the player does.
+    #[error("Couldn't read the expression at character {}: {msg}", .pos + 1)]
     Syntax { pos: usize, msg: String },
     #[error("'{0}' isn't a notebook entry, a unit or a function.")]
     UnknownName(String),
+    #[error("{0} is a function, so put what it works on in brackets, like {0}(30 deg).")]
+    FunctionNeedsBrackets(String),
     #[error("You can't {op} {left} and {right}, because their dimensions differ.")]
     Mismatch { op: &'static str, left: String, right: String },
     #[error("{func} needs a pure number, but was given {got}.")]
@@ -55,7 +58,7 @@ pub fn evaluate(source: &str, env: &dyn Env) -> Result<Quantity, ExprError> {
     let mut parser = Parser { tokens: &tokens, at: 0, env };
     let value = parser.expr()?;
     if let Some(tok) = parser.peek() {
-        return Err(ExprError::Syntax { pos: tok.pos, msg: "unexpected input here".into() });
+        return Err(ExprError::Syntax { pos: tok.pos, msg: "there's more here than the calculator expected.".into() });
     }
     if !value.value.is_finite() {
         return Err(ExprError::Domain("The result isn't a finite number.".into()));
@@ -85,7 +88,10 @@ struct Token {
 
 fn tokenize(source: &str) -> Result<Vec<Token>, ExprError> {
     let chars: Vec<char> = source.chars().collect();
-    let mut out = Vec::new();
+    let mut out: Vec<Token> = Vec::new();
+    // Whether the last token was a number written in digits: another one straight after it is
+    // refused, since "1 000" would otherwise multiply to 0.
+    let mut after_number = false;
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
@@ -113,10 +119,16 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ExprError> {
                 }
             }
             let text: String = chars[start..i].iter().collect();
-            let value = text
-                .parse::<f64>()
-                .map_err(|_| ExprError::Syntax { pos, msg: format!("'{text}' is not a number") })?;
+            let value = text.parse::<f64>().map_err(|_| ExprError::Syntax { pos, msg: format!("'{text}' isn't a number.") })?;
+            if after_number {
+                return Err(ExprError::Syntax {
+                    pos,
+                    msg: "two numbers follow each other. Write a number without spaces (1000, not 1 000), or put * between two numbers to multiply them."
+                        .into(),
+                });
+            }
             out.push(Token { tok: Tok::Num(value), pos });
+            after_number = true;
             continue;
         }
         if c.is_alphabetic() || c == '_' {
@@ -126,8 +138,10 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ExprError> {
                 i += 1;
             }
             out.push(Token { tok: Tok::Name(chars[start..i].iter().collect()), pos });
+            after_number = false;
             continue;
         }
+        after_number = false;
         let tok = match c {
             '+' => Tok::Plus,
             '-' | '−' => Tok::Minus,
@@ -143,7 +157,7 @@ fn tokenize(source: &str) -> Result<Vec<Token>, ExprError> {
                 Tok::Num(if c == '²' { 2.0 } else { 3.0 })
             }
             other => {
-                return Err(ExprError::Syntax { pos, msg: format!("unexpected character '{other}'") });
+                return Err(ExprError::Syntax { pos, msg: format!("'{other}' isn't something the calculator knows.") });
             }
         };
         out.push(Token { tok, pos });
@@ -177,8 +191,8 @@ impl Parser<'_> {
                 self.at += 1;
                 Ok(())
             }
-            Some(t) => Err(ExprError::Syntax { pos: t.pos, msg: format!("expected {what}") }),
-            None => Err(ExprError::Syntax { pos: self.end_pos(), msg: format!("expected {what}") }),
+            Some(t) => Err(ExprError::Syntax { pos: t.pos, msg: format!("it expected {what} here.") }),
+            None => Err(ExprError::Syntax { pos: self.end_pos(), msg: format!("it expected {what} at the end.") }),
         }
     }
 
@@ -193,11 +207,7 @@ impl Parser<'_> {
             self.at += 1;
             let right = self.term()?;
             if left.dim != right.dim {
-                return Err(ExprError::Mismatch {
-                    op,
-                    left: left.dim.describe(),
-                    right: right.dim.describe(),
-                });
+                return Err(ExprError::Mismatch { op, left: left.dim.describe(), right: right.dim.describe() });
             }
             left = Quantity::new(left.value + sign * right.value, left.dim);
         }
@@ -260,7 +270,7 @@ impl Parser<'_> {
 
     fn primary(&mut self) -> Result<Quantity, ExprError> {
         let Some(token) = self.peek().cloned() else {
-            return Err(ExprError::Syntax { pos: self.end_pos(), msg: "the expression stops early".into() });
+            return Err(ExprError::Syntax { pos: self.end_pos(), msg: "the expression stops too early.".into() });
         };
         self.at += 1;
         match token.tok {
@@ -280,9 +290,12 @@ impl Parser<'_> {
                     self.expect(Tok::RParen, "a closing ')'")?;
                     return call(&name, arg);
                 }
+                if is_function(&name) {
+                    return Err(ExprError::FunctionNeedsBrackets(name));
+                }
                 lookup_unit(&name).ok_or(ExprError::UnknownName(name))
             }
-            _ => Err(ExprError::Syntax { pos: token.pos, msg: "expected a number, a name or '('".into() }),
+            _ => Err(ExprError::Syntax { pos: token.pos, msg: "it expected a number, a name or '(' here.".into() }),
         }
     }
 }
@@ -293,9 +306,7 @@ fn pow(base: Quantity, exponent: f64) -> Result<Quantity, ExprError> {
     let dim = if base.dim.is_none() {
         Dim::NONE
     } else if (doubled - doubled.round()).abs() < 1e-9 {
-        base.dim
-            .pow_ratio(doubled.round() as i32, 2)
-            .ok_or_else(|| ExprError::BadPower(base.dim.describe()))?
+        base.dim.pow_ratio(doubled.round() as i32, 2).ok_or_else(|| ExprError::BadPower(base.dim.describe()))?
     } else {
         return Err(ExprError::BadPower(base.dim.describe()));
     };
@@ -306,11 +317,10 @@ fn pow(base: Quantity, exponent: f64) -> Result<Quantity, ExprError> {
     Ok(Quantity::new(value, dim))
 }
 
-fn is_function(name: &str) -> bool {
-    matches!(
-        name,
-        "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "ln" | "exp" | "abs"
-    )
+/// Whether `name` is one of the calculator's functions (`sqrt`, `sin`...), which a notebook entry
+/// can't be called.
+pub fn is_function(name: &str) -> bool {
+    matches!(name, "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "ln" | "exp" | "abs")
 }
 
 fn call(name: &str, arg: Quantity) -> Result<Quantity, ExprError> {
@@ -388,10 +398,7 @@ mod tests {
     #[test]
     fn mismatched_dimensions_are_explained() {
         let err = eval("3 m + 2 s").unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "You can't add a length (m) and a time (s), because their dimensions differ."
-        );
+        assert_eq!(err.to_string(), "You can't add a length (m) and a time (s), because their dimensions differ.");
         assert!(matches!(eval("sin(3 m)"), Err(ExprError::NeedsNumber { .. })));
         assert!(matches!(eval("2^(1 s)"), Err(ExprError::DimensionedExponent(_))));
     }
@@ -431,5 +438,31 @@ mod tests {
         assert!(matches!(eval("1 +"), Err(ExprError::Syntax { .. })));
         assert!(matches!(eval("1 / 0"), Err(ExprError::Domain(_))));
         assert!(matches!(eval("2 $ 3"), Err(ExprError::Syntax { .. })));
+    }
+
+    #[test]
+    fn a_function_without_brackets_is_named_as_one() {
+        assert_eq!(eval("sin 30"), Err(ExprError::FunctionNeedsBrackets("sin".into())));
+        assert_eq!(eval("sqrt 4").unwrap_err().to_string(), "sqrt is a function, so put what it works on in brackets, like sqrt(30 deg).");
+        // A notebook entry may not be called like a function, but if one were, it would win.
+        let env = |name: &str| (name == "sin").then_some(Quantity::number(2.0));
+        assert_eq!(evaluate("sin 3", &env).unwrap().value, 6.0);
+    }
+
+    #[test]
+    fn two_numbers_in_a_row_are_refused() {
+        let err = eval("1 000 m").unwrap_err();
+        assert!(matches!(err, ExprError::Syntax { pos: 2, .. }), "{err:?}");
+        assert!(err.to_string().starts_with("Couldn't read the expression at character 3: two numbers follow each other."), "{err}");
+        assert!(matches!(eval("2 3"), Err(ExprError::Syntax { .. })));
+        // A number may still follow a power written with a superscript, or a bracket.
+        assert_eq!(eval("2² 3").unwrap().value, 12.0);
+        assert_eq!(eval("(2) 3").unwrap().value, 6.0);
+        assert_eq!(eval("2 (3)").unwrap().value, 6.0);
+    }
+
+    #[test]
+    fn error_positions_count_from_one() {
+        assert_eq!(eval("1 + )").unwrap_err().to_string(), "Couldn't read the expression at character 5: it expected a number, a name or '(' here.");
     }
 }

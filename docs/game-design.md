@@ -220,7 +220,7 @@ spine, and nothing goes round it. The castaway reaches the skiff only once its h
 - One voxel = 1 m × 1 m × 1 m of a named material.
 - Every material has real properties, listed in the in-game handbook: density, specific heat, thermal
   conductivity, electrical resistivity. The handbook is the same table the simulators read.
-- The planet's constants are generated per save. Gravity is not 9.81 m/s²; the first puzzle is to
+- The planet's constants are generated per save. Gravity is not 9.81 m/s²; the third puzzle is to
   measure it. Later tiers do the same for atmosphere, day length and the star's output.
 
 How each domain uses the voxels:
@@ -248,8 +248,10 @@ Every puzzle runs through the same five steps at a **station** (a workbench in t
    an expression, never which relation to use.
 4. **Test.** Commit. The simulation runs in the world; the result panel shows what was predicted
    against what happened, with a graph.
-5. **Result.** Pass: the part is fabricated and appears on the ship. Fail: a diagnostic says what
-   happened in physical terms ("landed 3.2 m short"), never what the answer is.
+5. **Result.** Pass: the job is done in the world (the cart reaches its marker, the casket lands on
+   the platform), and the way wakes the next machine (see [The story](#the-story)); the
+   last pass puts the helm in the skiff. Fail: a diagnostic says what happened in physical terms
+   ("landed 3.2 m short"), never what the answer is.
 
 ### Doing it with your hands
 

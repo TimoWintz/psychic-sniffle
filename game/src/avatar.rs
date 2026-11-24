@@ -31,19 +31,20 @@ const ELBOW_R: usize = 10;
 const JOINTS: usize = 11;
 
 /// Each joint's parent (`None`: the body root) and its place in the parent's frame at rest.
-const PARENT: [Option<usize>; JOINTS] = [None, Some(PELVIS), Some(SPINE), Some(PELVIS), Some(HIP_L), Some(PELVIS), Some(HIP_R), Some(SPINE), Some(SHOULDER_L), Some(SPINE), Some(SHOULDER_R)];
+const PARENT: [Option<usize>; JOINTS] =
+    [None, Some(PELVIS), Some(SPINE), Some(PELVIS), Some(HIP_L), Some(PELVIS), Some(HIP_R), Some(SPINE), Some(SHOULDER_L), Some(SPINE), Some(SHOULDER_R)];
 const REST: [Vec3; JOINTS] = [
-    Vec3::new(0.0, 0.8, 0.0),     // pelvis, at the top of the legs
-    Vec3::new(0.0, 0.04, 0.0),    // spine, at the waist
-    Vec3::new(0.0, 0.6, 0.0),     // neck, at the top of the chest
-    Vec3::new(-0.14, 0.0, 0.0),   // left hip
-    Vec3::new(0.0, -0.42, 0.0),   // left knee
-    Vec3::new(0.14, 0.0, 0.0),    // right hip
-    Vec3::new(0.0, -0.42, 0.0),   // right knee
-    Vec3::new(-0.37, 0.5, 0.0),   // left shoulder
-    Vec3::new(0.0, -0.28, 0.0),   // left elbow
-    Vec3::new(0.37, 0.5, 0.0),    // right shoulder
-    Vec3::new(0.0, -0.28, 0.0),   // right elbow
+    Vec3::new(0.0, 0.8, 0.0),   // pelvis, at the top of the legs
+    Vec3::new(0.0, 0.04, 0.0),  // spine, at the waist
+    Vec3::new(0.0, 0.6, 0.0),   // neck, at the top of the chest
+    Vec3::new(-0.14, 0.0, 0.0), // left hip
+    Vec3::new(0.0, -0.42, 0.0), // left knee
+    Vec3::new(0.14, 0.0, 0.0),  // right hip
+    Vec3::new(0.0, -0.42, 0.0), // right knee
+    Vec3::new(-0.37, 0.5, 0.0), // left shoulder
+    Vec3::new(0.0, -0.28, 0.0), // left elbow
+    Vec3::new(0.37, 0.5, 0.0),  // right shoulder
+    Vec3::new(0.0, -0.28, 0.0), // right elbow
 ];
 
 /// Underside of a boot, front and back, in the knee's frame.
@@ -336,7 +337,7 @@ fn typing(t: f32) -> Pose {
     p
 }
 
-/// Carrying a crate: both arms forward and bent, hands either side of it at chest height. Only the
+/// Carrying a block: both arms forward and bent, hands either side of it at chest height. Only the
 /// arms and the back; the legs keep whatever they are doing.
 fn carrying(under: &Pose) -> Pose {
     let mut p = *under;
@@ -601,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn carrying_holds_the_hands_forward_either_side_of_the_crate() {
+    fn carrying_holds_the_hands_forward_either_side_of_the_block() {
         for under in [idle(0.0), gait(0.3, 0.0)] {
             let pose = planted(carrying(&under));
             let (left, right) = (pose.point(ELBOW_L, HAND), pose.point(ELBOW_R, HAND));
@@ -609,7 +610,7 @@ mod tests {
                 assert!(hand.z < -0.25, "hands in front of the body: {hand}");
                 assert!((0.75..1.35).contains(&hand.y), "hands at chest height: {hand}");
             }
-            assert!((left.x - right.x).abs() > 0.4, "hands apart, either side of the crate: {left} {right}");
+            assert!((left.x - right.x).abs() > 0.4, "hands apart, either side of the block: {left} {right}");
             // The legs keep walking.
             assert_eq!(pose.rot[HIP_L], planted(under).rot[HIP_L]);
         }

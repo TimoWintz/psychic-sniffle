@@ -153,6 +153,19 @@ impl Conversation {
         true
     }
 
+    /// Stop waiting for the reply on its way, keeping what has arrived of it. The request's thread
+    /// stops at its next piece of text, when it finds no one listening. Returns `false` if nothing
+    /// was on its way.
+    pub fn cancel(&mut self) -> bool {
+        let Some(pending) = self.pending.take() else { return false };
+        let (text, _) = strip_looks(&pending.raw, &pending.landmarks);
+        let reply = pending.filter.apply(&text);
+        if !reply.trim().is_empty() {
+            self.turns.push(Turn::Tutor(reply.trim().to_string()));
+        }
+        true
+    }
+
     /// Collect whatever has arrived. Call once per frame. Returns `true` if anything changed.
     pub fn poll(&mut self) -> bool {
         let Some(pending) = &mut self.pending else { return false };

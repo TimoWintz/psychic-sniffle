@@ -121,7 +121,9 @@ fn spawn_skiff(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mat
             planks.push((at, height, meshes.add(Cuboid::from_size(size)), meshes.add(Cuboid::new(size.x * 0.85, 0.07, 0.14))));
         }
     }
-    let mut part = |size: Vec3, at: Vec3, material: &Handle<StandardMaterial>| (Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(material.clone()), Transform::from_translation(at));
+    let mut part = |size: Vec3, at: Vec3, material: &Handle<StandardMaterial>| {
+        (Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(material.clone()), Transform::from_translation(at))
+    };
     commands.spawn((Skiff, Transform::from_translation(sites.slipway).with_rotation(along_slipway), Visibility::default())).with_children(|skiff| {
         // The cradle: two stone blocks the keel rests in.
         for x in [-4.0, 4.0] {
@@ -187,9 +189,12 @@ fn take_helm(
     let [shaft, core] = crate::props::tiller(TILLER_SIZE).map(|m| meshes.add(m));
     // The blade hangs over the stern and down into the water's line; the grip reaches forward over
     // the seat.
-    let fitted = Transform::from_translation(SOCKET + Vec3::new(-0.2, 0.35, 0.0)).with_rotation(Quat::from_rotation_z(0.5) * Quat::from_rotation_y(std::f32::consts::PI));
+    let fitted = Transform::from_translation(SOCKET + Vec3::new(-0.2, 0.35, 0.0))
+        .with_rotation(Quat::from_rotation_z(0.5) * Quat::from_rotation_y(std::f32::consts::PI));
     commands.entity(*skiff).with_children(|skiff| {
-        skiff.spawn((Settling(0.0), Mesh3d(shaft), MeshMaterial3d(stone), fitted.with_translation(fitted.translation + Vec3::Y * 2.0))).with_child((Mesh3d(core), MeshMaterial3d(helm.0.clone())));
+        skiff
+            .spawn((Settling(0.0), Mesh3d(shaft), MeshMaterial3d(stone), fitted.with_translation(fitted.translation + Vec3::Y * 2.0)))
+            .with_child((Mesh3d(core), MeshMaterial3d(helm.0.clone())));
     });
 }
 

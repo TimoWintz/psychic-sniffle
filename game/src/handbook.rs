@@ -765,7 +765,8 @@ fn materials(ui: &mut egui::Ui) {
 mod tests {
     use super::*;
 
-    const ALL: [Scene; 8] = [Scene::Tape, Scene::Cyclist, Scene::Overtake, Scene::GreenLight, Scene::AppleDrop, Scene::TableEdge, Scene::KickSplit, Scene::TwinKicks];
+    const ALL: [Scene; 8] =
+        [Scene::Tape, Scene::Cyclist, Scene::Overtake, Scene::GreenLight, Scene::AppleDrop, Scene::TableEdge, Scene::KickSplit, Scene::TwinKicks];
 
     fn samples(scene: Scene) -> impl Iterator<Item = f64> {
         let duration = timing(scene).duration;

@@ -57,10 +57,6 @@ impl Plugin for RigPlugin {
     }
 }
 
-fn puzzle_of(game: &Game, kind: PuzzleKind) -> usize {
-    game.chapter.puzzles.iter().position(|p| p.kind == kind).expect("the chapter has this kind of puzzle")
-}
-
 pub(crate) fn spawn(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -79,7 +75,7 @@ pub(crate) fn spawn(
 
     // The tilting launcher's guide arm: two rails hinged at the release point, which the tiller rides
     // up on its way out. They lie along the start of the path the tiller flies.
-    let ridge = puzzle_of(&game, PuzzleKind::Ridge);
+    let ridge = game.puzzle_of(PuzzleKind::Ridge);
     let site = sites.ridge_launch;
     let across = site.direction.cross(Vec3::Y).normalize();
     let base = Quat::from_rotation_arc(Vec3::X, site.direction);
@@ -116,21 +112,27 @@ pub(crate) fn spawn(
         commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(at)));
         commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(ledge_quartz.clone()), Transform::from_translation(at + Vec3::Y * (tall / 2.0 + 0.08))));
     }
-    // The cradle caps the top crate: a little wider than a block and standing a little proud of its
+    // The cradle caps the top block: a little wider than a block and standing a little proud of its
     // top, so its faces never share the block's planes (which made them flicker).
     let cradle = meshes.add(Cuboid::new(1.0 + 2.0 * CRADLE_LIP, CRADLE_H, 1.0 + 2.0 * CRADLE_LIP));
     // Behind the load, clear of its back face and wider than it.
     let back_stop = meshes.add(Cuboid::new(0.08, 0.5, 0.96));
     let facing = Quat::from_rotation_arc(Vec3::X, ledge.direction);
     commands
-        .spawn((Cradle, Mesh3d(cradle), MeshMaterial3d(stone.clone()), Transform::from_translation(cradle_at(&sites)).with_rotation(facing), Visibility::default()))
+        .spawn((
+            Cradle,
+            Mesh3d(cradle),
+            MeshMaterial3d(stone.clone()),
+            Transform::from_translation(cradle_at(&sites)).with_rotation(facing),
+            Visibility::default(),
+        ))
         .with_children(|c| {
             c.spawn((Mesh3d(back_stop), MeshMaterial3d(steel.clone()), Transform::from_xyz(-0.5, 0.3, 0.0)));
         });
 
     // A speed gauge beside each launcher, on the station's side, rated to the most it accepts and
     // following the blueprint. The ledge launcher's also marks the bottom of its band.
-    let channel = puzzle_of(&game, PuzzleKind::Channel);
+    let channel = game.puzzle_of(PuzzleKind::Channel);
     let gauges = [
         (channel, sites.channel_launch, game.layout.channel_speed_max, Some(game.layout.channel_speed_min)),
         (ridge, sites.ridge_launch, game.layout.v_max, None),

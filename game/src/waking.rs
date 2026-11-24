@@ -25,9 +25,9 @@ use crate::carry::DirtyCells;
 use crate::companion::Landmarks;
 use crate::island::{Cable, MACHINES, Sites, Stonework, Way};
 use crate::player::OrbitCamera;
-use crate::vessel::{SIGHT_SIZE, Sight};
 use crate::sim::{Sim, TerrainReshaped};
 use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::vessel::{SIGHT_SIZE, Sight};
 use crate::voxel::{DARK_QUARTZ, VoxelWorld};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -308,7 +308,13 @@ impl Waking {
         match self.play {
             Some(play) if play.timeline.stage == work.stage && before == 0.0 && work.with_glow => ease(play.timeline.glowed(play.t) / 0.9),
             Some(play) if play.timeline.stage == work.stage && before == 0.0 => {
-                let reach = if work.rises { 0.8 } else if work.stage == 1 { GATE_CLEAR } else { 0.6 };
+                let reach = if work.rises {
+                    0.8
+                } else if work.stage == 1 {
+                    GATE_CLEAR
+                } else {
+                    0.6
+                };
                 ease(play.timeline.woken(play.t) / reach)
             }
             _ => before,
@@ -428,7 +434,10 @@ enum Part {
     CraneArm,
     HookLine,
     /// A segment of one of the bridge's cables.
-    Cable { cable: usize, segment: usize },
+    Cable {
+        cable: usize,
+        segment: usize,
+    },
 }
 
 /// How thick the bridge's cables are.
@@ -491,7 +500,12 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let way = &sites.way;
     let stone = stone(&mut materials);
     let quartz = Material::Quartz.properties().colour;
-    let light = materials.add(StandardMaterial { base_color: Color::srgba(quartz[0], quartz[1], quartz[2], 0.55), unlit: true, alpha_mode: AlphaMode::Add, ..default() });
+    let light = materials.add(StandardMaterial {
+        base_color: Color::srgba(quartz[0], quartz[1], quartz[2], 0.55),
+        unlit: true,
+        alpha_mode: AlphaMode::Add,
+        ..default()
+    });
     // The north gate's beam, from its keystone out over the strait towards the main hull.
     let towards = (crate::intro::Mainland::wreck() - way.keystone).with_y(0.0).normalize() + Vec3::Y * 0.08;
     let rotation = Quat::from_rotation_arc(Vec3::Y, towards.normalize());
@@ -528,9 +542,11 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
 /// reads as one line.
 fn segment_between(a: Vec3, b: Vec3) -> Transform {
     let along = b - a;
-    Transform::from_translation((a + b) / 2.0)
-        .with_rotation(Quat::from_rotation_arc(Vec3::Y, along.normalize()))
-        .with_scale(Vec3::new(1.0, along.length() + CABLE_RADIUS, 1.0))
+    Transform::from_translation((a + b) / 2.0).with_rotation(Quat::from_rotation_arc(Vec3::Y, along.normalize())).with_scale(Vec3::new(
+        1.0,
+        along.length() + CABLE_RADIUS,
+        1.0,
+    ))
 }
 
 /// Whether a segment of one of the bridge's cables is there: once the bridge stands far enough.
@@ -977,7 +993,10 @@ mod tests {
             let console = sites.stations[PUZZLES - 1] + IVec3::NEG_X;
             settle(&mut world, &sites.way, 3);
             let before = reachable(&world, spawn, climb);
-            assert!(!before.contains(&platform) && !before.contains(&console), "seed {seed}: the north island can be reached before the bridge stands (climb {climb})");
+            assert!(
+                !before.contains(&platform) && !before.contains(&console),
+                "seed {seed}: the north island can be reached before the bridge stands (climb {climb})"
+            );
             settle(&mut world, &sites.way, 4);
             let after = reachable(&world, spawn, climb);
             assert!(after.contains(&platform), "seed {seed}: the bridge does not lead to the platform");

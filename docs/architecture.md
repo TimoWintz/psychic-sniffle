@@ -26,7 +26,7 @@ Nothing depends on `game`.
 | `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired blocks, the two-angle shots |
 | `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions |
 | `notebook` | named readings; the calculator's variables |
-| `save` | progress record (seed, attempts, completed puzzles, notebook, pages found, quiz questions answered right) |
+| `progress` | the save: seed, attempts, completed puzzles, notebook, pages found, demonstrations watched, what is placed, quiz questions answered right |
 
 A puzzle is a **kind** (Rust code: how to generate numbers from a seed, how to judge an attempt, how to
 write the worked solution) plus **content** (data: title, brief, concept cards, number ranges). Adding a
@@ -42,12 +42,21 @@ Hand-off rule: the exact simulator moves an object until the event that is judge
 At that instant the verdict is recorded and the object becomes an engine-driven body with the velocity
 it had. What the engine does afterwards cannot change the result.
 
+A test counts from the moment it is committed: its charge is used then, and the save file holds the
+whole attempt (`Game::begin_test`), so quitting while it plays cannot take it back. The game itself
+shows the verdict, and counts the puzzle solved, only once the world has played it out
+(`Game::finish_test`).
+
 ## game
 
 | Module | Contents |
 |---|---|
 | `intro` | title menu and the intro behind it: the placeholder sets for levels III and II, the ship, smoke and dust, the hand-over to the player's view |
 | `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
+| `state` | the shared game state: the chapter, the seeded layout, the save and its file (read once, moved aside if it can't be read, written whole by renaming a new file over it), the test still playing out, and what the interface shows |
+| `island` | the island built from the chapter layout in whole blocks: the coast, the puzzle sites kept flat, the route along the ancient way from the wreck to the skiff, the places (`Sites`) everything else reads |
+| `scenery` | everything looked at and never touched: the island's meshes, the sea, the sky, haze, distant islands and small plants |
+| `props` | the shapes of what tests move and of the wreck's loose debris, each inside the box the simulation reasons with |
 | `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
@@ -63,6 +72,7 @@ it had. What the engine does afterwards cannot change the result.
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
 | `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake |
+| `prefill` | `GAME_SCRIPT=prefill` (development only): notes the tour's ruler readings and keeps each blueprint filled with the tour's formula, while the player plays by hand |
 
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in
 the world and the number the simulator uses are the same number.
@@ -119,7 +129,7 @@ Rules learned the hard way:
 6. **Stations freeze the avatar.** Carrying happens with the panel closed, and a commit reads what is
    placed at that moment. Walking away from a console closes its panel.
 7. **Movable blocks are blocks, not entities.** One is `Material::Limestone` in the voxel world plus
-   a `CrateMark`, put in after `sim::setup` so the physics engine's static collider never contains it.
+   a `BlockMark`, put in after `sim::setup` so the physics engine's static collider never contains it.
    Something that is not a whole block (the light gate, the block riding the cart) is an entity.
 
 The game starts in `Mode::Menu` (title menu, intro playing). The avatar, camera, stations, panels and
@@ -137,6 +147,9 @@ polls once per frame; the game never blocks on the network.
 Panels use `bevy_egui` (text entry, scrolling, simple plots drawn directly).
 
 ## Testing
+
+CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy` with warnings denied, and
+`cargo test` for the whole workspace, on the toolchain `rust-toolchain.toml` pins.
 
 - `cargo test -p physics_core` — units, calculator, simulators against closed-form results, every puzzle
   solvable across 1,000 seeds, a 10 % wrong answer fails.

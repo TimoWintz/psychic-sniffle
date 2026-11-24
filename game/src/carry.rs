@@ -44,7 +44,7 @@ const GATE_FOLDED: f32 = 0.45;
 pub enum Yard {
     /// The channel ledge, north of the launcher's rail: the pile of the builders' blocks.
     Ledge,
-    /// Beside the supply rail's start: the cart's cart's block.
+    /// Beside the supply rail's start: the cart's block.
     Rail,
 }
 
@@ -199,11 +199,11 @@ pub struct DirtyCells(pub Vec<IVec3>);
 
 /// The orange handle and the physics engine's collider of one movable block.
 #[derive(Component)]
-struct CrateMark(usize);
+struct BlockMark(usize);
 
 /// The block in the avatar's hands.
 #[derive(Component)]
-struct HeldCrate;
+struct HeldBlock;
 
 /// The light gate, wherever it is.
 #[derive(Component)]
@@ -217,10 +217,9 @@ pub struct CarryPlugin;
 
 impl Plugin for CarryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Carry>().init_resource::<DirtyCells>().add_systems(
-            Startup,
-            lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn),
-        );
+        app.init_resource::<Carry>()
+            .init_resource::<DirtyCells>()
+            .add_systems(Startup, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
         app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)))
             .add_systems(Update, (place_marks, hold, place_gate, draw_target));
     }
@@ -234,7 +233,7 @@ fn yard_of(sites: &Sites, cell: IVec3) -> Yard {
 
 fn yard_corners(sites: &Sites, yard: Yard) -> [IVec3; 2] {
     match yard {
-        Yard::Ledge => sites.crate_yard,
+        Yard::Ledge => sites.block_yard,
         Yard::Rail => sites.cargo_yard,
     }
 }
@@ -254,13 +253,13 @@ fn lay_out(
     game: Res<Game>,
 ) {
     let placed = |slot: Slot| {
-        let puzzle = game.chapter.puzzles.iter().position(|p| p.kind == slot.puzzle()).expect("the chapter has a station for every slot");
+        let puzzle = game.puzzle_of(slot.puzzle());
         game.placed(puzzle).min(slot.most(&sites))
     };
     let filled = SLOTS.map(placed);
 
     let stack = filled[Slot::Frame.index()];
-    let mut pile = sites.crate_pile.clone();
+    let mut pile = sites.block_pile.clone();
     // Bottom layer first, so the blocks taken away are the top ones.
     pile.sort_by_key(|c| (c.y, c.z, c.x));
     pile.truncate(pile.len() - stack as usize);
@@ -284,30 +283,32 @@ fn lay_out(
     for i in 0..=Ch1Layout::MAX_STACK as usize {
         // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
         commands
-            .spawn((
-                CrateMark(i),
-                RigidBody::Static,
-                Collider::cuboid(1.0, 1.0, 1.0),
-                Transform::from_translation(Vec3::NEG_Y * 100.0),
-                Visibility::default(),
-            ))
+            .spawn((BlockMark(i), RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0), Transform::from_translation(Vec3::NEG_Y * 100.0), Visibility::default()))
             .with_children(|c| {
                 c.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.53, 0.0)));
                 for turn in 0..4 {
                     let rotation = Quat::from_rotation_y(turn as f32 * std::f32::consts::FRAC_PI_2);
-                    c.spawn((Mesh3d(grip.clone()), MeshMaterial3d(glow.clone()), Transform::from_translation(rotation * Vec3::new(0.0, 0.18, 0.515)).with_rotation(rotation)));
+                    c.spawn((
+                        Mesh3d(grip.clone()),
+                        MeshMaterial3d(glow.clone()),
+                        Transform::from_translation(rotation * Vec3::new(0.0, 0.18, 0.515)).with_rotation(rotation),
+                    ));
                 }
             });
     }
     let body = meshes.add(Cuboid::from_length(HELD_SIZE));
     let stone = materials.add(StandardMaterial { base_color: colour(Material::Limestone), perceptual_roughness: 0.9, ..default() });
     commands.spawn((
-        HeldCrate,
+        HeldBlock,
         Mesh3d(body),
         MeshMaterial3d(stone),
         Transform::default(),
         Visibility::Hidden,
-        children![(Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, HELD_SIZE / 2.0 + 0.03, 0.0).with_scale(Vec3::splat(HELD_SIZE)))],
+        children![(
+            Mesh3d(handle.clone()),
+            MeshMaterial3d(glow.clone()),
+            Transform::from_xyz(0.0, HELD_SIZE / 2.0 + 0.03, 0.0).with_scale(Vec3::splat(HELD_SIZE))
+        )],
     ));
 
     // The light gate: two arms clamped on the tower's column either side of the fall line, an
@@ -320,17 +321,15 @@ fn lay_out(
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.
     let clamp = meshes.add(Cuboid::new(1.2, 0.4, 1.6));
     let eye = meshes.add(Cuboid::new(0.1, 0.1, 0.04));
-    commands
-        .spawn((Gate, Transform::default(), Visibility::default()))
-        .with_children(|g| {
-            g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
-            g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
-            for side in [-1.0f32, 1.0] {
-                g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-0.9, 0.0, side * 0.68)));
-                g.spawn((Mesh3d(head.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, side * 0.68)));
-                g.spawn((Mesh3d(eye.clone()), MeshMaterial3d(lens.clone()), Transform::from_xyz(0.0, 0.0, side * 0.56)));
-            }
-        });
+    commands.spawn((Gate, Transform::default(), Visibility::default())).with_children(|g| {
+        g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
+        g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
+        for side in [-1.0f32, 1.0] {
+            g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-0.9, 0.0, side * 0.68)));
+            g.spawn((Mesh3d(head.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, side * 0.68)));
+            g.spawn((Mesh3d(eye.clone()), MeshMaterial3d(lens.clone()), Transform::from_xyz(0.0, 0.0, side * 0.56)));
+        }
+    });
     // Its stand: a post with a cradle the gate's clamp rests in.
     let post = meshes.add(Cuboid::new(0.14, 1.0, 0.14));
     let cradle = meshes.add(Cuboid::new(0.5, 0.08, 0.5));
@@ -486,14 +485,7 @@ fn point(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn aim(
-    world: Res<VoxelWorld>,
-    sites: Res<Sites>,
-    ui: Res<Ui>,
-    sim: Res<Sim>,
-    mut carry: ResMut<Carry>,
-    player: Single<&Transform, With<Player>>,
-) {
+fn aim(world: Res<VoxelWorld>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, mut carry: ResMut<Carry>, player: Single<&Transform, With<Player>>) {
     let busy = ui.station.is_some() || sim.busy();
     let forward = (player.rotation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
     let target = if busy { None } else { target_for(&world, &sites, &carry, player.translation, forward, carry.aim) };
@@ -541,7 +533,7 @@ pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty
             set_slot(world, sites, dirty, slot, holds);
             carry.filled[slot.index()] = holds;
             carry.holding = matches!(target, Target::TakeOut(..)).then_some(slot.takes());
-            let puzzle = game.chapter.puzzles.iter().position(|p| p.kind == slot.puzzle()).expect("the chapter has this station");
+            let puzzle = game.puzzle_of(slot.puzzle());
             let id = game.def(puzzle).id.clone();
             game.save.placed.insert(id, holds);
             game.persist();
@@ -551,8 +543,8 @@ pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty
     carry.target = None;
 }
 
-/// Keep the handles and colliders on the crates: the loose ones, then the ones in the frame.
-fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&CrateMark, &mut Transform, &mut Visibility)>) {
+/// Keep the handles and colliders on the blocks: the loose ones, then the ones in the frame.
+fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&BlockMark, &mut Transform, &mut Visibility)>) {
     if !carry.is_changed() {
         return;
     }
@@ -573,7 +565,11 @@ fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&CrateMar
 }
 
 /// A carried block rides in front of the avatar, between its hands.
-fn hold(carry: Res<Carry>, player: Query<&Transform, (With<Player>, Without<HeldCrate>)>, mut held: Single<(&mut Transform, &mut Visibility), With<HeldCrate>>) {
+fn hold(
+    carry: Res<Carry>,
+    player: Query<&Transform, (With<Player>, Without<HeldBlock>)>,
+    mut held: Single<(&mut Transform, &mut Visibility), With<HeldBlock>>,
+) {
     let (transform, visibility) = &mut *held;
     let Ok(avatar) = player.single() else { return };
     **visibility = if matches!(carry.holding, Some(Item::Block(_))) { Visibility::Inherited } else { Visibility::Hidden };
@@ -609,8 +605,12 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
     match target {
         Target::Take(cell) => cube(&mut gizmos, cell.as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
         Target::Put(cell) => cube(&mut gizmos, cell.as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
-        Target::PutIn(Slot::Frame, holds) => cube(&mut gizmos, (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put),
-        Target::TakeOut(Slot::Frame, left) => cube(&mut gizmos, (sites.channel_well + IVec3::Y * left as i32).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take),
+        Target::PutIn(Slot::Frame, holds) => {
+            cube(&mut gizmos, (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), put)
+        }
+        Target::TakeOut(Slot::Frame, left) => {
+            cube(&mut gizmos, (sites.channel_well + IVec3::Y * left as i32).as_vec3() + Vec3::splat(0.5), Vec3::splat(1.04), take)
+        }
         Target::PutIn(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), put),
         Target::TakeOut(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), take),
         Target::PutIn(Slot::Tower, notch) => {
@@ -660,7 +660,7 @@ mod tests {
 
     fn laid_out(seed: u64) -> (VoxelWorld, Sites, Carry) {
         let (mut world, sites) = island::build(&Ch1Layout::generate(seed));
-        let mut loose = sites.crate_pile.clone();
+        let mut loose = sites.block_pile.clone();
         loose.push(sites.cargo_cell);
         for cell in &loose {
             world.set(*cell, Material::Limestone);
@@ -670,15 +670,15 @@ mod tests {
     }
 
     #[test]
-    fn a_crate_from_the_pile_goes_into_the_frame_and_raises_the_launcher() {
+    fn a_block_from_the_pile_goes_into_the_frame_and_raises_the_launcher() {
         for seed in [0, 7, 42] {
             let (mut world, mut sites, mut carry) = laid_out(seed);
             let base = sites.channel_launch.origin;
             let mut dirty = DirtyCells::default();
 
             // Facing the pile from the yard's west side: the near block on top comes first.
-            let pile_west = sites.crate_pile.iter().map(|c| c.x).min().unwrap();
-            let row = sites.crate_pile[0].z;
+            let pile_west = sites.block_pile.iter().map(|c| c.x).min().unwrap();
+            let row = sites.block_pile[0].z;
             let feet = Vec3::new(pile_west as f32 - 0.6, base.y, row as f32 + 0.5);
             let Some(Target::Take(cell)) = target_for(&world, &sites, &carry, feet, Vec3::X, None) else { panic!("seed {seed}: nothing to take") };
             assert_eq!(cell.y, base.y as i32 + 1, "the top block is taken first");
@@ -708,11 +708,11 @@ mod tests {
     }
 
     #[test]
-    fn crates_are_put_down_only_in_their_yard_and_never_on_the_avatar() {
+    fn blocks_are_put_down_only_in_their_yard_and_never_on_the_avatar() {
         let (world, sites, mut carry) = laid_out(3);
         carry.holding = Some(Item::Block(Yard::Ledge));
         // At the yard's west edge, clear of the pile.
-        let [low, high] = sites.crate_yard;
+        let [low, high] = sites.block_yard;
         let feet = Vec3::new(low.x as f32 + 0.5, low.y as f32, high.z as f32 - 1.5);
         assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::Z, None), Some(Target::Put(IVec3::new(low.x, low.y, high.z - 1))));
         // Facing out of the yard (west, off its edge).
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cargo_crate_is_loaded_onto_the_cart() {
+    fn the_carts_block_is_loaded_onto_the_cart() {
         for seed in [0, 7, 42, 199] {
             let (mut world, sites, mut carry) = laid_out(seed);
             // From beside the block, facing it.

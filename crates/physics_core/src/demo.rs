@@ -85,7 +85,7 @@ impl Instance {
         self.demo_raised(0)
     }
 
-    /// The demonstration with the launcher raised on `stack` crates: the channel's test blocks leave
+    /// The demonstration with the launcher raised on `stack` blocks: the channel's test blocks leave
     /// from wherever the launcher stands. The other stations ignore it.
     pub fn demo_raised(&self, stack: u32) -> Option<DemoPlayback> {
         let l = &self.layout;
@@ -117,10 +117,7 @@ impl Instance {
                 // "Dropped" has to move forward for the terrain walk; a millimetre an hour will do.
                 let dropped = Projectile { x0: CHANNEL_DEMO_LIP, y0, vx: 1e-6, vy: 0.0, g: l.g };
                 let fired = Projectile { x0: CHANNEL_DEMO_LIP, y0, vx: speed, vy: 0.0, g: l.g };
-                Some(DemoPlayback::DropAndFire {
-                    dropped: Shot::new(dropped, fly(&dropped, &profile)),
-                    fired: Shot::new(fired, fly(&fired, &profile)),
-                })
+                Some(DemoPlayback::DropAndFire { dropped: Shot::new(dropped, fly(&dropped, &profile)), fired: Shot::new(fired, fly(&fired, &profile)) })
             }
             PuzzleKind::Ridge => {
                 let profile = self.profile().expect("the ridge has terrain");
@@ -196,7 +193,7 @@ mod tests {
     }
 
     #[test]
-    fn the_dropped_and_the_fired_crate_reach_the_floor_together() {
+    fn the_dropped_and_the_fired_block_reach_the_floor_together() {
         for (seed, stack) in (0..SEEDS).flat_map(|seed| (0..=Ch1Layout::MAX_STACK).map(move |stack| (seed, stack))) {
             let layout = Ch1Layout::generate(seed);
             let Some(DemoPlayback::DropAndFire { dropped, fired }) = Instance::new(PuzzleKind::Channel, &layout).demo_raised(stack) else {
@@ -220,9 +217,7 @@ mod tests {
     fn complementary_angles_land_together_short_of_the_ridge() {
         for seed in 0..SEEDS {
             let layout = Ch1Layout::generate(seed);
-            let Some(DemoPlayback::TwoAngles { flat, steep }) = Instance::new(PuzzleKind::Ridge, &layout).demo() else {
-                panic!("the ridge fires two angles")
-            };
+            let Some(DemoPlayback::TwoAngles { flat, steep }) = Instance::new(PuzzleKind::Ridge, &layout).demo() else { panic!("the ridge fires two angles") };
             for shot in [flat, steep] {
                 assert_eq!(shot.flight.end, FlightEnd::Landed, "seed {seed}");
                 assert_eq!(shot.flight.surface, 0.0, "seed {seed}");

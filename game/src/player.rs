@@ -170,7 +170,13 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, mut camera: ResMut<OrbitCamera>) {
+fn spawn(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    sites: Res<Sites>,
+    mut camera: ResMut<OrbitCamera>,
+) {
     let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
     crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;
@@ -207,6 +213,7 @@ pub(crate) fn move_player(
     camera: Res<OrbitCamera>,
     mut shore: ResMut<Shore>,
     mut player: Single<(&mut Player, &mut Transform)>,
+    mut jump_armed: Local<bool>,
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
@@ -225,7 +232,7 @@ pub(crate) fn move_player(
             }
         }
     }
-    let speed = if keys.pressed(KeyCode::ShiftLeft) { RUN_SPEED } else { WALK_SPEED };
+    let speed = if keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]) { RUN_SPEED } else { WALK_SPEED };
     let horizontal = wish.normalize_or_zero() * speed;
     player.velocity.x = horizontal.x;
     player.velocity.z = horizontal.z;
@@ -236,7 +243,11 @@ pub(crate) fn move_player(
 
     // The avatar falls with the planet's own gravity.
     player.velocity.y = (player.velocity.y - game.layout.g as f32 * dt).max(-40.0);
-    if player.grounded && !still && keys.pressed(KeyCode::Space) {
+    // Space also starts the game from the menu: a press still held from there is not a jump.
+    if !keys.pressed(KeyCode::Space) {
+        *jump_armed = true;
+    }
+    if player.grounded && !still && *jump_armed && keys.pressed(KeyCode::Space) {
         player.velocity.y = JUMP_SPEED;
     }
 

@@ -63,10 +63,65 @@ pub struct AttemptLine {
 pub struct Secret {
     pub low: f64,
     pub high: f64,
-    /// If non-empty, a number only counts when one of these follows it ("deg", "m/s"). Used for wide
-    /// ranges, where redacting every number inside would catch innocent ones.
+    /// If non-empty, a number only counts when one of these words follows it ("deg", "m/s"). Used for
+    /// wide ranges, where redacting every number inside would catch innocent ones. A word counts only
+    /// as a whole word: "m" is not the start of "m/s" or "metres".
     pub only_before: Vec<String>,
+    /// How many other words may stand between the number and the word that scopes it, for counting
+    /// nouns ("5 stone blocks", "5 of the blocks").
+    pub gap: usize,
+    /// For an answer measured rather than counted: a whole number in the reply counts only with one of
+    /// these units after it ("about 12 m/s"). The 2 in "(1/2) g t^2" or "3 charges" is left alone, even
+    /// when the answer is close to 2 or 3.
+    pub whole_needs: Vec<String>,
 }
+
+impl Secret {
+    /// Every number from `low` to `high`, wherever it stands.
+    pub fn between(low: f64, high: f64) -> Self {
+        Secret { low: low.min(high), high: low.max(high), only_before: Vec::new(), gap: 0, whole_needs: Vec::new() }
+    }
+
+    /// A value and everything within [`SECRET_MARGIN`] of it. With `whole_needs`, a whole number in
+    /// the reply counts only with one of those units after it; leave it empty for a value that is a
+    /// count or a length in whole metres, which is guarded wherever it stands.
+    pub fn near(value: f64, whole_needs: &[&str]) -> Self {
+        let secret = Secret::between(value * (1.0 - SECRET_MARGIN), value * (1.0 + SECRET_MARGIN));
+        Secret { whole_needs: words(whole_needs), ..secret }
+    }
+
+    /// Only where one of `words` follows the number.
+    pub fn before(self, words_after: &[&str]) -> Self {
+        Secret { only_before: words(words_after), ..self }
+    }
+
+    /// Allow `gap` words between the number and the word that scopes it.
+    pub fn gap(self, gap: usize) -> Self {
+        Secret { gap, ..self }
+    }
+}
+
+fn words(list: &[&str]) -> Vec<String> {
+    list.iter().map(|w| w.to_string()).collect()
+}
+
+/// How a unit is written after a number, by the unit's symbol in the puzzle ("m/s", "deg").
+pub fn spellings(unit: &str) -> &'static [&'static str] {
+    match unit {
+        "m" => &["m", "metre", "metres", "meter", "meters"],
+        "m/s" => SPEED_WORDS,
+        // "m/s" covers "m/s^2" and "m/s²" too.
+        "m/s^2" => &["m/s", "m s", "metres per second", "meters per second"],
+        "deg" => ANGLE_WORDS,
+        "" | "rad" => &["rad", "radian", "radians"],
+        _ => &[],
+    }
+}
+
+const SPEED_WORDS: &[&str] = &["m/s", "m s", "metres per second", "meters per second", "metre per second", "meter per second"];
+const ANGLE_WORDS: &[&str] = &["deg", "degree", "degrees", "°", "º"];
+const LENGTH_WORDS: &[&str] = &["m", "metre", "metres", "meter", "meters"];
+const COUNTED_BLOCKS: &[&str] = &["block", "blocks", "crate", "crates", "box", "boxes"];
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TutorContext {
@@ -122,64 +177,57 @@ impl TutorContext {
 
         let mut secrets = Vec::new();
         for answer in &solution.answers {
-            let mut forms = vec![answer.quantity.value];
+            let mut forms = vec![(answer.quantity.value, if answer.unit == "deg" { "rad" } else { answer.unit.as_str() })];
             if let Some(unit) = physics_core::units::lookup_unit(&answer.unit)
                 && unit.value != 1.0
             {
-                forms.push(answer.quantity.value / unit.value);
+                forms.push((answer.quantity.value / unit.value, answer.unit.as_str()));
             }
-            for v in forms {
-                let (a, b) = (v * (1.0 - SECRET_MARGIN), v * (1.0 + SECRET_MARGIN));
-                secrets.push(Secret { low: a.min(b), high: a.max(b), only_before: Vec::new() });
+            for (v, unit) in forms {
+                // Lengths here are whole metres, counted in blocks: a bare whole number may be one.
+                let whole_needs = if unit == "m" { &[][..] } else { spellings(unit) };
+                secrets.push(Secret::near(v, whole_needs));
             }
         }
         if instance.kind == PuzzleKind::Channel {
             // One or two stacks work, each with its own speed. A stack is a small whole number, too
             // common to redact on its own: guard it where it counts blocks, and guard the release height
-            // it gives, in metres. Guard the speeds across all of them, in m/s.
+            // it gives, in metres. Guard each stack's speed closely, and the speeds across all of them
+            // in m/s.
             secrets.clear();
             let layout = &instance.layout;
             let stacks = layout.channel_stacks();
             for stack in stacks.clone() {
                 let stack_f = stack as f64;
-                secrets.push(Secret {
-                    low: stack_f - 0.01,
-                    high: stack_f + 0.01,
-                    only_before: ["block", "blocks", "more block", "crate", "crates", "more crate", "boxes"].map(String::from).to_vec(),
-                });
+                secrets.push(Secret::between(stack_f - 0.01, stack_f + 0.01).before(COUNTED_BLOCKS).gap(2));
                 for height in [stack_f, layout.ledge_h as f64 + stack_f] {
-                    secrets.push(Secret {
-                        low: height * (1.0 - SECRET_MARGIN) - 0.15,
-                        high: height * (1.0 + SECRET_MARGIN) + 0.15,
-                        only_before: ["m ", "m.", "m,", "metre", "meter"].map(String::from).to_vec(),
-                    });
+                    secrets.push(Secret::between(height * (1.0 - SECRET_MARGIN) - 0.15, height * (1.0 + SECRET_MARGIN) + 0.15).before(LENGTH_WORDS));
                 }
+                secrets.push(Secret::near(layout.channel_speed_needed(stack), SPEED_WORDS));
             }
             let (fast, slow) = (layout.channel_speed_needed(*stacks.start()), layout.channel_speed_needed(*stacks.end()));
-            secrets.push(Secret {
-                low: slow * (1.0 - SECRET_MARGIN),
-                high: fast * (1.0 + SECRET_MARGIN),
-                only_before: ["m/s", "m s", "metres per second", "meters per second"].map(String::from).to_vec(),
-            });
+            secrets.push(Secret::between(slow * (1.0 - SECRET_MARGIN), fast * (1.0 + SECRET_MARGIN)).before(SPEED_WORDS));
         }
         if instance.kind == PuzzleKind::Ridge {
             // Many angle and speed pairs work here, so guard the whole working window.
             let layout = &instance.layout;
             let (min, max) = layout.ridge_angle_window();
-            let speed_at = |angle: f64| (layout.g * layout.pad_centre / (2.0 * angle).sin()).sqrt();
-            secrets.push(Secret {
-                low: min.to_degrees(),
-                high: max.to_degrees(),
-                only_before: ["deg", "°", "º"].map(String::from).to_vec(),
-            });
-            secrets.push(Secret {
-                low: speed_at(min),
-                high: speed_at(max),
-                only_before: ["m/s", "m s", "metres per second", "meters per second"].map(String::from).to_vec(),
-            });
+            let speed_at = |angle: f64| physics_core::ballistics::level_speed(layout.pad_centre, angle, layout.g);
+            secrets.push(Secret::between(min.to_degrees(), max.to_degrees()).before(ANGLE_WORDS));
+            secrets.push(Secret::between(speed_at(min), speed_at(max)).before(SPEED_WORDS));
         }
 
         let mut known_numbers: Vec<f64> = save.notebook.entries.iter().map(|e| e.quantity.value).collect();
+        // What the player committed in this puzzle's tests, in SI and in the unit it was shown in,
+        // so Lumen can repeat a near miss back to them.
+        for value in progress.attempts.iter().flat_map(|a| &a.values) {
+            known_numbers.push(value.quantity.value);
+            if let Some(unit) = physics_core::units::lookup_unit(&value.unit)
+                && unit.value != 0.0
+            {
+                known_numbers.push(value.quantity.value / unit.value);
+            }
+        }
         if instance.kind == PuzzleKind::Ridge {
             known_numbers.push(instance.layout.v_max);
         }
@@ -218,12 +266,7 @@ impl TutorContext {
                 .concepts
                 .iter()
                 .filter_map(|id| chapter.concept(id))
-                .map(|c| ConceptCard {
-                    title: c.title.clone(),
-                    card: c.card.clone(),
-                    found: save.is_found(chapter, &c.id),
-                    hint: c.hint.clone(),
-                })
+                .map(|c| ConceptCard { title: c.title.clone(), card: c.card.clone(), found: save.is_found(chapter, &c.id), hint: c.hint.clone() })
                 .collect(),
             experiment: def.demo.as_ref().map(|demo| ExperimentLine {
                 question: demo.question.clone(),
@@ -239,11 +282,7 @@ impl TutorContext {
                 .enumerate()
                 .map(|(i, spec)| AskedValue {
                     label: spec.label.to_string(),
-                    dimension: if spec.unit == "deg" {
-                        "an angle (enter with 'deg')".to_string()
-                    } else {
-                        spec.dim.describe()
-                    },
+                    dimension: if spec.unit == "deg" { "an angle (enter with 'deg')".to_string() } else { spec.dim.describe() },
                     draft: drafts.get(i).cloned().unwrap_or_default(),
                     built: (spec.source == InputSource::Placed).then(|| placed.clone().unwrap_or_default()),
                 })
@@ -252,22 +291,13 @@ impl TutorContext {
                 .notebook
                 .entries
                 .iter()
-                .map(|e| NotebookLine {
-                    name: e.name.clone(),
-                    label: e.label.clone(),
-                    value: e.quantity.display(),
-                    source: e.source.clone(),
-                })
+                .map(|e| NotebookLine { name: e.name.clone(), label: e.label.clone(), value: e.quantity.display(), source: e.source.clone() })
                 .collect(),
             attempts: progress
                 .attempts
                 .iter()
                 .map(|a| AttemptLine {
-                    committed: a
-                        .values
-                        .iter()
-                        .map(|v| format!("{} = {}", v.label, v.quantity.display_in(&v.unit)))
-                        .collect(),
+                    committed: a.values.iter().map(|v| format!("{} = {}", v.label, v.quantity.display_in(&v.unit))).collect(),
                     pass: a.pass,
                     headline: a.headline.clone(),
                     detail: a.detail.clone(),
@@ -276,17 +306,9 @@ impl TutorContext {
             solved: progress.solved,
             charges_left: save.charges_left(chapter, &def.id),
             solution_steps: solution.steps.clone(),
-            solution_answers: solution
-                .answers
-                .iter()
-                .map(|a| format!("{} = {}", a.label, a.quantity.display_in(&a.unit)))
-                .collect(),
+            solution_answers: solution.answers.iter().map(|a| format!("{} = {}", a.label, a.quantity.display_in(&a.unit))).collect(),
             solution_note: solution.note.clone(),
-            true_measurements: instance
-                .givens()
-                .iter()
-                .map(|g| format!("{} = {}", g.label, g.quantity.display()))
-                .collect(),
+            true_measurements: instance.givens().iter().map(|g| format!("{} = {}", g.label, g.quantity.display())).collect(),
             landmarks: Vec::new(),
             secrets,
             known_numbers,

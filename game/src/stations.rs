@@ -90,6 +90,23 @@ fn light_consoles(waking: Res<Waking>, quartz: Res<ConsoleQuartz>, mut materials
     *lit = Some(now);
 }
 
+/// Whether a station opens: its puzzle is unlocked and its console is awake (once the machine has
+/// woken). The hint under the screen says the same.
+pub fn ready(game: &Game, waking: &Waking, puzzle: usize) -> bool {
+    game.unlocked(puzzle) && waking.console_awake(puzzle)
+}
+
+/// The machine a puzzle's station works, as the hints name it.
+pub fn machine_name(kind: PuzzleKind) -> &'static str {
+    match kind {
+        PuzzleKind::Rail => "the supply rail",
+        PuzzleKind::Chase => "the haul track",
+        PuzzleKind::Gravity => "the drop tower",
+        PuzzleKind::Channel => "the ledge launcher",
+        PuzzleKind::Ridge => "the tilting launcher",
+    }
+}
+
 fn proximity(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
@@ -100,10 +117,7 @@ fn proximity(
     player: Single<&Transform, With<Player>>,
 ) {
     let position = player.translation;
-    ui.near_station = sites
-        .stations
-        .iter()
-        .position(|console| (console.as_vec3() + Vec3::splat(0.5)).distance(position + Vec3::Y * 0.5) <= REACH);
+    ui.near_station = sites.stations.iter().position(|console| (console.as_vec3() + Vec3::splat(0.5)).distance(position + Vec3::Y * 0.5) <= REACH);
     // Walking away closes the panel.
     if ui.station.is_some() && ui.station != ui.near_station {
         ui.station = None;
@@ -115,10 +129,13 @@ fn proximity(
     if keys.just_pressed(KeyCode::KeyE)
         && let Some(near) = ui.near_station
     {
-        // A station opens once its console is awake: once the machine has woken.
-        let ready = game.unlocked(near) && waking.console_awake(near);
-        ui.station = if ui.station == Some(near) || !ready { None } else { Some(near) };
+        ui.station = if ui.station == Some(near) || !ready(&game, &waking, near) { None } else { Some(near) };
     }
+}
+
+/// The smallest box that holds every point: its lowest and its highest corner.
+pub fn bounds(points: &[Vec3]) -> (Vec3, Vec3) {
+    points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)))
 }
 
 /// What the camera shows while a puzzle's station is open: the box from `min` to `max`, seen from
@@ -127,7 +144,7 @@ fn proximity(
 pub fn station_view(kind: PuzzleKind, game: &Game, sites: &Sites) -> (Vec3, Vec3, Vec3) {
     let layout = &game.layout;
     let ground = GROUND as f32;
-    let span = |points: &[Vec3]| points.iter().fold((Vec3::INFINITY, Vec3::NEG_INFINITY), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+    let span = bounds;
     match kind {
         PuzzleKind::Rail => {
             let (min, max) = span(&[sites.rail_start - Vec3::X * 1.5, sites.rail_start + Vec3::new(layout.rail_target as f32 + 2.0, 2.0, 0.0)]);
@@ -169,7 +186,15 @@ pub fn look_at_station(orbit: &mut OrbitCamera, game: &Game, sites: &Sites, puzz
 /// While a station is open the camera shows its puzzle, and it glides back to the avatar when the
 /// player leaves. A test borrows it meanwhile (`sim` hands it back), and a wake closes the station
 /// and borrows it itself.
-fn frame_station(game: Res<Game>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, waking: Res<Waking>, mut orbit: ResMut<OrbitCamera>, mut shown: Local<Option<usize>>) {
+fn frame_station(
+    game: Res<Game>,
+    sites: Res<Sites>,
+    ui: Res<Ui>,
+    sim: Res<Sim>,
+    waking: Res<Waking>,
+    mut orbit: ResMut<OrbitCamera>,
+    mut shown: Local<Option<usize>>,
+) {
     if ui.station == *shown {
         return;
     }

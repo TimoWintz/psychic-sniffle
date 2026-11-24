@@ -848,7 +848,7 @@ fn look(sites: &Sites) -> Vec<Step> {
     // Where to look, from which side, how high and how far back.
     let views: [(&'static str, Vec3, f32, f32, f32); 7] = [
         ("01_wreck", sites.wreck, 0.4, 0.3, 26.0),
-        ("02_supply_rail", way.stone_gate, -0.4, 0.45, 22.0),
+        ("02_supply_rail", way.stone_gate, 0.9, 0.35, 16.0),
         ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
         ("04_channel", sites.channel_launch.origin, 1.9, 0.35, 30.0),
         ("05_bridge", way.bridge.centre(), -0.8, 0.25, 40.0),

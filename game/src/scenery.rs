@@ -122,7 +122,9 @@ pub(crate) fn spawn(
             color: HORIZON,
             directional_light_color: Color::srgba(1.0, 0.92, 0.75, 0.45),
             directional_light_exponent: 24.0,
-            falloff: FogFalloff::Linear { start: 140.0, end: 760.0 },
+            // Clear near the avatar, thickening with the square of the distance: the haze takes the
+            // far shore and the islands on the horizon, not the puzzle in front of the player.
+            falloff: FogFalloff::from_visibility_squared(820.0),
         },
     ));
 
@@ -144,7 +146,7 @@ pub(crate) fn spawn(
         sky.spawn((SkyDome, Mesh3d(meshes.add(dome())), MeshMaterial3d(sky_material(&mut materials, Color::WHITE, false)), NotShadowCaster));
         sky.spawn((
             Mesh3d(meshes.add(Sphere::new(26.0).mesh().uv(24, 12))),
-            MeshMaterial3d(sky_material(&mut materials, Color::srgb(1.0, 0.97, 0.88), false)),
+            MeshMaterial3d(sky_material(&mut materials, crate::graphics::glowing([1.0, 0.97, 0.88], crate::graphics::glow::SUN), false)),
             Transform::from_translation(toward_sun * (SKY - 60.0)),
             NotShadowCaster,
         ));

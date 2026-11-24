@@ -12,6 +12,8 @@ pub struct VoxelWorld {
     cells: Vec<u8>,
     /// Glowing blocks that are dark for now: the way's quartz while its machine sleeps.
     dark: HashSet<IVec3>,
+    /// Quartz that grew where it stands, not set there by the builders: it glows more softly.
+    wild: HashSet<IVec3>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,7 +27,7 @@ pub struct RayHit {
 
 impl VoxelWorld {
     pub fn new(size: IVec3) -> Self {
-        VoxelWorld { size, cells: vec![0; (size.x * size.y * size.z) as usize], dark: HashSet::new() }
+        VoxelWorld { size, cells: vec![0; (size.x * size.y * size.z) as usize], dark: HashSet::new(), wild: HashSet::new() }
     }
 
     /// Put out the glow of a block, or light it again. A dark block is drawn with the rest, in a dim
@@ -40,6 +42,11 @@ impl VoxelWorld {
 
     pub fn is_dark(&self, p: IVec3) -> bool {
         self.dark.contains(&p)
+    }
+
+    /// Mark a block of quartz as grown wild, so it glows more softly than the way's.
+    pub fn set_wild(&mut self, p: IVec3) {
+        self.wild.insert(p);
     }
 
     fn index(&self, p: IVec3) -> Option<usize> {
@@ -169,9 +176,16 @@ impl VoxelWorld {
                     if !material.is_solid() || (glows(material) && !dark) != glow {
                         continue;
                     }
-                    // Vertex colours are linear; the tints are sRGB.
+                    // Vertex colours are linear; the tints are sRGB. What glows is drawn brighter than
+                    // its colour, by how much it glows, so the camera's bloom spreads it.
                     let colour = if dark { DARK_QUARTZ.map(|c| c * (0.9 + 0.2 * hash01(p))) } else { tint(material, p) };
-                    let base = Color::srgb_from_array(colour).to_linear();
+                    let strength = match material {
+                        _ if dark || !glow => 1.0,
+                        Material::Quartz if self.wild.contains(&p) => crate::graphics::glow::WILD,
+                        Material::Quartz => crate::graphics::glow::WAY,
+                        _ => crate::graphics::glow::PAINT,
+                    };
+                    let base = crate::graphics::glowing(colour, strength).to_linear();
                     for face in &FACES {
                         if self.is_solid(p + face.normal) {
                             continue;

@@ -486,7 +486,7 @@ pub(crate) fn setup(
         }
         if prop == Prop::Cargo {
             // The orange handle we painted on what can be carried: it comes off the cart again with F.
-            let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
+            let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(0.5, 0.2, 0.02), ..default() });
             let handle = meshes.add(Cuboid::new(0.5, 0.06, 0.12));
             body.with_child((Mesh3d(handle), MeshMaterial3d(glow), Transform::from_xyz(0.0, CARGO_SIZE.y / 2.0 + 0.03, 0.0)));
         }

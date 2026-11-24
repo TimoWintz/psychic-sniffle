@@ -1050,6 +1050,9 @@ fn corners(r: Rect, ground: f32) -> [Vec3; 4] {
 fn put(world: &mut VoxelWorld, p: IVec3, material: Material) {
     if world.get(p) == Material::Air {
         world.set(p, material);
+        if material == Material::Quartz {
+            world.set_wild(p);
+        }
     }
 }
 

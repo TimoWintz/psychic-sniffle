@@ -73,6 +73,9 @@ its corner after.
 To talk to it, copy `settings.example.toml` to `settings.toml`, fill in a service and model, and set the environment
 variable it names. No model vendor is built in; see [docs/tutor.md](docs/tutor.md).
 
+The same file sets the graphics: `quality = "low"` (the default, for integrated graphics) or `"high"`
+(ambient occlusion, sharper shadows, a finer edge filter) under `[graphics]`.
+
 ## Test
 
 ```bash

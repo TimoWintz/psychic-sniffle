@@ -90,6 +90,20 @@ Two hands built what stands at the puzzle sites, and they should never be confus
 The landforms a puzzle needs (the outcrop, the channel, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
 
+What glows, and how much, keeps the two hands apart and shows progress at a glance. Brightest first:
+
+1. **The builders' quartz, awake:** in the road, the machines, the consoles, the lamps, the bridge's
+   cables. It has a halo, so the way reads as a thread of light across the island, and a machine
+   waking is the brightest change on screen.
+2. **The wild quartz** in the clusters and on the spires and shrubs: a softer glow, never as bright
+   as the way.
+3. **The sky's bodies:** the sun's disc, the giant, the moon.
+
+Sleeping quartz is dark and has no halo. **The castaway's marks never glow:** the orange paint, the
+yellow pins, the handles and the stakes are lit like the stone around them. They stay readable
+because they are the most saturated colours on screen, not the brightest. Whatever is added to make
+the island beautiful must leave them the first thing the eye finds at a puzzle.
+
 ## Title and intro
 
 The game opens on a title menu (for now only Start). Behind it the intro plays on a loop, in attract

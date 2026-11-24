@@ -278,7 +278,7 @@ fn lay_out(
 
     let handle = meshes.add(Cuboid::new(0.62, 0.07, 0.14));
     let grip = meshes.add(Cuboid::new(0.5, 0.1, 0.05));
-    let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
+    let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(0.5, 0.2, 0.02), ..default() });
     // One mark for every block that can lie loose or stand in the frame: the ledge's and the cargo.
     for i in 0..=Ch1Layout::MAX_STACK as usize {
         // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
@@ -315,7 +315,7 @@ fn lay_out(
     // emitter and a receiver facing each other across it, and an orange handle on the clamp. Its
     // origin is where the beam crosses the fall line.
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.12, 0.13, 0.16), perceptual_roughness: 0.6, ..default() });
-    let lens = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.2, 0.15), emissive: LinearRgba::rgb(3.0, 0.3, 0.2), ..default() });
+    let lens = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.2, 0.15), emissive: LinearRgba::rgb(1.5, 0.15, 0.1), ..default() });
     let arm = meshes.add(Cuboid::new(2.2, 0.12, 0.12));
     let head = meshes.add(Cuboid::new(0.24, 0.24, 0.2));
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.

@@ -5,6 +5,7 @@ mod carry;
 mod cinematic;
 mod companion;
 mod devscript;
+mod graphics;
 mod handbook;
 mod intro;
 mod island;
@@ -42,7 +43,7 @@ fn main() {
                 ..default()
             }),
         )
-        .add_plugins((EguiPlugin::default(), PhysicsPlugins::default()))
+        .add_plugins((EguiPlugin::default(), PhysicsPlugins::default(), graphics::GraphicsPlugin))
         .insert_resource(game)
         .insert_resource(world)
         .insert_resource(sites)

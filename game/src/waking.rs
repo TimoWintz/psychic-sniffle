@@ -464,7 +464,7 @@ impl MachineTrim {
     pub fn look(lit: bool) -> StandardMaterial {
         if lit {
             let q = Material::Quartz.properties().colour;
-            StandardMaterial { base_color: Color::srgb(q[0], q[1], q[2]), unlit: true, ..default() }
+            StandardMaterial { base_color: crate::graphics::glowing(q, crate::graphics::glow::WAY), unlit: true, ..default() }
         } else {
             StandardMaterial { base_color: Color::srgb(DARK_QUARTZ[0], DARK_QUARTZ[1], DARK_QUARTZ[2]), perceptual_roughness: 0.5, ..default() }
         }
@@ -501,7 +501,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let stone = stone(&mut materials);
     let quartz = Material::Quartz.properties().colour;
     let light = materials.add(StandardMaterial {
-        base_color: Color::srgba(quartz[0], quartz[1], quartz[2], 0.55),
+        base_color: crate::graphics::glowing(quartz, crate::graphics::glow::WAY).with_alpha(0.55),
         unlit: true,
         alpha_mode: AlphaMode::Add,
         ..default()

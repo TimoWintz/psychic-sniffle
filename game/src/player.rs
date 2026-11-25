@@ -176,7 +176,9 @@ fn spawn(
     mut materials: ResMut<Assets<StandardMaterial>>,
     sites: Res<Sites>,
     mut camera: ResMut<OrbitCamera>,
+    mut shore: ResMut<Shore>,
 ) {
+    shore.dry = sites.spawn;
     let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
     crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;
@@ -186,18 +188,37 @@ fn collides(world: &VoxelWorld, feet: Vec3) -> bool {
     world.box_collides(feet - Vec3::new(HALF_WIDTH, 0.0, HALF_WIDTH), feet + Vec3::new(HALF_WIDTH, HEIGHT, HALF_WIDTH))
 }
 
-/// Whether a step from `from` to `to` would take the avatar into water too deep to wade, from
-/// somewhere that is not: the avatar stops at the water's edge, or at the top of a bank over deep
-/// water, as at a wall. Out of deep water it may always go.
-pub(crate) fn into_deep_water(world: &VoxelWorld, from: Vec3, to: Vec3) -> bool {
-    let deep = |p: Vec3| crate::island::too_deep(world.surface(p.x.floor() as i32, p.z.floor() as i32));
-    deep(to) && !deep(from)
+/// How near the place it last stood on dry ground the avatar must be to get back onto dry ground
+/// from over deep water. Less than a block, so it can't jump a strip of deep water either.
+const REACH_BACK: f32 = 1.0;
+
+/// Whether the water under `p` is too deep to wade.
+pub(crate) fn over_deep_water(world: &VoxelWorld, p: Vec3) -> bool {
+    crate::island::too_deep(world.surface(p.x.floor() as i32, p.z.floor() as i32))
 }
 
-/// Whether deep water has stopped the avatar this session, which Lumen remarks on once.
+/// Whether a step from `from` to `to` is barred by deep water. Out over it, nothing holds the avatar
+/// up, so it can only step back onto the dry ground it came from (`dry` is where it last stood
+/// there). Anywhere else it falls in, even where a jump would carry it across to the far bank.
+pub(crate) fn barred_by_water(world: &VoxelWorld, dry: Vec3, from: Vec3, to: Vec3) -> bool {
+    over_deep_water(world, from) && !over_deep_water(world, to) && to.xz().distance(dry.xz()) >= REACH_BACK
+}
+
+/// Whether the avatar at `feet` has fallen into deep water: it is in the water, or something other
+/// than the edge it stepped off holds it up out there (the lip of the far bank, under the edge of
+/// its box).
+pub(crate) fn fallen_in(world: &VoxelWorld, dry: Vec3, feet: Vec3, grounded: bool) -> bool {
+    over_deep_water(world, feet) && (feet.y <= crate::island::SEA_LEVEL || grounded && feet.xz().distance(dry.xz()) >= REACH_BACK)
+}
+
+/// Where the avatar last stood on dry ground, which is where it comes back to after falling into
+/// deep water, and how often it has fallen in this session (Lumen remarks on the first time).
 #[derive(Resource, Default)]
 pub struct Shore {
-    pub stopped: bool,
+    pub dry: Vec3,
+    pub fallen_in: u32,
+    /// Where it fell in, for the splash.
+    pub splash: Option<Vec3>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -255,10 +276,7 @@ pub(crate) fn move_player(
     for axis in [0, 2] {
         let mut next = feet;
         next[axis] += player.velocity[axis] * dt;
-        if into_deep_water(&world, feet, next) {
-            if !shore.stopped {
-                shore.stopped = true;
-            }
+        if barred_by_water(&world, shore.dry, feet, next) {
             continue;
         }
         if !collides(&world, next) {
@@ -298,10 +316,20 @@ pub(crate) fn move_player(
         feet = lifted;
         player.velocity.y = 0.0;
     }
+    // Into deep water: a splash, and the avatar is back on the bank where it last stood.
+    if fallen_in(&world, shore.dry, feet, player.grounded) {
+        shore.fallen_in += 1;
+        shore.splash = Some(feet);
+        feet = shore.dry;
+        player.velocity = Vec3::ZERO;
+    }
     // Out of the world, or walled in: back to the start.
     if feet.y < 1.0 || collides(&world, feet) {
         feet = sites.spawn;
         player.velocity = Vec3::ZERO;
+    }
+    if player.grounded && !over_deep_water(&world, feet) {
+        shore.dry = feet;
     }
     transform.translation = feet;
 }
@@ -373,20 +401,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_avatar_wades_the_shallows_and_stops_at_deep_water() {
+    fn the_avatar_wades_the_shallows_and_falls_into_deep_water() {
         use crate::island::{GROUND, SEA_LEVEL};
         use physics_core::materials::Material;
-        // A bank at the ground's height, then a shelf the water barely covers, then deep water.
-        let mut world = VoxelWorld::new(IVec3::new(3, 32, 1));
+        // A bank at the ground's height, a shelf the water barely covers, deep water, and a far bank.
+        let mut world = VoxelWorld::new(IVec3::new(6, 32, 1));
         let shallow = SEA_LEVEL.floor() as i32;
         world.fill(IVec3::ZERO, IVec3::new(0, GROUND - 1, 0), Material::Rock);
         world.fill(IVec3::new(1, 0, 0), IVec3::new(1, shallow - 1, 0), Material::Sand);
-        world.fill(IVec3::new(2, 0, 0), IVec3::new(2, 2, 0), Material::Rock);
-        let at = |x: i32, y: i32| Vec3::new(x as f32 + 0.5, y as f32, 0.5);
-        assert!(!into_deep_water(&world, at(0, GROUND), at(1, shallow)), "the shallows can be waded");
-        assert!(into_deep_water(&world, at(1, shallow), at(2, 3)), "deep water stops the avatar");
-        assert!(into_deep_water(&world, at(0, GROUND), at(2, 3)), "so does the top of a bank over it");
-        assert!(!into_deep_water(&world, at(2, 3), at(1, shallow)), "out of deep water it may always go");
+        world.fill(IVec3::new(2, 0, 0), IVec3::new(4, 2, 0), Material::Rock);
+        world.fill(IVec3::new(5, 0, 0), IVec3::new(5, GROUND - 1, 0), Material::Rock);
+        let at = |x: f32, y: i32| Vec3::new(x, y as f32, 0.5);
+        assert!(!over_deep_water(&world, at(1.5, shallow)), "the shallows can be waded");
+        assert!(over_deep_water(&world, at(2.5, 3)));
+
+        // It may step out over deep water, from the shallows or the top of a bank.
+        let shelf = at(1.9, shallow);
+        assert!(!barred_by_water(&world, shelf, shelf, at(2.1, shallow)));
+        // Wading, it is in the water already, so a step off the shelf takes it under.
+        assert!(fallen_in(&world, shelf, at(2.1, shallow), true), "a step off the shelf takes it under");
+        // At the top of a bank over deep water, it isn't in yet, and it may step back.
+        let mut cliff = VoxelWorld::new(IVec3::new(2, 32, 1));
+        cliff.fill(IVec3::ZERO, IVec3::new(0, GROUND - 1, 0), Material::Rock);
+        let bank = at(0.9, GROUND);
+        assert!(!barred_by_water(&cliff, bank, bank, at(1.1, GROUND)));
+        assert!(!fallen_in(&cliff, bank, at(1.1, GROUND), true), "it stands at the edge, not in the water");
+        assert!(!barred_by_water(&cliff, bank, at(1.1, GROUND), bank), "it may step back the way it came");
+        assert!(!fallen_in(&cliff, bank, at(1.3, GROUND - 4), false), "falling, it isn't in yet");
+        assert!(fallen_in(&cliff, bank, at(1.3, shallow), false), "at the water, it is");
+        // A jump from the bank doesn't carry it across to the far bank.
+        assert!(barred_by_water(&world, bank, at(4.9, GROUND + 1), at(5.1, GROUND + 1)), "it can't jump across to the far bank");
+        // Held up by the lip of the far bank, it falls in all the same.
+        assert!(fallen_in(&world, bank, at(4.8, GROUND), true), "the far bank's lip doesn't hold it up");
+        // Nor over a strip of deep water a block wide.
+        let mut strip = VoxelWorld::new(IVec3::new(3, 32, 1));
+        strip.fill(IVec3::ZERO, IVec3::new(0, GROUND - 1, 0), Material::Rock);
+        strip.fill(IVec3::new(2, 0, 0), IVec3::new(2, GROUND - 1, 0), Material::Rock);
+        let edge = at(0.95, GROUND);
+        assert!(barred_by_water(&strip, edge, at(1.95, GROUND + 1), at(2.05, GROUND + 1)), "it can't jump a strip of deep water");
     }
 
     #[test]

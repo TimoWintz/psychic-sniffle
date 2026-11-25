@@ -363,9 +363,11 @@ inventory.
   placement, putting the thing into its place is the act: a block onto the cart or into the jack frame, the
   light gate onto a notch of the drop tower (the notch is the one the pointer marks on the tower, or
   the one at hand height). The station shows what is placed there, and the save keeps it.
-- **Water.** The castaway wades in the shallows but stops where the water gets too deep (deeper than
-  about a metre), as at a wall, and at the top of a bank over deep water. The first time, Lumen says
-  why, once a session.
+- **Water.** The castaway wades in the shallows. Where the water gets too deep (deeper than about a
+  metre) it can walk or jump off the edge, but it falls in with a splash and comes back on the bank
+  where it last stood on dry ground. A jump never carries it across deep water: out over it, the
+  castaway can only get back onto the ground it stepped off. The first time, Lumen remarks on it,
+  once a session.
 - **Notebook, handbook, Lumen.** Always on screen. The notebook and the handbook sit in a fixed column
   at the top left under the chapter's progress, reduced to a header; `N` and `H` (or a click on the
   header) expand and reduce them. Lumen reduced is its eye; `T` expands its conversation.

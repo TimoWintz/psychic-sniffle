@@ -117,8 +117,9 @@ solved. All but `intro` press Start first.
 
 `look` is the benchmark for how the game looks and how fast it draws. It photographs the same views
 every time (each of the way's machines asleep and awake, the whole island, the ringed giant, the
-first wake as its light runs) and times the frames at each while the camera turns slowly. The frame
-rates go to `look.txt` beside the shots, so two versions can be compared picture by picture and
+first wake as its light runs) and times the frames at each while the camera turns slowly, with vsync
+off so the numbers are the drawing's and not the screen's refresh rate. The frame rates go to
+`look.txt` beside the shots, so two versions can be compared picture by picture and
 number by number. Build with `--release` for numbers worth comparing.
 
 ```bash

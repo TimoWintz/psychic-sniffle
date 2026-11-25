@@ -12,7 +12,8 @@
 //!   Lumen names them, and the avatar walks.
 //! - `look` photographs a fixed set of views (the way asleep, a wake as the light runs, the way
 //!   awake, the sky) and times the frames at each, turning the camera slowly: the benchmark for how
-//!   the game looks and how fast it draws. It writes the frame times to `look.txt` beside the shots.
+//!   the game looks and how fast it draws. It turns vsync off, so the frame times are the drawing's,
+//!   not the screen's, and writes them to `look.txt` beside the shots.
 //! - `prefill` is not a script: you play by hand, with the tour's ruler readings in the notebook and
 //!   its formulas in the blueprints (see `prefill`).
 //!
@@ -34,6 +35,7 @@ use crate::voxel::VoxelWorld;
 use crate::waking::{Timeline, Waking};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use bevy::window::{PresentMode, PrimaryWindow};
 use physics_core::notebook::source;
 use physics_core::units::Quantity;
 use std::collections::VecDeque;
@@ -251,7 +253,15 @@ impl Plugin for DevScriptPlugin {
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");
         app.insert_resource(Script { steps: steps.into(), wait: 2.0, shots, timing: None, timings: Vec::new() }).add_systems(Update, run);
+        if name == "look" {
+            app.add_systems(Startup, uncap_frame_rate);
+        }
     }
+}
+
+/// The benchmark draws as fast as it can: waiting for the screen's refresh would time the screen.
+fn uncap_frame_rate(mut window: Single<&mut Window, With<PrimaryWindow>>) {
+    window.present_mode = PresentMode::AutoNoVsync;
 }
 
 /// Index of the haul track's first pin (the cart's front coupler; then the crawler, the marker and the

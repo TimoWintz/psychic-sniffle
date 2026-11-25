@@ -1,6 +1,6 @@
 //! Everything that is looked at and never touched: the island's meshes, the sea, the sun, a sky with a
 //! ringed giant and a moon in it, haze, islands on the horizon and the small plants in the turf. The
-//! sun, the sky and the haze follow the chapter's light (`Sky::of`).
+//! sun, the sky and the haze follow the chapter's light (`Sky::of`). The sea is `water`'s.
 
 use crate::carry::DirtyCells;
 use crate::island::{GROUND, SEA_LEVEL, Sites};
@@ -21,7 +21,7 @@ const SKY: f32 = 900.0;
 
 /// One terrain mesh: the columns from `x0`, `z0` to the next chunk, its glowing blocks or the rest.
 #[derive(Component)]
-struct TerrainChunk {
+pub(crate) struct TerrainChunk {
     x0: i32,
     z0: i32,
     glow: bool,
@@ -141,18 +141,8 @@ pub(crate) fn spawn(
         ));
     }
 
+    // The sea itself is `water`'s.
     let size = world.size.as_vec3();
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(1800.0, 1800.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.09, 0.38, 0.48, 0.88),
-            alpha_mode: AlphaMode::Blend,
-            perceptual_roughness: 0.18,
-            ..default()
-        })),
-        Transform::from_xyz(size.x / 2.0, SEA_LEVEL, size.z / 2.0),
-        NotShadowCaster,
-    ));
 
     // The sea bed out past the island, level with the deepest floor the world holds.
     commands.spawn((
@@ -226,7 +216,7 @@ pub(crate) fn spawn(
 
 /// Mesh again the chunks whose blocks have changed (blocks picked up and put down), and their
 /// neighbours, whose faces against the changed blocks may now show or hide.
-fn rebuild_chunks(mut dirty: ResMut<DirtyCells>, world: Res<VoxelWorld>, mut meshes: ResMut<Assets<Mesh>>, chunks: Query<(&TerrainChunk, &Mesh3d)>) {
+pub(crate) fn rebuild_chunks(mut dirty: ResMut<DirtyCells>, world: Res<VoxelWorld>, mut meshes: ResMut<Assets<Mesh>>, chunks: Query<(&TerrainChunk, &Mesh3d)>) {
     if dirty.0.is_empty() {
         return;
     }

@@ -98,6 +98,12 @@ read as dressed blocks. The pattern is quiet: it only lightens and darkens the b
 fades with distance rather than shimmer, and the orange paint has none, so a number's place stays the
 plainest thing in view.
 
+The sea is turquoise and clear over the sand and the shelves, and dark teal where it is deep, like the
+channel. Small waves cross it, so the sun glints on it and it shows the sky at a glancing look. Where
+it meets the land, a broken line of foam traces every shore and cliff, with fainter bands washing in
+and out; surf breaks over the reefs just under the surface. The foam along the channel's walls also
+marks where the water stops and the cliff begins.
+
 What glows, and how much, keeps the two hands apart and shows progress at a glance. Brightest first:
 
 1. **The builders' quartz, awake:** in the road, the machines, the consoles, the lamps, the bridge's

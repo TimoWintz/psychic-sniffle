@@ -23,6 +23,7 @@ mod ui;
 mod vessel;
 mod voxel;
 mod waking;
+mod water;
 
 use avian3d::prelude::PhysicsPlugins;
 use bevy::prelude::*;
@@ -65,5 +66,6 @@ fn main() {
             waking::WakingPlugin,
             devscript::DevScriptPlugin,
         ))
+        .add_plugins(water::WaterPlugin)
         .run();
 }

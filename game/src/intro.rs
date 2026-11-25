@@ -238,6 +238,7 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut block_materials: ResMut<Assets<crate::graphics::BlockMaterial>>,
     mut physics: ResMut<Time<Physics>>,
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
@@ -248,10 +249,9 @@ fn setup(
     let sets = Sets::new(&world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
 
     // The mainland, lit and coloured as the island is.
-    let blocks = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
     commands.spawn((
         Mesh3d(meshes.add(mainland.world.mesh(0, MAINLAND_SIZE.x, 0, MAINLAND_SIZE.z, false))),
-        MeshMaterial3d(blocks.clone()),
+        MeshMaterial3d(crate::graphics::block_material(&mut block_materials)),
         Transform::from_translation(MAINLAND_ORIGIN).with_scale(Vec3::splat(MAINLAND_SCALE)),
         NotShadowCaster,
     ));

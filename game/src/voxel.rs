@@ -166,6 +166,7 @@ impl VoxelWorld {
         let mut positions: Vec<[f32; 3]> = Vec::new();
         let mut normals: Vec<[f32; 3]> = Vec::new();
         let mut colours: Vec<[f32; 4]> = Vec::new();
+        let mut uvs: Vec<[f32; 2]> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         for y in 0..self.size.y {
             for z in z0..z1 {
@@ -200,6 +201,7 @@ impl VoxelWorld {
                             positions.push((p.as_vec3() + *corner).to_array());
                             normals.push(face.normal.as_vec3().to_array());
                             colours.push([base.red * light, base.green * light, base.blue * light, 1.0]);
+                            uvs.push(crate::graphics::block_uv(material));
                         }
                         // Split the quad along the diagonal that keeps the shading smooth.
                         if ao[0] as u32 + ao[2] as u32 >= ao[1] as u32 + ao[3] as u32 {
@@ -215,6 +217,7 @@ impl VoxelWorld {
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
             .with_inserted_indices(Indices::U32(indices))
     }
 

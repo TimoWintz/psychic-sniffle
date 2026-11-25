@@ -90,6 +90,14 @@ Two hands built what stands at the puzzle sites, and they should never be confus
 The landforms a puzzle needs (the outcrop, the channel, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
 
+Every face of a block is a small picture, sixteen texels across, drawn from its material: the turf
+in tufts and pale blades, the rock with fine bedding lines, the sand rippled by the wind, the soil in
+clods, the fronds with gaps of shadow, the timber's grain and rings, the wreck's hull in panels. The
+builders' stone is smooth, faintly clouded, with its edges worn darker, so their road and machines
+read as dressed blocks. The pattern is quiet: it only lightens and darkens the block's colour, it
+fades with distance rather than shimmer, and the orange paint has none, so a number's place stays the
+plainest thing in view.
+
 What glows, and how much, keeps the two hands apart and shows progress at a glance. Brightest first:
 
 1. **The builders' quartz, awake:** in the road, the machines, the consoles, the lamps, the bridge's

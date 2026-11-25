@@ -7,13 +7,16 @@
 //! are lit like everything else, and the grade keeps them the most saturated colours on screen.
 
 use bevy::anti_alias::smaa::{Smaa, SmaaPreset};
+use bevy::asset::embedded_asset;
 use bevy::camera::Hdr;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap};
-use bevy::pbr::ScreenSpaceAmbientOcclusion;
+use bevy::pbr::{ExtendedMaterial, MaterialExtension, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::render::render_resource::AsBindGroup;
 use bevy::render::view::{ColorGrading, ColorGradingGlobal, ColorGradingSection, Msaa};
+use bevy::shader::ShaderRef;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -101,10 +104,43 @@ fn saturated(c: [f32; 3], k: f32) -> [f32; 3] {
     pushed.map(|x| x / top)
 }
 
+/// The blocks' surfaces: the standard material, with a fine pattern for each material drawn inside
+/// every face (`blocks.wesl`). A mesh tells it each vertex's material in its first UVs
+/// (`block_uv`); a mesh without UVs is drawn plain.
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub struct BlockSurface {
+    /// How strongly the pattern shows, 0 to 1.
+    #[uniform(100)]
+    pub detail: f32,
+}
+
+impl MaterialExtension for BlockSurface {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://game/blocks.wesl".into()
+    }
+}
+
+pub type BlockMaterial = ExtendedMaterial<StandardMaterial, BlockSurface>;
+
+/// The material every block of the world is drawn with: its colours come from the vertices.
+pub fn block_material(materials: &mut Assets<BlockMaterial>) -> Handle<BlockMaterial> {
+    materials.add(BlockMaterial {
+        base: StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() },
+        extension: BlockSurface { detail: 1.0 },
+    })
+}
+
+/// A vertex's first UVs on a block: its material, for the pattern to choose by.
+pub fn block_uv(material: physics_core::materials::Material) -> [f32; 2] {
+    [material.id() as f32 / 32.0, 0.0]
+}
+
 pub struct GraphicsPlugin;
 
 impl Plugin for GraphicsPlugin {
     fn build(&self, app: &mut App) {
+        embedded_asset!(app, "blocks.wesl");
+        app.add_plugins(MaterialPlugin::<BlockMaterial>::default());
         // `GAME_SETTINGS` overrides where the settings file is looked for, as for the tutor.
         let path = std::env::var("GAME_SETTINGS").unwrap_or_else(|_| "settings.toml".into());
         let quality = Quality::load(Path::new(&path));
@@ -165,6 +201,17 @@ mod tests {
         assert_eq!(Quality::parse(""), Ok(Quality::Low));
         assert!(Quality::parse("[graphics]\nquality = \"ultra\"").is_err());
         assert!(Quality::parse("[graphics]\nqualty = \"high\"").is_err());
+    }
+
+    #[test]
+    fn every_material_reaches_the_blocks_shader() {
+        // The shader reads the id back as round(uv.x * 32): every id must survive that, and stay
+        // within 0 to 1 in case the UVs are stored compressed.
+        for material in physics_core::materials::Material::ALL {
+            let [u, _] = block_uv(material);
+            assert!((0.0..1.0).contains(&u));
+            assert_eq!((u * 32.0).round() as u8, material.id());
+        }
     }
 
     #[test]

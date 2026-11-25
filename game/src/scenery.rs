@@ -98,14 +98,15 @@ pub(crate) fn spawn(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut block_materials: ResMut<Assets<crate::graphics::BlockMaterial>>,
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
     game: Res<Game>,
 ) {
     let sky = Sky::of(game.chapter.light);
-    // Block colours are per vertex, so one material serves the whole island, and one unlit material
-    // serves everything that glows.
-    let blocks = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
+    // Block colours are per vertex, so one material serves the whole island (with the pattern inside
+    // each face), and one unlit material serves everything that glows.
+    let blocks = crate::graphics::block_material(&mut block_materials);
     let glow = materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() });
     for z0 in (0..world.size.z).step_by(CHUNK as usize) {
         for x0 in (0..world.size.x).step_by(CHUNK as usize) {
@@ -119,7 +120,8 @@ pub(crate) fn spawn(
             ));
         }
     }
-    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(blocks.clone()), NotShadowCaster));
+    let plain = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
+    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(plain), NotShadowCaster));
 
     // Islands on the horizon, larger than life so the haze softens them.
     for (i, (centre, scale)) in

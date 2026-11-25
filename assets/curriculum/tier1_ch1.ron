@@ -7,6 +7,7 @@ Chapter(
     domain: Mechanics,
     title: "The Helm",
     part: "Skiff's helm",
+    light: Afternoon,
     intro: "The builders' skiff lies asleep on its slipway on the north shore, facing the strait. Its helm isn't aboard. It sits in a stone casket on a launcher at the edge of the water, as if the road was sending it there when everything stopped. The skiff is on the next island north, across a narrow channel. The wreck came down across that road at its south end. The road is pale stone that nobody here built, and its builders' machines stand along it: a cart in a groove, a crawler, a drop tower, two launchers and a quay. Every one of them is asleep, and each has its own console. Wake one and its console does what you set and nothing else. Do its job right and the next one wakes.",
     goal: "Get the skiff's helm to the north quay, up the road, across the channel and over the ridge.",
     // Lumen's words. Spoken, so no digits; `look` is a place its eye holds while it speaks.

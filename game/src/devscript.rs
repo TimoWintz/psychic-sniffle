@@ -878,7 +878,8 @@ fn look(sites: &Sites) -> Vec<Step> {
         }
     };
     photograph(&mut steps, "asleep");
-    // The whole island from high in the south, the strait beyond; then low, towards the ringed giant.
+    // The whole island from high in the south, the strait beyond; then low, towards the ringed giant
+    // and towards the sun.
     let middle = sites.stations.iter().map(|s| s.as_vec3()).sum::<Vec3>() / sites.stations.len() as f32;
     steps.extend([
         Watch(Some(middle)),
@@ -889,6 +890,10 @@ fn look(sites: &Sites) -> Vec<Step> {
         Look { yaw: -0.61, pitch: 0.04, distance: 30.0 },
         Wait(1.2),
         Shot("look_09_the_giant"),
+        // Round to face the sun: the warm haze and the glow low in the sky.
+        Look { yaw: 2.17, pitch: 0.04, distance: 30.0 },
+        Wait(1.2),
+        Shot("look_09b_towards_the_sun"),
         Watch(None),
     ]);
     // The first wake as the light runs up the road, and the machine waking.

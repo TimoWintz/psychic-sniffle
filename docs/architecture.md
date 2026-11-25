@@ -24,7 +24,7 @@ Nothing depends on `game`.
 | `materials` | the materials table (density, specific heat, conductivity, resistivity, colour) |
 | `puzzle` | chapter and puzzle definitions, seeded instance generation, evaluation of committed inputs, worked solutions |
 | `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired blocks, the two-angle shots |
-| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions |
+| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions; the light the chapter is played in (`Light`, a preset the game draws) |
 | `notebook` | named readings; the calculator's variables |
 | `progress` | the save: seed, attempts, completed puzzles, notebook, pages found, demonstrations watched, what is placed, quiz questions answered right |
 
@@ -56,7 +56,7 @@ shows the verdict, and counts the puzzle solved, only once the world has played 
 | `state` | the shared game state: the chapter, the seeded layout, the save and its file (read once, moved aside if it can't be read, written whole by renaming a new file over it), the test still playing out, and what the interface shows |
 | `island` | the island built from the chapter layout in whole blocks: the coast, the puzzle sites kept flat, the route along the ancient way from the wreck to the skiff, the places (`Sites`) everything else reads |
 | `graphics` | the quality setting (`[graphics] quality` in `settings.toml`, or `GAME_QUALITY`) and the camera's look: high dynamic range, TonyMcMapface tonemapping, the colour grade, bloom, anti-aliasing (MSAA on low, SMAA on high), ambient occlusion and finer shadows on high; how strongly each glowing thing is drawn (`glow`), so the order of what glows is set in one place |
-| `scenery` | everything looked at and never touched: the island's meshes, the sea, the sky, haze, distant islands and small plants |
+| `scenery` | everything looked at and never touched: the island's meshes, the sea, the sky, haze, distant islands and small plants; the sun, the sky's colours and the haze for each of the chapter's lights (`Sky::of`) |
 | `props` | the shapes of what tests move and of the wreck's loose debris, each inside the box the simulation reasons with |
 | `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |

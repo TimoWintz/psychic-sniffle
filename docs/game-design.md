@@ -99,6 +99,16 @@ What glows, and how much, keeps the two hands apart and shows progress at a glan
    as the way.
 3. **The sky's bodies:** the sun's disc, the giant, the moon.
 
+Each chapter is played in a light of its own, which its file names (`light`): a preset that sets
+the sun, the sky and the haze, so a chapter chooses a mood and the look is tuned in one place. The
+light changes with the story, never with the clock, so a puzzle reads the same whenever the player
+stands at it.
+
+- **Afternoon** (1.1): a low sun in the south-west, about 35 degrees up, throws long
+  shadows to the north-east. Its light is only a little warm, so the turf stays teal; the gold is in
+  the sky low around the sun and in the haze towards it. The shadows are the cool blue of the sky.
+- Dusk and night come with the chapters that need them: the crossing runs into the night (1.2).
+
 Sleeping quartz is dark and has no halo. **The castaway's marks never glow:** the orange paint, the
 yellow pins, the handles and the stakes are lit like the stone around them. They stay readable
 because they are the most saturated colours on screen, not the brightest. Whatever is added to make

@@ -56,7 +56,7 @@ pub const SIGHT_SIZE: Vec3 = Vec3::new(0.7, 0.4, 0.55);
 pub fn sight_parts(meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) -> [(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform); 2] {
     let stone = crate::waking::stone(materials);
     let q = Material::Quartz.properties().colour;
-    let glow = materials.add(StandardMaterial { base_color: Color::srgb(q[0], q[1], q[2]), unlit: true, ..default() });
+    let glow = materials.add(StandardMaterial { base_color: crate::graphics::glowing(q, crate::graphics::glow::WAY), unlit: true, ..default() });
     [
         (Mesh3d(meshes.add(Cuboid::from_size(SIGHT_SIZE))), MeshMaterial3d(stone), Transform::default()),
         (Mesh3d(meshes.add(Cuboid::new(0.28, 0.06, 0.28))), MeshMaterial3d(glow), Transform::from_xyz(0.0, SIGHT_SIZE.y / 2.0 + 0.03, 0.0)),

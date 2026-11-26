@@ -1,27 +1,31 @@
 //! Everything that is looked at and never touched: the island's meshes, the sea, the sun, a sky with a
-//! ringed giant and a moon in it, haze, islands on the horizon and the small plants in the turf.
+//! ringed giant and a moon in it, haze, islands on the horizon and the small plants in the turf. The
+//! sun, the sky and the haze follow the chapter's light (`Sky::of`). The sea is `water`'s.
 
 use crate::carry::DirtyCells;
 use crate::island::{GROUND, SEA_LEVEL, Sites};
+use crate::state::Game;
 use crate::voxel::{VoxelWorld, fbm, hash01, tint};
 use bevy::asset::RenderAssetUsages;
+use bevy::asset::embedded_asset;
 use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
+use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
+use bevy::render::render_resource::AsBindGroup;
+use bevy::shader::ShaderRef;
+use physics_core::content::Light;
 use physics_core::materials::Material;
 
 /// Columns per terrain mesh along each horizontal axis.
 const CHUNK: i32 = 32;
 
-/// Colour of the sky at the horizon, which the haze fades everything towards.
-const HORIZON: Color = Color::srgb(0.70, 0.86, 0.88);
-const ZENITH: Color = Color::srgb(0.30, 0.56, 0.78);
 /// Radius of the sky dome; inside the camera's far plane.
 const SKY: f32 = 900.0;
 
 /// One terrain mesh: the columns from `x0`, `z0` to the next chunk, its glowing blocks or the rest.
 #[derive(Component)]
-struct TerrainChunk {
+pub(crate) struct TerrainChunk {
     x0: i32,
     z0: i32,
     glow: bool,
@@ -31,15 +35,70 @@ struct TerrainChunk {
 #[derive(Component)]
 struct SkyAnchor;
 
+/// The material every glowing block of the island is drawn with: brightening it brightens all the
+/// awake quartz at once.
+#[derive(Resource)]
+pub struct WayGlow(pub Handle<StandardMaterial>);
+
 /// The sky's dome, which the intro hides while it shows space.
 #[derive(Component)]
 pub struct SkyDome;
+
+/// The light of a chapter: where the sun stands, its colour, the sky's and the haze's. Colours are sRGB.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sky {
+    /// From the island towards the sun.
+    pub toward_sun: Vec3,
+    pub sun: Color,
+    /// The sun's light on a surface facing it, in lux.
+    pub illuminance: f32,
+    /// What the sky lights from every side: the colour of the shadows.
+    pub fill: Color,
+    pub fill_brightness: f32,
+    pub zenith: Color,
+    /// The sky at the horizon, which the haze fades everything towards.
+    pub horizon: Color,
+    /// The horizon under the sun, warmed by it.
+    pub glow: Color,
+    /// The haze in the sun's direction, lit by it; its alpha is how strongly.
+    pub haze_in_the_sun: Color,
+    /// How far one can see before the haze takes everything, in metres.
+    pub visibility: f32,
+}
+
+impl Sky {
+    pub fn of(light: Light) -> Sky {
+        match light {
+            // A low sun in the south-west throws long shadows to the north-east; its warm light
+            // against the cool blue of the sky in the shadows is the look of a late afternoon. The
+            // sun is only a little warm, so the turf stays teal: most of the gold is in the sky
+            // and the haze around it.
+            Light::Afternoon => Sky {
+                // About 35 degrees up: the tops of things get less of its light than under a high
+                // sun, and the faces turned to it more, so it is brighter than a noon sun.
+                toward_sun: Vec3::new(-0.70, 0.60, 0.48).normalize(),
+                sun: Color::srgb(1.0, 0.92, 0.80),
+                illuminance: 12_000.0,
+                fill: Color::srgb(0.58, 0.75, 1.0),
+                fill_brightness: 700.0,
+                zenith: Color::srgb(0.20, 0.52, 0.72),
+                horizon: Color::srgb(0.72, 0.87, 0.86),
+                glow: Color::srgb(1.0, 0.88, 0.72),
+                haze_in_the_sun: Color::srgba(1.0, 0.84, 0.62, 0.4),
+                visibility: 820.0,
+            },
+        }
+    }
+}
 
 pub struct SceneryPlugin;
 
 impl Plugin for SceneryPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(ClearColor(HORIZON))
+        let sky = Sky::of(app.world().resource::<Game>().chapter.light);
+        embedded_asset!(app, "sway.wesl");
+        app.add_plugins(MaterialPlugin::<SwayMaterial>::default());
+        app.insert_resource(ClearColor(sky.horizon))
             .add_systems(Startup, spawn)
             .add_systems(Update, rebuild_chunks)
             .add_systems(PostUpdate, follow_camera.before(TransformSystems::Propagate));
@@ -50,13 +109,17 @@ pub(crate) fn spawn(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    (mut block_materials, mut sway_materials): (ResMut<Assets<crate::graphics::BlockMaterial>>, ResMut<Assets<SwayMaterial>>),
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
+    game: Res<Game>,
 ) {
-    // Block colours are per vertex, so one material serves the whole island, and one unlit material
-    // serves everything that glows.
-    let blocks = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
+    let sky = Sky::of(game.chapter.light);
+    // Block colours are per vertex, so one material serves the whole island (with the pattern inside
+    // each face), and one unlit material serves everything that glows.
+    let blocks = crate::graphics::block_material(&mut block_materials);
     let glow = materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() });
+    commands.insert_resource(WayGlow(glow.clone()));
     for z0 in (0..world.size.z).step_by(CHUNK as usize) {
         for x0 in (0..world.size.x).step_by(CHUNK as usize) {
             let (x1, z1) = ((x0 + CHUNK).min(world.size.x), (z0 + CHUNK).min(world.size.z));
@@ -69,7 +132,9 @@ pub(crate) fn spawn(
             ));
         }
     }
-    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(blocks.clone()), NotShadowCaster));
+    let swaying = sway_materials
+        .add(SwayMaterial { base: StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() }, extension: Sway { reach: 0.14 } });
+    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(swaying), NotShadowCaster));
 
     // Islands on the horizon, larger than life so the haze softens them.
     for (i, (centre, scale)) in
@@ -89,18 +154,8 @@ pub(crate) fn spawn(
         ));
     }
 
+    // The sea itself is `water`'s.
     let size = world.size.as_vec3();
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(1800.0, 1800.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(0.09, 0.38, 0.48, 0.88),
-            alpha_mode: AlphaMode::Blend,
-            perceptual_roughness: 0.18,
-            ..default()
-        })),
-        Transform::from_xyz(size.x / 2.0, SEA_LEVEL, size.z / 2.0),
-        NotShadowCaster,
-    ));
 
     // The sea bed out past the island, level with the deepest floor the world holds.
     commands.spawn((
@@ -110,19 +165,20 @@ pub(crate) fn spawn(
         NotShadowCaster,
     ));
 
-    // A pale-gold sun, high in the south-west of the sky.
-    let sun = Transform::from_xyz(60.0, 100.0, 30.0).looking_at(Vec3::new(88.0, 20.0, 64.0), Vec3::Y);
-    commands.spawn((DirectionalLight { illuminance: 9_500.0, color: Color::srgb(1.0, 0.95, 0.86), shadow_maps_enabled: true, ..default() }, sun));
-    commands.insert_resource(GlobalAmbientLight { color: Color::srgb(0.78, 0.88, 1.0), brightness: 380.0, ..default() });
+    let sun = Transform::default().looking_to(-sky.toward_sun, Vec3::Y);
+    commands.spawn((DirectionalLight { illuminance: sky.illuminance, color: sky.sun, shadow_maps_enabled: true, ..default() }, sun));
+    commands.insert_resource(GlobalAmbientLight { color: sky.fill, brightness: sky.fill_brightness, ..default() });
 
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(20.0, 30.0, 60.0),
         DistanceFog {
-            color: HORIZON,
-            directional_light_color: Color::srgba(1.0, 0.92, 0.75, 0.45),
-            directional_light_exponent: 24.0,
-            falloff: FogFalloff::Linear { start: 140.0, end: 760.0 },
+            color: sky.horizon,
+            directional_light_color: sky.haze_in_the_sun,
+            directional_light_exponent: 12.0,
+            // Clear near the avatar, thickening with the square of the distance: the haze takes the
+            // far shore and the islands on the horizon, not the puzzle in front of the player.
+            falloff: FogFalloff::from_visibility_squared(sky.visibility),
         },
     ));
 
@@ -137,31 +193,32 @@ pub(crate) fn spawn(
             ..default()
         })
     };
-    let toward_sun = -sun.forward().as_vec3();
+    let toward_sun = sky.toward_sun;
     let giant = Vec3::new(0.55, 0.28, -0.79).normalize();
     let moon = Vec3::new(-0.62, 0.42, -0.66).normalize();
-    commands.spawn((SkyAnchor, Transform::default(), Visibility::default())).with_children(|sky| {
-        sky.spawn((SkyDome, Mesh3d(meshes.add(dome())), MeshMaterial3d(sky_material(&mut materials, Color::WHITE, false)), NotShadowCaster));
-        sky.spawn((
+    commands.spawn((SkyAnchor, Transform::default(), Visibility::default())).with_children(|heavens| {
+        heavens.spawn((SkyDome, Mesh3d(meshes.add(dome(&sky))), MeshMaterial3d(sky_material(&mut materials, Color::WHITE, false)), NotShadowCaster));
+        let disc = sky.sun.to_srgba();
+        heavens.spawn((
             Mesh3d(meshes.add(Sphere::new(26.0).mesh().uv(24, 12))),
-            MeshMaterial3d(sky_material(&mut materials, Color::srgb(1.0, 0.97, 0.88), false)),
+            MeshMaterial3d(sky_material(&mut materials, crate::graphics::glowing([disc.red, disc.green, disc.blue], crate::graphics::glow::SUN), false)),
             Transform::from_translation(toward_sun * (SKY - 60.0)),
             NotShadowCaster,
         ));
         let at = giant * (SKY - 160.0);
-        sky.spawn((
+        heavens.spawn((
             Mesh3d(meshes.add(banded_sphere(150.0))),
             MeshMaterial3d(sky_material(&mut materials, Color::WHITE, false)),
             Transform::from_translation(at).with_rotation(Quat::from_rotation_z(0.35)),
             NotShadowCaster,
         ));
-        sky.spawn((
+        heavens.spawn((
             Mesh3d(meshes.add(Annulus::new(190.0, 290.0))),
             MeshMaterial3d(sky_material(&mut materials, Color::srgba(0.92, 0.84, 0.90, 0.55), true)),
             Transform::from_translation(at).with_rotation(Quat::from_rotation_z(0.35) * Quat::from_rotation_x(-1.32)),
             NotShadowCaster,
         ));
-        sky.spawn((
+        heavens.spawn((
             Mesh3d(meshes.add(Sphere::new(30.0).mesh().uv(32, 16))),
             MeshMaterial3d(sky_material(&mut materials, Color::srgb(0.86, 0.84, 0.92), false)),
             Transform::from_translation(moon * (SKY - 120.0)),
@@ -172,7 +229,7 @@ pub(crate) fn spawn(
 
 /// Mesh again the chunks whose blocks have changed (blocks picked up and put down), and their
 /// neighbours, whose faces against the changed blocks may now show or hide.
-fn rebuild_chunks(mut dirty: ResMut<DirtyCells>, world: Res<VoxelWorld>, mut meshes: ResMut<Assets<Mesh>>, chunks: Query<(&TerrainChunk, &Mesh3d)>) {
+pub(crate) fn rebuild_chunks(mut dirty: ResMut<DirtyCells>, world: Res<VoxelWorld>, mut meshes: ResMut<Assets<Mesh>>, chunks: Query<(&TerrainChunk, &Mesh3d)>) {
     if dirty.0.is_empty() {
         return;
     }
@@ -200,18 +257,26 @@ fn follow_camera(camera: Single<&Transform, (With<Camera3d>, Without<SkyAnchor>)
     sky.translation = camera.translation;
 }
 
-/// The inside of a sphere, shaded from the horizon to the zenith.
-fn dome() -> Mesh {
-    let mut mesh = Sphere::new(SKY).mesh().uv(48, 24);
-    let horizon = HORIZON.to_linear().to_vec3();
-    let zenith = ZENITH.to_linear().to_vec3();
+/// The inside of a sphere, shaded from the horizon to the zenith, and warmed low in the sky around
+/// the sun.
+fn dome(sky: &Sky) -> Mesh {
+    let mut mesh = Sphere::new(SKY).mesh().uv(64, 32);
+    let horizon = sky.horizon.to_linear().to_vec3();
+    let zenith = sky.zenith.to_linear().to_vec3();
+    let glow = sky.glow.to_linear().to_vec3();
     let below = Color::srgb(0.46, 0.66, 0.70).to_linear().to_vec3();
+    let sun_bearing = sky.toward_sun.with_y(0.0).normalize();
     let colours: Vec<[f32; 4]> = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
         Some(VertexAttributeValues::Float32x3(positions)) => positions
             .iter()
             .map(|p| {
                 let up = p[1] / SKY;
-                let c = if up >= 0.0 { horizon.lerp(zenith, up.powf(0.6)) } else { horizon.lerp(below, (-up * 4.0).min(1.0)) };
+                // How much of the sun's warmth reaches this part of the sky: most under the sun, and
+                // fading towards the zenith and round to the far side.
+                let facing = Vec3::new(p[0], 0.0, p[2]).normalize_or_zero().dot(sun_bearing).max(0.0);
+                let warmth = facing.powf(3.0) * (1.0 - up.abs()).powf(2.5) * 0.85;
+                let low = horizon.lerp(glow, warmth);
+                let c = if up >= 0.0 { low.lerp(zenith, up.powf(0.6)) } else { low.lerp(below, (-up * 4.0).min(1.0)) };
                 [c.x, c.y, c.z, 1.0]
             })
             .collect(),
@@ -299,31 +364,35 @@ fn tufts(world: &VoxelWorld, sites: &Sites) -> Mesh {
                 let foot = Vec3::new(x as f32 + 0.15 + 0.7 * r(0), top as f32, z as f32 + 0.15 + 0.7 * r(1));
                 let height = 0.15 + 0.3 * r(2);
                 let shade = colour * (0.85 + 0.3 * r(3));
-                out.push(foot - Vec3::new(0.03, 0.0, 0.03), foot + Vec3::new(0.03, height, 0.03), shade);
+                out.push(foot - Vec3::new(0.03, 0.0, 0.03), foot + Vec3::new(0.03, height, 0.03), shade, foot.y, r(4));
             }
             // Now and then a frond with a pale violet tip.
             if h < 0.008 {
                 let foot = Vec3::new(x as f32 + 0.5, top as f32, z as f32 + 0.5);
-                out.push(foot - Vec3::new(0.05, 0.0, 0.05), foot + Vec3::new(0.05, 0.8, 0.05), colour);
-                out.push(foot + Vec3::new(-0.11, 0.8, -0.11), foot + Vec3::new(0.11, 1.0, 0.11), Vec3::new(0.78, 0.66, 0.95));
+                out.push(foot - Vec3::new(0.05, 0.0, 0.05), foot + Vec3::new(0.05, 0.8, 0.05), colour, foot.y, h * 50.0);
+                out.push(foot + Vec3::new(-0.11, 0.8, -0.11), foot + Vec3::new(0.11, 1.0, 0.11), Vec3::new(0.78, 0.66, 0.95), foot.y, h * 50.0);
             }
         }
     }
     out.mesh()
 }
 
-/// Axis-aligned boxes gathered into one vertex-coloured mesh.
+/// Axis-aligned boxes gathered into one vertex-coloured mesh. Each vertex carries, in its first UVs,
+/// how high it stands above the ground its plant grows from and the plant's own phase, for the wind
+/// to bend it by (`sway.wesl`).
 #[derive(Default)]
 struct Boxes {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     colours: Vec<[f32; 4]>,
+    uvs: Vec<[f32; 2]>,
     indices: Vec<u32>,
 }
 
 impl Boxes {
-    /// A box from `min` to `max`, sRGB `colour`; the bottom face is left out (it rests on the ground).
-    fn push(&mut self, min: Vec3, max: Vec3, colour: Vec3) {
+    /// A box from `min` to `max`, sRGB `colour`, part of a plant rooted at height `ground` that sways
+    /// in its own `phase`; the bottom face is left out (it rests on the ground).
+    fn push(&mut self, min: Vec3, max: Vec3, colour: Vec3, ground: f32, phase: f32) {
         let c = Color::srgb(colour.x.min(1.0), colour.y.min(1.0), colour.z.min(1.0)).to_linear();
         let faces: [(Vec3, [Vec3; 4]); 5] = [
             (Vec3::X, [Vec3::new(1., 0., 0.), Vec3::new(1., 1., 0.), Vec3::new(1., 1., 1.), Vec3::new(1., 0., 1.)]),
@@ -335,8 +404,10 @@ impl Boxes {
         for (normal, corners) in faces {
             let first = self.positions.len() as u32;
             for corner in corners {
-                self.positions.push((min + (max - min) * corner).to_array());
+                let at = min + (max - min) * corner;
+                self.positions.push(at.to_array());
                 self.normals.push(normal.to_array());
+                self.uvs.push([at.y - ground, phase.fract()]);
                 // Darker at the root, as if shaded by the turf around it.
                 let light = 0.8 + 0.2 * corner.y;
                 self.colours.push([c.red * light, c.green * light, c.blue * light, 1.0]);
@@ -350,6 +421,44 @@ impl Boxes {
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, self.positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, self.colours)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs)
             .with_inserted_indices(Indices::U32(self.indices))
+    }
+}
+
+/// The tufts' material: the standard one, with a vertex shader that bends each plant in the wind.
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub struct Sway {
+    /// How far a tip one metre up leans at the strongest gust, in metres.
+    #[uniform(100)]
+    pub reach: f32,
+}
+
+impl MaterialExtension for Sway {
+    fn vertex_shader() -> ShaderRef {
+        "embedded://game/sway.wesl".into()
+    }
+
+    // The depth prepass would draw the plants standing still; they are too thin to matter to it.
+    fn enable_prepass() -> bool {
+        false
+    }
+}
+
+pub type SwayMaterial = ExtendedMaterial<StandardMaterial, Sway>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_afternoon_sun_is_low_in_the_west() {
+        let sky = Sky::of(Light::Afternoon);
+        let elevation = sky.toward_sun.y.asin().to_degrees();
+        assert!((20.0..40.0).contains(&elevation), "{elevation} degrees");
+        assert!(sky.toward_sun.x < 0.0, "west is -x");
+        // The sun is warmer than the sky's light in the shadows.
+        let (sun, fill) = (sky.sun.to_srgba(), sky.fill.to_srgba());
+        assert!(sun.red > sun.blue && fill.blue > fill.red);
     }
 }

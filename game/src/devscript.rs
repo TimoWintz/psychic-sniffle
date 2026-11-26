@@ -10,6 +10,10 @@
 //! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
 //!   takes over: the camera ends on the player's view, turns to the main hull and the skiff while
 //!   Lumen names them, and the avatar walks.
+//! - `look` photographs a fixed set of views (the way asleep, a wake as the light runs, the way
+//!   awake, the sky) and times the frames at each, turning the camera slowly: the benchmark for how
+//!   the game looks and how fast it draws. It turns vsync off, so the frame times are the drawing's,
+//!   not the screen's, and writes them to `look.txt` beside the shots.
 //! - `beam` plays the beam off the road: carries a block from its pile onto a seat, releases it
 //!   short and then level, sets the next two cases' blocks, and photographs it waking and its page.
 //! - `prefill` is not a script: you play by hand, with the tour's ruler readings in the notebook and
@@ -33,6 +37,7 @@ use crate::voxel::VoxelWorld;
 use crate::waking::{Timeline, Waking};
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
+use bevy::window::{PresentMode, PrimaryWindow};
 use physics_core::notebook::source;
 use physics_core::units::Quantity;
 use std::collections::VecDeque;
@@ -161,6 +166,9 @@ enum Step {
     Solve(usize),
     /// Wait until no wake is playing; fail if one still is after this many seconds.
     WaitWakeEnd(f32),
+    /// Wait until Lumen has finished telling a story (the opening), which turns the camera to the
+    /// places it names; fail if it has not in time.
+    UntilStoryEnds(f32),
     /// Wait until the way shows this stage; fail if it has not happened in time.
     UntilWoken {
         stage: usize,
@@ -171,6 +179,13 @@ enum Step {
         stage: usize,
         at: f32,
         within: f32,
+    },
+    /// Time the frames for this many seconds while the camera turns by `turn` radians, then note
+    /// them under `name`.
+    Measure {
+        name: &'static str,
+        seconds: f32,
+        turn: f32,
     },
     /// Open or close the beam's console.
     BeamConsole(bool),
@@ -230,6 +245,11 @@ struct Script {
     steps: VecDeque<Step>,
     wait: f32,
     shots: PathBuf,
+    /// The frames timed so far by the `Measure` step under way: their count, the seconds they took
+    /// and the longest of them.
+    timing: Option<(u32, f32, f32)>,
+    /// Each `Measure` step's name, frames per second and longest frame in milliseconds.
+    timings: Vec<(&'static str, f32, f32)>,
 }
 
 pub struct DevScriptPlugin;
@@ -249,13 +269,22 @@ impl Plugin for DevScriptPlugin {
             "intro" => intro(),
             "pose" => pose(game, sites),
             "way" => way(sites),
+            "look" => look(sites),
             "beam" => beam(game, sites),
-            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way, beam, prefill)"),
+            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way, look, beam, prefill)"),
         };
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");
-        app.insert_resource(Script { steps: steps.into(), wait: 2.0, shots }).add_systems(Update, run);
+        app.insert_resource(Script { steps: steps.into(), wait: 2.0, shots, timing: None, timings: Vec::new() }).add_systems(Update, run);
+        if name == "look" {
+            app.add_systems(Startup, uncap_frame_rate);
+        }
     }
+}
+
+/// The benchmark draws as fast as it can: waiting for the screen's refresh would time the screen.
+fn uncap_frame_rate(mut window: Single<&mut Window, With<PrimaryWindow>>) {
+    window.present_mode = PresentMode::AutoNoVsync;
 }
 
 /// Index of the haul track's first pin (the cart's front coupler; then the crawler, the marker and the
@@ -836,6 +865,83 @@ fn way(sites: &Sites) -> Vec<Step> {
     steps
 }
 
+/// The benchmark: the same views every time, photographed and timed, so two versions of the game can
+/// be compared picture by picture and frame rate by frame rate.
+fn look(sites: &Sites) -> Vec<Step> {
+    use Step::*;
+    let way = &sites.way;
+    // Lumen's opening turns the camera to the places it names: the views wait until it is told.
+    let mut steps = vec![
+        Start,
+        UntilPlaying { within: 10.0 },
+        closed_step(),
+        UntilStoryEnds(180.0),
+        Wait(1.0),
+        Shot("look_00_start"),
+        Measure { name: "start", seconds: 4.0, turn: 0.6 },
+    ];
+    // Where to look, from which side, how high and how far back.
+    let views: [(&'static str, Vec3, f32, f32, f32); 7] = [
+        ("01_wreck", sites.wreck, 0.4, 0.3, 26.0),
+        ("02_supply_rail", way.stone_gate, 0.9, 0.35, 16.0),
+        ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
+        ("04_channel", sites.channel_launch.origin, 1.9, 0.35, 30.0),
+        ("05_bridge", way.bridge.centre(), -0.8, 0.25, 40.0),
+        ("06_north_gate", way.north_gate, 0.25, 0.25, 30.0),
+        ("07_skiff", sites.slipway, 2.3, 0.45, 20.0),
+    ];
+    let photograph = |steps: &mut Vec<Step>, state: &str| {
+        for (name, at, yaw, pitch, distance) in views {
+            let shot: &'static str = Box::leak(format!("look_{name}_{state}").into_boxed_str());
+            steps.extend([
+                Watch(Some(at + Vec3::Y * 2.0)),
+                Look { yaw, pitch, distance },
+                Wait(1.2),
+                Shot(shot),
+                Measure { name: shot, seconds: 3.0, turn: 0.3 },
+            ]);
+        }
+    };
+    photograph(&mut steps, "asleep");
+    // The whole island from high in the south, the strait beyond; then low, towards the ringed giant
+    // and towards the sun.
+    let middle = sites.stations.iter().map(|s| s.as_vec3()).sum::<Vec3>() / sites.stations.len() as f32;
+    steps.extend([
+        Watch(Some(middle)),
+        Look { yaw: 0.1, pitch: 0.6, distance: 130.0 },
+        Wait(1.2),
+        Shot("look_08_island"),
+        Measure { name: "island", seconds: 6.0, turn: 1.2 },
+        Look { yaw: -0.61, pitch: 0.04, distance: 30.0 },
+        Wait(1.2),
+        Shot("look_09_the_giant"),
+        // Round to face the sun: the warm haze and the glow low in the sky.
+        Look { yaw: 2.17, pitch: 0.04, distance: 30.0 },
+        Wait(1.2),
+        Shot("look_09b_towards_the_sun"),
+        Watch(None),
+    ]);
+    // The first wake as the light runs up the road, and the machine waking.
+    let wake = Timeline::new(1, way);
+    steps.extend([
+        Solve(1),
+        UntilWakeAt { stage: 1, at: wake.wake_starts() * 0.6, within: 120.0 },
+        Shot("look_10_wake_light_runs"),
+        UntilWakeAt { stage: 1, at: wake.console_lights() + 0.4, within: 120.0 },
+        Shot("look_11_wake_console_lights"),
+        UntilWoken { stage: 1, within: 60.0 },
+        WaitWakeEnd(60.0),
+    ]);
+    for stage in 2..=5 {
+        steps.extend([Solve(stage), UntilWoken { stage, within: 240.0 }, WaitWakeEnd(240.0)]);
+    }
+    // The chapter's closing is a story too.
+    steps.push(UntilStoryEnds(240.0));
+    photograph(&mut steps, "awake");
+    steps.extend([Watch(None), Quit]);
+    steps
+}
+
 /// Blocks on the far arm only that balance `load`, from the outermost seat in, as the save keeps them.
 fn balancing(load: physics_core::beam::Load) -> Vec<u32> {
     use physics_core::beam::{Arm, MOST_ON_A_SEAT, Placement, SEATS};
@@ -1004,6 +1110,7 @@ type MoreOfTheGame<'w, 's> = (
     ResMut<'w, Carry>,
     ResMut<'w, DirtyCells>,
     Res<'w, Waking>,
+    Res<'w, Time<Real>>,
     Res<'w, Shore>,
     ResMut<'w, crate::beam::Beam>,
 );
@@ -1025,7 +1132,7 @@ fn run(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar, mut carry, mut dirty, waking, shore, mut beam): MoreOfTheGame,
+    (mut intro, mode, avatar, mut carry, mut dirty, waking, real, shore, mut beam): MoreOfTheGame,
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -1053,6 +1160,13 @@ fn run(
                 let left = within - time.delta_secs().min(1.0 / 20.0);
                 assert!(left > 0.0, "the wake to stage {stage} did not reach {at} s: {:?}", waking.play.map(|p| (p.timeline.stage, p.t)));
                 script.steps.push_front(Step::UntilWakeAt { stage, at, within: left });
+            }
+        }
+        Step::UntilStoryEnds(within) => {
+            if companion.telling() {
+                let left = within - time.delta_secs();
+                assert!(left > 0.0, "Lumen's story did not end");
+                script.steps.push_front(Step::UntilStoryEnds(left));
             }
         }
         Step::UntilWoken { stage, within } => {
@@ -1254,7 +1368,33 @@ fn run(
                 script.steps.push_front(Step::ExpectActivity { activity, within: left });
             }
         }
+        Step::Measure { name, seconds, turn } => {
+            // The game's clock never steps more than a quarter of a second; the frame took what the
+            // wall clock says.
+            let dt = real.delta_secs();
+            let (frames, spent, worst) = script.timing.unwrap_or((0, 0.0, 0.0));
+            // The first frame's time belongs to the step before.
+            let (frames, spent, worst) = if script.timing.is_none() { (0, 0.0, 0.0) } else { (frames + 1, spent + dt, worst.max(dt)) };
+            orbit.yaw += turn * dt / seconds;
+            if spent < seconds {
+                script.timing = Some((frames, spent, worst));
+                script.steps.push_front(Step::Measure { name, seconds, turn });
+            } else {
+                script.timing = None;
+                script.timings.push((name, frames as f32 / spent, worst * 1000.0));
+            }
+        }
         Step::Quit => {
+            if !script.timings.is_empty() {
+                let mut table = format!("{:<32} {:>8} {:>13}\n", "view", "fps", "longest (ms)");
+                for (name, fps, worst) in &script.timings {
+                    table += &format!("{name:<32} {fps:>8.1} {worst:>13.1}\n");
+                }
+                let mean = script.timings.iter().map(|t| t.1).sum::<f32>() / script.timings.len() as f32;
+                table += &format!("{:<32} {mean:>8.1}\n", "mean");
+                print!("{table}");
+                std::fs::write(script.shots.join("look.txt"), table).expect("the frame times can be written");
+            }
             exit.write(AppExit::Success);
         }
     }

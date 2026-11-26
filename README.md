@@ -45,7 +45,7 @@ The road's machines sleep at the start. Each pass wakes the next one: a light ru
 quartz to it, it stirs (a gate opens, a ramp of steps rises, a beam reaches across the strait), and
 its own console and lamp light with it. E or Esc skips the scene.
 
-![The first pass wakes the way: the light has run up the road's quartz, the stone gate is open, and the cart rolls on to the haul track](docs/screenshots/waking.png)
+![The first pass wakes the way: the light has run up the road's quartz, the stone gate opens in a burst of its light, and the cart rolls on to the haul track](docs/screenshots/waking.png)
 
 Some things are done with your hands. The supply rail's cart will not run until you have carried its
 block onto it. On the haul track the road builders' crawler walks at one steady speed you can only
@@ -72,6 +72,9 @@ its corner after.
 
 To talk to it, copy `settings.example.toml` to `settings.toml`, fill in a service and model, and set the environment
 variable it names. No model vendor is built in; see [docs/tutor.md](docs/tutor.md).
+
+The same file sets the graphics: `quality = "low"` (the default, for integrated graphics) or `"high"`
+(ambient occlusion, sharper shadows, a finer edge filter) under `[graphics]`.
 
 ## Test
 
@@ -117,6 +120,17 @@ pass); `way` photographs each of the way's machines asleep in a new game, then w
 solved; `beam` plays the side-machine off the road, carrying a block onto it, releasing it short and
 then level for each of its loads, and photographs it waking and its handbook page. All but `intro`
 press Start first.
+
+`look` is the benchmark for how the game looks and how fast it draws. It photographs the same views
+every time (each of the way's machines asleep and awake, the whole island, the ringed giant, the
+first wake as its light runs) and times the frames at each while the camera turns slowly, with vsync
+off so the numbers are the drawing's and not the screen's refresh rate. The frame rates go to
+`look.txt` beside the shots, so two versions can be compared picture by picture and
+number by number. Build with `--release` for numbers worth comparing.
+
+```bash
+GAME_SCRIPT=look GAME_SEED=7 GAME_SAVE=/tmp/fp-look.ron cargo run --release -p game
+```
 
 To play by hand without the bookkeeping, `prefill` puts the tour's ruler readings in the notebook
 and keeps each station's blueprint (and the calculator, at the haul track and the channel) filled

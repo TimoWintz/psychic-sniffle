@@ -21,4 +21,5 @@ bevy = { version = "0.20.1", default-features = false, features = [
     "3d_bevy_render",
 ] }
 bevy_egui = "0.43.1"
+toml = "1"
 avian3d = "0.8"

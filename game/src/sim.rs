@@ -262,8 +262,9 @@ fn on_water(flight: &Flight) -> bool {
     (flight.surface + Ch1Layout::WATER_DROP).abs() < 1e-9
 }
 
-/// Rings of foam where something falls into the water at `at`.
+/// Rings of foam where something falls into the water at `at`, and the water it throws up.
 fn splash(commands: &mut Commands, assets: &PropAssets, at: Vec3) {
+    crate::particles::burst(commands, crate::particles::Kind::Splash, at.with_y(SEA_LEVEL), 1.0);
     for delay in [0.0, 0.25] {
         commands.spawn((
             Splash { age: 0.0, delay },
@@ -494,7 +495,7 @@ pub(crate) fn setup(
         }
         if prop == Prop::Cargo {
             // The orange handle we painted on what can be carried: it comes off the cart again with F.
-            let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
+            let glow = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(0.5, 0.2, 0.02), ..default() });
             let handle = meshes.add(Cuboid::new(0.5, 0.06, 0.12));
             body.with_child((Mesh3d(handle), MeshMaterial3d(glow), Transform::from_xyz(0.0, CARGO_SIZE.y / 2.0 + 0.03, 0.0)));
         }

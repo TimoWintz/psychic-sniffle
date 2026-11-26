@@ -12,6 +12,8 @@ pub struct VoxelWorld {
     cells: Vec<u8>,
     /// Glowing blocks that are dark for now: the way's quartz while its machine sleeps.
     dark: HashSet<IVec3>,
+    /// Quartz that grew where it stands, not set there by the builders: it glows more softly.
+    wild: HashSet<IVec3>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,7 +27,7 @@ pub struct RayHit {
 
 impl VoxelWorld {
     pub fn new(size: IVec3) -> Self {
-        VoxelWorld { size, cells: vec![0; (size.x * size.y * size.z) as usize], dark: HashSet::new() }
+        VoxelWorld { size, cells: vec![0; (size.x * size.y * size.z) as usize], dark: HashSet::new(), wild: HashSet::new() }
     }
 
     /// Put out the glow of a block, or light it again. A dark block is drawn with the rest, in a dim
@@ -40,6 +42,16 @@ impl VoxelWorld {
 
     pub fn is_dark(&self, p: IVec3) -> bool {
         self.dark.contains(&p)
+    }
+
+    /// Mark a block of quartz as grown wild, so it glows more softly than the way's.
+    pub fn set_wild(&mut self, p: IVec3) {
+        self.wild.insert(p);
+    }
+
+    /// The wild quartz that still stands.
+    pub fn wild_cells(&self) -> impl Iterator<Item = IVec3> + '_ {
+        self.wild.iter().copied().filter(|&p| self.get(p) == Material::Quartz)
     }
 
     fn index(&self, p: IVec3) -> Option<usize> {
@@ -159,6 +171,7 @@ impl VoxelWorld {
         let mut positions: Vec<[f32; 3]> = Vec::new();
         let mut normals: Vec<[f32; 3]> = Vec::new();
         let mut colours: Vec<[f32; 4]> = Vec::new();
+        let mut uvs: Vec<[f32; 2]> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         for y in 0..self.size.y {
             for z in z0..z1 {
@@ -169,9 +182,16 @@ impl VoxelWorld {
                     if !material.is_solid() || (glows(material) && !dark) != glow {
                         continue;
                     }
-                    // Vertex colours are linear; the tints are sRGB.
+                    // Vertex colours are linear; the tints are sRGB. What glows is drawn brighter than
+                    // its colour, by how much it glows, so the camera's bloom spreads it.
                     let colour = if dark { DARK_QUARTZ.map(|c| c * (0.9 + 0.2 * hash01(p))) } else { tint(material, p) };
-                    let base = Color::srgb_from_array(colour).to_linear();
+                    let strength = match material {
+                        _ if dark || !glow => 1.0,
+                        Material::Quartz if self.wild.contains(&p) => crate::graphics::glow::WILD,
+                        Material::Quartz => crate::graphics::glow::WAY,
+                        _ => crate::graphics::glow::PAINT,
+                    };
+                    let base = crate::graphics::glowing(colour, strength).to_linear();
                     for face in &FACES {
                         if self.is_solid(p + face.normal) {
                             continue;
@@ -186,6 +206,7 @@ impl VoxelWorld {
                             positions.push((p.as_vec3() + *corner).to_array());
                             normals.push(face.normal.as_vec3().to_array());
                             colours.push([base.red * light, base.green * light, base.blue * light, 1.0]);
+                            uvs.push(crate::graphics::block_uv(material));
                         }
                         // Split the quad along the diagonal that keeps the shading smooth.
                         if ao[0] as u32 + ao[2] as u32 >= ao[1] as u32 + ao[3] as u32 {
@@ -201,6 +222,7 @@ impl VoxelWorld {
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
             .with_inserted_indices(Indices::U32(indices))
     }
 

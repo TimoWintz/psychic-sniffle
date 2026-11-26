@@ -11,6 +11,15 @@ pub enum Domain {
     Integrated,
 }
 
+/// The light a chapter is played in. Each is a preset the game draws (the sun, the sky, the haze), so
+/// a chapter chooses a mood and the look is tuned in one place. More come with the chapters that
+/// need them: the crossing runs into the night.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Light {
+    /// Late afternoon: a low, warm sun and long shadows under a turquoise sky.
+    Afternoon,
+}
+
 /// What writes a concept's page into the handbook. A page is locked until then.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Found {
@@ -218,6 +227,8 @@ pub struct Chapter {
     pub title: String,
     /// The part of the vessel this chapter's capstone wakes.
     pub part: String,
+    /// The light the chapter is played in.
+    pub light: Light,
     pub intro: String,
     /// One line for the dock: what the chapter is for in the story.
     #[serde(default)]
@@ -679,6 +690,14 @@ mod tests {
         let mut tier = tier_1();
         tier.goal = "Embark on a journey across the strait.".into();
         assert_eq!(tier.style_problems().len(), 2, "{:?}", tier.style_problems());
+    }
+
+    #[test]
+    fn a_chapter_names_a_light_the_game_can_draw() {
+        assert_eq!(chapter_1_1().light, Light::Afternoon);
+        let source = include_str!("../../../assets/curriculum/tier1_ch1.ron");
+        assert!(Chapter::from_ron(&source.replace("light: Afternoon", "light: Teatime")).is_err(), "an unknown light is refused");
+        assert!(Chapter::from_ron(&source.replace("    light: Afternoon,\n", "")).is_err(), "every chapter chooses its light");
     }
 
     #[test]

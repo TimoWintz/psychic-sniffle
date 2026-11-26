@@ -1,7 +1,12 @@
-# Copy to settings.toml (next to where you run the game) to give Lumen a language model.
-# Without a [tutor] section the game runs with Lumen offline.
-#
-# Any service that accepts the "chat completions" request format works.
+# Copy to settings.toml (next to where you run the game) to give Lumen a language model or to
+# change the graphics. Without a [tutor] section the game runs with Lumen offline.
+
+[graphics]
+# "low" (the default) runs on integrated graphics. "high" adds ambient occlusion, sharper
+# shadows and a finer edge filter. GAME_QUALITY=low or high overrides this.
+quality = "low"
+
+# Lumen's language model. Any service that accepts the "chat completions" request format works.
 
 [tutor]
 base_url    = "https://openrouter.ai/api/v1"

@@ -308,7 +308,7 @@ fn lay_out(
 
     let handle = meshes.add(Cuboid::new(0.62, 0.07, 0.14));
     let grip = meshes.add(Cuboid::new(0.5, 0.1, 0.05));
-    let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
+    let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(0.5, 0.2, 0.02), ..default() });
     // One mark for every block that can lie loose or stand in the frame: the ledge's, the cargo and
     // the beam's.
     for i in 0..MARKS {
@@ -346,7 +346,7 @@ fn lay_out(
     // emitter and a receiver facing each other across it, and an orange handle on the clamp. Its
     // origin is where the beam crosses the fall line.
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.12, 0.13, 0.16), perceptual_roughness: 0.6, ..default() });
-    let lens = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.2, 0.15), emissive: LinearRgba::rgb(3.0, 0.3, 0.2), ..default() });
+    let lens = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.2, 0.15), emissive: LinearRgba::rgb(1.5, 0.15, 0.1), ..default() });
     let arm = meshes.add(Cuboid::new(2.2, 0.12, 0.12));
     let head = meshes.add(Cuboid::new(0.24, 0.24, 0.2));
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.
@@ -560,6 +560,7 @@ fn aim(world: Res<VoxelWorld>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, mu
 
 #[allow(clippy::too_many_arguments)]
 fn act(
+    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     mut world: ResMut<VoxelWorld>,
@@ -572,7 +573,18 @@ fn act(
         return;
     }
     let Some(target) = carry.target else { return };
+    // A little dust where a block of stone is set down or lifted.
+    let foot = |cell: IVec3| cell.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
+    let dust = match target {
+        Target::Put(cell) | Target::Take(cell) => Some(foot(cell)),
+        Target::PutIn(Slot::Frame, holds) => Some(foot(sites.channel_well + IVec3::Y * (holds as i32 - 1))),
+        Target::TakeOut(Slot::Frame, holds) => Some(foot(sites.channel_well + IVec3::Y * holds as i32)),
+        _ => None,
+    };
     apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target);
+    if let Some(at) = dust {
+        crate::particles::burst(&mut commands, crate::particles::Kind::Dust, at, 1.0);
+    }
 }
 
 /// Do what a target says. Also used by the scripted tour.

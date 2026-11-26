@@ -25,7 +25,7 @@ Nothing depends on `game`.
 | `materials` | the materials table (density, specific heat, conductivity, resistivity, colour) |
 | `puzzle` | chapter and puzzle definitions, seeded instance generation, evaluation of committed inputs, worked solutions |
 | `demo` | each station's experiment, decided in closed form like a test: strobe times, the dropped and fired blocks, the two-angle shots |
-| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions, the side-machines off the road |
+| `content` | chapter words as data: briefs, concept pages and where each is found, each page's Earth scene and quiz, experiment questions, the side-machines off the road; the light the chapter is played in (`Light`, a preset the game draws) |
 | `notebook` | named readings; the calculator's variables |
 | `progress` | the save: seed, attempts, completed puzzles, notebook, pages found, demonstrations watched, what is placed, quiz questions answered right, each side-machine's blocks, loads held and wake |
 
@@ -56,9 +56,13 @@ shows the verdict, and counts the puzzle solved, only once the world has played 
 | `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
 | `state` | the shared game state: the chapter, the seeded layout, the save and its file (read once, moved aside if it can't be read, written whole by renaming a new file over it), the test still playing out, and what the interface shows |
 | `island` | the island built from the chapter layout in whole blocks: the coast, the puzzle sites kept flat, the route along the ancient way from the wreck to the skiff, the places (`Sites`) everything else reads |
-| `scenery` | everything looked at and never touched: the island's meshes, the sea, the sky, haze, distant islands and small plants |
+| `graphics` | the quality setting (`[graphics] quality` in `settings.toml`, or `GAME_QUALITY`) and the camera's look: high dynamic range, TonyMcMapface tonemapping, the colour grade, bloom, anti-aliasing (MSAA on low, SMAA on high), ambient occlusion and finer shadows on high; how strongly each glowing thing is drawn (`glow`), so the order of what glows is set in one place; the blocks' material (`BlockSurface`, its shader `blocks.wesl`), which draws a fine pattern for each material inside every face |
+| `water` | the sea: one plane drawn by its own shader (`water.wesl`) from a map baked from the block grid, one texel per column, of the water's depth and how near the land is (shallows and depths, foam at shores and cliffs, surf over a reef); the map is worked out again around blocks at the water's level when they change |
+| `particles` | small things in motion, each a tiny cube: drops where something falls into the water, dust where a block is set down or stonework moves, spray at cliffs, motes from the awake quartz, and a wake's flourishes (the light's bright head and its trail, the burst as a machine wakes, the way's quartz brightening once); others ask for a burst with `particles::burst`; nothing drifting is made while a test, an experiment or the ruler is going |
+| `aloft` | the sky's motion: clouds drifting high on the wind (no shadows), flocks circling far out over the sea (a test keeps them off the island) |
+| `scenery` | everything looked at and never touched: the island's meshes, the sea bed, the sky, haze, distant islands and small plants (which lean in the wind: `Sway`, its vertex shader `sway.wesl`); the sun, the sky's colours and the haze for each of the chapter's lights (`Sky::of`) |
 | `props` | the shapes of what tests move and of the wreck's loose debris, each inside the box the simulation reasons with |
-| `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher, ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
+| `voxel` | fixed-size block grid, island generator driven by the chapter layout, face-culling mesher (each vertex carries its block's material in its first UVs, for the blocks' shader), ray cast; glowing blocks that are dark for now (the way's sleeping quartz) |
 | `player` | avatar, kinematic movement against the block grid, orbit camera |
 | `avatar` | the avatar's jointed body and its animation: idle, walk and run, jump and land, working a console, watching a test, reacting to the result, looking where Lumen looks |
 | `stations` | the builders' consoles and lamps (their quartz lit as each machine wakes), proximity and interaction, the active puzzle, and the camera's view of its puzzle while a station is open |
@@ -73,7 +77,7 @@ shows the verdict, and counts the puzzle solved, only once the world has played 
 | `waking` | the ancient way's machines asleep and awake: everything follows from the stage (how many puzzles are solved). Each machine's quartz has a wake set (lit when the light reaches it) and a done set (lit when its own job is done); its stonework rises or sinks step by step (layer by layer for the ramp, the stone gate's leaf and the seal in the pass through the spine; the bridge over the channel rises pylons first, then its deck out from both banks, with its cables, which are meshes); each machine's console and lamps light as it wakes (`stations` draws them). The wake that plays after a pass (a pure timeline: the job's quartz lighting, the crane lifting the sight off after the crawler's pass, the bridge rising after the casket's, the light running up the road, the machine waking and its console lighting, the camera gliding home), its camera and its letterbox; the quartz on the machines' moving parts |
 | `tutor_bridge` | builds the snapshot, starts a request, polls for streamed text |
 | `companion` | Lumen's on-screen eye: the landmarks it can look at, the director that picks where it looks and what it says, drawing the eye, beam and speech |
-| `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake |
+| `devscript` | scripted run for automated screenshots (development only); `way` photographs each machine asleep, waking and awake; `look` photographs fixed views and times their frames, the benchmark for the look |
 | `prefill` | `GAME_SCRIPT=prefill` (development only): notes the tour's ruler readings and keeps each blueprint filled with the tour's formula, while the player plays by hand |
 
 The island is generated from the same seeded layout that the puzzles read, so a distance measured in

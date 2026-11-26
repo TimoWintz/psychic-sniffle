@@ -1,14 +1,17 @@
 //! First Principles: a physics game. See `docs/` for the design.
 
+mod aloft;
 mod avatar;
 mod beam;
 mod carry;
 mod cinematic;
 mod companion;
 mod devscript;
+mod graphics;
 mod handbook;
 mod intro;
 mod island;
+mod particles;
 mod player;
 mod prefill;
 mod props;
@@ -23,6 +26,7 @@ mod ui;
 mod vessel;
 mod voxel;
 mod waking;
+mod water;
 
 use avian3d::prelude::PhysicsPlugins;
 use bevy::prelude::*;
@@ -44,7 +48,7 @@ fn main() {
                 ..default()
             }),
         )
-        .add_plugins((EguiPlugin::default(), PhysicsPlugins::default()))
+        .add_plugins((EguiPlugin::default(), PhysicsPlugins::default(), graphics::GraphicsPlugin))
         .insert_resource(game)
         .insert_resource(world)
         .insert_resource(sites)
@@ -66,6 +70,6 @@ fn main() {
             waking::WakingPlugin,
             devscript::DevScriptPlugin,
         ))
-        .add_plugins(beam::BeamPlugin)
+        .add_plugins((water::WaterPlugin, particles::ParticlesPlugin, aloft::AloftPlugin, beam::BeamPlugin))
         .run();
 }

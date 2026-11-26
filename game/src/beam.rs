@@ -155,7 +155,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let awake = woken(&game);
     let looks =
         Looks { wake: materials.add(MachineTrim::look(awake)), studs: std::array::from_fn(|i| materials.add(MachineTrim::look((i as u32) < held(&game)))) };
-    let handle = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(2.0, 0.9, 0.1), ..default() });
+    let handle = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), emissive: LinearRgba::rgb(0.5, 0.2, 0.02), ..default() });
     let c = Material::Limestone.properties().colour;
     let block_stone = materials.add(StandardMaterial { base_color: Color::srgb(c[0], c[1], c[2]), perceptual_roughness: 0.9, ..default() });
 

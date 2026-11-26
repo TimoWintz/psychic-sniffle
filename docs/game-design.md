@@ -90,6 +90,52 @@ Two hands built what stands at the puzzle sites, and they should never be confus
 The landforms a puzzle needs (the outcrop, the channel, the ridge) are geology, not boxes: exact where
 the puzzle measures them, natural everywhere else.
 
+Every face of a block is a small picture, sixteen texels across, drawn from its material: the turf
+in tufts and pale blades, the rock with fine bedding lines, the sand rippled by the wind, the soil in
+clods, the fronds with gaps of shadow, the timber's grain and rings, the wreck's hull in panels. The
+builders' stone is smooth, faintly clouded, with its edges worn darker, so their road and machines
+read as dressed blocks. The pattern is quiet: it only lightens and darkens the block's colour, it
+fades with distance rather than shimmer, and the orange paint has none, so a number's place stays the
+plainest thing in view.
+
+The sea is turquoise and clear over the sand and the shelves, and dark teal where it is deep, like the
+channel. Small waves cross it, so the sun glints on it and it shows the sky at a glancing look. Where
+it meets the land, a broken line of foam traces every shore and cliff, with fainter bands washing in
+and out; surf breaks over the reefs just under the surface. The foam along the channel's walls also
+marks where the water stops and the cliff begins.
+
+The island is never quite still. The grass and the fronds lean in slow gusts off the sea. Motes of
+light drift up from the awake lamps and consoles, and more faintly from the wild quartz. Waves throw
+up spray against the cliffs; what falls into the water throws up drops beside its ring of foam; a
+block set down or lifted raises a little dust. High clouds of white blocks drift over on the wind,
+and flocks of flyers circle far out over the sea. None of it gets in the way of a measurement: the
+clouds cast no shadows and the flocks keep well away from the island, no tufts grow at the puzzle
+sites, and no motes or spray are made while a test or an experiment runs or the ruler is out.
+
+What glows, and how much, keeps the two hands apart and shows progress at a glance. Brightest first:
+
+1. **The builders' quartz, awake:** in the road, the machines, the consoles, the lamps, the bridge's
+   cables. It has a halo, so the way reads as a thread of light across the island, and a machine
+   waking is the brightest change on screen.
+2. **The wild quartz** in the clusters and on the spires and shrubs: a softer glow, never as bright
+   as the way.
+3. **The sky's bodies:** the sun's disc, the giant, the moon.
+
+Each chapter is played in a light of its own, which its file names (`light`): a preset that sets
+the sun, the sky and the haze, so a chapter chooses a mood and the look is tuned in one place. The
+light changes with the story, never with the clock, so a puzzle reads the same whenever the player
+stands at it.
+
+- **Afternoon** (1.1): a low sun in the south-west, about 35 degrees up, throws long
+  shadows to the north-east. Its light is only a little warm, so the turf stays teal; the gold is in
+  the sky low around the sun and in the haze towards it. The shadows are the cool blue of the sky.
+- Dusk and night come with the chapters that need them: the crossing runs into the night (1.2).
+
+Sleeping quartz is dark and has no halo. **The castaway's marks never glow:** the orange paint, the
+yellow pins, the handles and the stakes are lit like the stone around them. They stay readable
+because they are the most saturated colours on screen, not the brightest. Whatever is added to make
+the island beautiful must leave them the first thing the eye finds at a puzzle.
+
 ## Title and intro
 
 The game opens on a title menu (for now only Start). Behind it the intro plays on a loop, in attract
@@ -183,10 +229,13 @@ few seconds), the way wakes, in a short scene behind letterbox bars:
    sight off its back and sets it down at its foot; after the casket's, the bridge's pylons rise out
    of the water and its deck runs out from both banks to meet in the middle, so the light can cross;
    after the tiller's, the seal in the pass sinks, so the light can run through it).
-2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
+2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it. Its
+   head is a bright point that leaves motes of light drifting behind it along the road.
 3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
    cart rolls through, the ramp's steps rise out of the ground, the north gate's beam reaches
-   across the strait). Its console's face and its lamp light with it.
+   across the strait), with a burst of motes where the light arrives. Its console's face and its
+   lamp fade in with it, and all the way's awake quartz brightens once, as if answering. Moving
+   stonework raises dust, or spray where it stands in the water.
 4. The camera glides back to the player's own view, and the letterbox goes.
 
 Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly

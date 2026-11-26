@@ -110,6 +110,9 @@ struct Sources {
     wild: Vec<Vec3>,
 }
 
+/// How near the camera may come to the light's bright head before it is hidden, in metres.
+const HEAD_CLOSEST: f32 = 6.0;
+
 /// How long the way's quartz takes to brighten and settle as a machine wakes, and by how much.
 const PULSE: f32 = 1.6;
 const PULSE_LIFT: f32 = 0.5;
@@ -146,7 +149,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     };
     commands.spawn((
         Head,
-        Mesh3d(meshes.add(Sphere::new(0.32).mesh().ico(2).expect("a small icosphere"))),
+        Mesh3d(meshes.add(Sphere::new(0.24).mesh().ico(2).expect("a small icosphere"))),
         MeshMaterial3d(unlit(&mut materials, glowing(quartz, glow::WAY * 3.0))),
         Transform::default(),
         Visibility::Hidden,
@@ -352,6 +355,7 @@ fn wake_flourishes(
     mut head: Single<(&mut Transform, &mut Visibility), With<Head>>,
     mut last: Local<Option<(usize, Phase)>>,
     (way_glow, mut materials, mut pulse): (Res<WayGlow>, ResMut<Assets<StandardMaterial>>, Local<Option<f32>>),
+    (camera, mut was): (Single<&GlobalTransform, With<Camera3d>>, Local<Option<Vec3>>),
 ) {
     let dt = time.delta_secs().min(0.1);
     let way = &sites.way;
@@ -362,9 +366,13 @@ fn wake_flourishes(
             let ground = world.surface(x, z) as f32;
             let to = Vec3::new(at.x, ground + 0.25, at.y);
             // Moving fast enough that it would skip: lay the motes along the way it came.
-            let from = if **visibility == Visibility::Visible { transform.translation } else { to };
+            let from = was.unwrap_or(to);
+            *was = Some(to);
             transform.translation = to;
-            **visibility = Visibility::Visible;
+            // Where something stands between them, the camera comes in close to the road; the bright
+            // head would fill the picture then, so only its motes show.
+            let close = camera.translation().distance(to) < HEAD_CLOSEST;
+            visibility.set_if_neq(if close { Visibility::Hidden } else { Visibility::Visible });
             // About sixty a second, spread along the stretch it covered this frame.
             let steps = (from.distance(to) / 0.25).ceil().clamp(1.0, 12.0) as usize;
             for i in 0..steps {
@@ -377,6 +385,7 @@ fn wake_flourishes(
             }
         }
         _ => {
+            *was = None;
             visibility.set_if_neq(Visibility::Hidden);
         }
     }

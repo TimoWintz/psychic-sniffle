@@ -965,7 +965,8 @@ mod tests {
 
     /// Where the avatar can stand, starting from `from`: a block with two clear above it, reached
     /// from a neighbouring column by climbing at most `climb` blocks or dropping any distance. It
-    /// wades the shallows, and stops where the water gets too deep, as the avatar does.
+    /// wades the shallows, and goes no further where the water gets too deep: the avatar falls in
+    /// there and comes back where it stepped off.
     fn reachable(world: &VoxelWorld, from: IVec3, climb: i32) -> HashSet<IVec3> {
         let stands = |p: IVec3| world.is_solid(p - IVec3::Y) && !world.is_solid(p) && !world.is_solid(p + IVec3::Y);
         let deep = |p: IVec3| island::too_deep(world.surface(p.x, p.z));

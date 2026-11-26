@@ -3,8 +3,8 @@
 //! - `tour` plays chapter 1.1, tutorial first, with the expressions a player would type and writes
 //!   screenshots. It loads the cart, times the crawler and catches it, clamps the light gate and times
 //!   drops at two notches, and stacks the channel's blocks.
-//! - `walk` drives the avatar with key presses: up the steps, to the edge of the ledge, where the deep
-//!   water of the channel stops it, over the bridge once it stands, a jump.
+//! - `walk` drives the avatar with key presses: up the steps, off the edge of the ledge into the deep
+//!   water of the channel and back onto the ledge, over the bridge once it stands, a jump.
 //! - `pose` films the avatar up close: standing, walking, running, jumping, at a console, watching a
 //!   test, and its reactions to a miss and a pass.
 //! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
@@ -29,7 +29,7 @@ use crate::carry::{self, Carry, DirtyCells, Slot, Target};
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
-use crate::player::{OrbitCamera, Player};
+use crate::player::{OrbitCamera, Player, Shore};
 use crate::ruler::{Ruler, pick_at};
 use crate::sim::{Request, Sim};
 use crate::state::{Game, Mode, Ui};
@@ -127,6 +127,10 @@ enum Step {
         z: f32,
         within: f32,
         what: &'static str,
+    },
+    /// Wait until the avatar has fallen into deep water; fail if it has not in time.
+    UntilFallenIn {
+        within: f32,
     },
     /// Fail unless the avatar stands at this height now.
     ExpectStanding {
@@ -745,11 +749,13 @@ fn walk(game: &Game, sites: &Sites) -> Vec<Step> {
         expect_activity(Activity::Walk),
         UntilStandingAt { height: ledge.y, within: 12.0, what: "climb the steps to the top of the outcrop" },
         Shot("walk_01_on_the_ledge"),
-        // Keep walking: the avatar stops at the edge of the ledge, over the deep water of the channel.
-        Wait(4.0),
-        ExpectStanding { height: ledge.y, what: "stop at the edge, above the channel" },
+        // Keep walking: the avatar walks off the edge of the ledge into the deep water of the channel,
+        // and is back on the ledge where it stepped off.
+        UntilFallenIn { within: 8.0 },
         Key(KeyCode::KeyW, false),
-        Shot("walk_02_at_the_edge"),
+        Wait(0.5),
+        ExpectStanding { height: ledge.y, what: "come back to the edge of the ledge after falling into the channel" },
+        Shot("walk_02_back_at_the_edge"),
         // Once the casket is across, the bridge stands: walk over it to the north island.
         Solve(4),
         UntilWoken { stage: 4, within: 240.0 },
@@ -1105,6 +1111,7 @@ type MoreOfTheGame<'w, 's> = (
     ResMut<'w, DirtyCells>,
     Res<'w, Waking>,
     Res<'w, Time<Real>>,
+    Res<'w, Shore>,
     ResMut<'w, crate::beam::Beam>,
 );
 
@@ -1125,7 +1132,7 @@ fn run(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar, mut carry, mut dirty, waking, real, mut beam): MoreOfTheGame,
+    (mut intro, mode, avatar, mut carry, mut dirty, waking, real, shore, mut beam): MoreOfTheGame,
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -1306,6 +1313,13 @@ fn run(
                 let left = within - time.delta_secs().min(1.0 / 20.0);
                 assert!(left > 0.0, "the avatar did not {what}: it is at {}", player.1.translation);
                 script.steps.push_front(Step::UntilNorthOf { z, within: left, what });
+            }
+        }
+        Step::UntilFallenIn { within } => {
+            if shore.fallen_in == 0 {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the avatar did not fall into the channel: it is at {}", player.1.translation);
+                script.steps.push_front(Step::UntilFallenIn { within: left });
             }
         }
         Step::ExpectStanding { height, what } => {

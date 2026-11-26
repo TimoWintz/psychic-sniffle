@@ -10,6 +10,8 @@
 //! - `intro` photographs the intro behind the title menu, presses Start and checks that the game
 //!   takes over: the camera ends on the player's view, turns to the main hull and the skiff while
 //!   Lumen names them, and the avatar walks.
+//! - `beam` plays the beam off the road: carries a block from its pile onto a seat, releases it
+//!   short and then level, sets the next two cases' blocks, and photographs it waking and its page.
 //! - `prefill` is not a script: you play by hand, with the tour's ruler readings in the notebook and
 //!   its formulas in the blueprints (see `prefill`).
 //!
@@ -166,6 +168,19 @@ enum Step {
         at: f32,
         within: f32,
     },
+    /// Open or close the beam's console.
+    BeamConsole(bool),
+    /// Press the beam's Release button.
+    Release,
+    /// Wait until the beam has swung this many seconds (or, with `None`, until it is pinned again).
+    UntilBeam {
+        at: Option<f32>,
+        within: f32,
+    },
+    /// Put these blocks on the beam's seats (as the save keeps them), as carrying them would.
+    SetBeam(Vec<u32>),
+    /// Fail unless this many of the beam's cases have held.
+    ExpectHeld(u32),
     Quit,
 }
 
@@ -179,6 +194,8 @@ enum Expect {
     TakeOut(Slot),
     /// Clamp the light gate at this notch.
     Clamp(u32),
+    /// Put the block on this seat of the beam.
+    OnBeam(physics_core::beam::Arm, u32),
 }
 
 impl Expect {
@@ -187,6 +204,7 @@ impl Expect {
             (Expect::Take, Some(Target::Take(_))) | (Expect::TakeGate, Some(Target::TakeGate)) => true,
             (Expect::PutIn(slot), Some(Target::PutIn(s, _))) | (Expect::TakeOut(slot), Some(Target::TakeOut(s, _))) => s == slot,
             (Expect::Clamp(notch), Some(Target::PutIn(Slot::Tower, n))) => n == notch,
+            (Expect::OnBeam(arm, seat), Some(Target::PutOnBeam(a, s))) => (a, s) == (arm, seat),
             _ => false,
         }
     }
@@ -227,7 +245,8 @@ impl Plugin for DevScriptPlugin {
             "intro" => intro(),
             "pose" => pose(game, sites),
             "way" => way(sites),
-            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way, prefill)"),
+            "beam" => beam(game, sites),
+            other => panic!("unknown GAME_SCRIPT '{other}' (known: tour, walk, intro, pose, way, beam, prefill)"),
         };
         let shots = PathBuf::from(std::env::var("GAME_SHOTS").unwrap_or_else(|_| "shots".into()));
         std::fs::create_dir_all(&shots).expect("the screenshot directory can be created");
@@ -811,6 +830,69 @@ fn way(sites: &Sites) -> Vec<Step> {
     steps
 }
 
+/// Blocks on the far arm only that balance `load`, from the outermost seat in, as the save keeps them.
+fn balancing(load: physics_core::beam::Load) -> Vec<u32> {
+    use physics_core::beam::{Arm, MOST_ON_A_SEAT, Placement, SEATS};
+    let mut left = load.turning();
+    let mut placement = Placement::default();
+    for seat in (1..=SEATS).rev() {
+        let n = (left / seat).min(MOST_ON_A_SEAT);
+        placement.set(Arm::Far, seat, n);
+        left -= n * seat;
+    }
+    assert_eq!(left, 0, "{load:?} is balanced on the far arm alone");
+    placement.to_saved()
+}
+
+fn beam(game: &Game, sites: &Sites) -> Vec<Step> {
+    use Step::*;
+    use physics_core::beam::{Arm, cases};
+    let beam = &sites.beam;
+    let ground = beam.pivot.y - crate::island::BEAM_AXLE;
+    let cases = cases(game.save.seed);
+    // The pile's top block, from the west, and the far arm's first seat from the south.
+    let top = *beam.pile.iter().max_by_key(|c| (c.y, -c.x, c.z)).expect("there is a pile");
+    let at_pile = Vec3::new(top.x as f32 - 0.6, ground, top.z as f32 + 0.5);
+    let at_seat = |seat: u32| Vec3::new(beam.seat(Arm::Far, seat).x, ground, beam.pivot.z + 1.4);
+    let overview = |steps: &mut Vec<Step>, name: &'static str| {
+        steps.extend([Watch(Some(beam.pivot + Vec3::new(3.0, 0.5, 0.0))), Look { yaw: 0.45, pitch: 0.35, distance: 17.0 }, Wait(1.0), Shot(name), Watch(None)]);
+    };
+    let mut steps = vec![Start, UntilPlaying { within: 10.0 }, Windows { notebook: false, handbook: false, tutor: false }, GoTo(at_seat(2)), Wait(1.0)];
+    overview(&mut steps, "beam_01_asleep");
+    // One block onto the first seat of the far arm: too little for any load.
+    steps.extend([
+        carry_at(at_pile, Vec3::X, Expect::Take),
+        Look { yaw: 0.6, pitch: 0.3, distance: 7.0 },
+        Wait(0.6),
+        Shot("beam_02_carrying"),
+        carry_at(at_seat(1), Vec3::NEG_Z, Expect::OnBeam(Arm::Far, 1)),
+        GoTo(beam.console.as_vec3() + Vec3::new(0.5, 0.0, 1.6)),
+        BeamConsole(true),
+        Wait(2.0),
+        Shot("beam_03_console"),
+        Release,
+        UntilBeam { at: Some(2.2), within: 10.0 },
+        Shot("beam_04_load_down"),
+        UntilBeam { at: None, within: 10.0 },
+        ExpectHeld(0),
+    ]);
+    // Each case balanced, as a player who has found the rule would build it.
+    for (k, load) in cases.iter().enumerate() {
+        steps.extend([SetBeam(balancing(*load)), Wait(0.5), Release, UntilBeam { at: Some(2.0), within: 10.0 }]);
+        steps.push(Shot(["beam_05_level_1", "beam_06_level_2", "beam_07_level_3"][k]));
+        steps.extend([UntilBeam { at: None, within: 10.0 }, ExpectHeld(k as u32 + 1)]);
+        if k == 1 {
+            steps.extend([Wait(0.5), Shot("beam_08_last_load")]);
+        }
+    }
+    steps.extend([Wait(0.6), BeamConsole(false), Wait(0.4)]);
+    overview(&mut steps, "beam_09_waking");
+    steps.extend([ExpectFound { page: "a_rule_predicts", within: 2.0 }, Wait(3.0)]);
+    overview(&mut steps, "beam_10_awake");
+    steps.extend([OpenPage("a_rule_predicts"), Wait(2.5), Shot("beam_11_page"), Quit]);
+    steps
+}
+
 fn pose(game: &Game, sites: &Sites) -> Vec<Step> {
     use Step::*;
     let pile_west = sites.block_pile.iter().map(|c| c.x).min().expect("there is a pile") as f32;
@@ -909,8 +991,15 @@ fn closed_step() -> Step {
 }
 
 /// The rest of what a step touches, in one parameter: a system takes at most sixteen.
-type MoreOfTheGame<'w, 's> =
-    (Option<ResMut<'w, Intro>>, Res<'w, State<Mode>>, Single<'w, 's, &'static AvatarState>, ResMut<'w, Carry>, ResMut<'w, DirtyCells>, Res<'w, Waking>);
+type MoreOfTheGame<'w, 's> = (
+    Option<ResMut<'w, Intro>>,
+    Res<'w, State<Mode>>,
+    Single<'w, 's, &'static AvatarState>,
+    ResMut<'w, Carry>,
+    ResMut<'w, DirtyCells>,
+    Res<'w, Waking>,
+    ResMut<'w, crate::beam::Beam>,
+);
 
 #[allow(clippy::too_many_arguments)]
 fn run(
@@ -929,7 +1018,7 @@ fn run(
     mut keys: ResMut<ButtonInput<KeyCode>>,
     companion: Res<Companion>,
     mut exit: MessageWriter<AppExit>,
-    (mut intro, mode, avatar, mut carry, mut dirty, waking): MoreOfTheGame,
+    (mut intro, mode, avatar, mut carry, mut dirty, waking, mut beam): MoreOfTheGame,
 ) {
     if script.wait > 0.0 {
         script.wait -= time.delta_secs();
@@ -1018,6 +1107,29 @@ fn run(
             }
         }
         Step::OpenPage(page) => ui.open_page(page),
+        Step::BeamConsole(open) => ui.beam_open = open,
+        Step::Release => {
+            assert!(beam.swinging.is_none(), "the beam is already swinging");
+            crate::beam::release_now(&mut beam, &game, &mut carry);
+        }
+        Step::UntilBeam { at, within } => {
+            let there = match (at, beam.swinging) {
+                (Some(at), Some(s)) => s.t >= at,
+                (Some(_), None) => false,
+                (None, swinging) => swinging.is_none(),
+            };
+            if !there {
+                let left = within - time.delta_secs().min(1.0 / 20.0);
+                assert!(left > 0.0, "the beam did not get to {at:?}");
+                script.steps.push_front(Step::UntilBeam { at, within: left });
+            }
+        }
+        Step::SetBeam(saved) => {
+            carry.beam = physics_core::beam::Placement::from_saved(&saved);
+            game.save.sides.entry(crate::beam::BEAM_ID.to_string()).or_default().placed = saved;
+            game.persist();
+        }
+        Step::ExpectHeld(n) => assert_eq!(crate::beam::held(&game), n, "the beam's cases held"),
         Step::Quiz { page, question, right } => {
             let concept = game.chapter.concept(page).unwrap_or_else(|| panic!("no page '{page}'"));
             let asked = &concept.quiz[question];

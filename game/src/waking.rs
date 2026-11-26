@@ -965,6 +965,24 @@ mod tests {
     }
 
     #[test]
+    fn the_beam_and_its_pile_can_be_reached_from_the_start() {
+        // A side-track open from the first moment: nothing of the way needs to wake for it.
+        for seed in 0..12 {
+            let layout = Ch1Layout::generate(seed);
+            let (mut world, sites) = island::build(&layout);
+            settle(&mut world, &sites.way, 0);
+            let reach = reachable(&world, sites.spawn.floor().as_ivec3(), climb(&layout));
+            let beam = &sites.beam;
+            let beside = |x: f32, dz: i32| IVec3::new(x.floor() as i32, GROUND, beam.row() + dz);
+            assert!(reach.contains(&beside(beam.pivot.x + 3.0, 2)) && reach.contains(&beside(beam.pivot.x - 3.0, -2)), "seed {seed}");
+            assert!(reach.contains(&(beam.console + IVec3::Z)), "seed {seed}: its console");
+            for cell in &beam.pile {
+                assert!([IVec3::X, IVec3::NEG_X, IVec3::Z, IVec3::NEG_Z].iter().any(|d| reach.contains(&(cell.with_y(GROUND) + *d))), "seed {seed}: the pile");
+            }
+        }
+    }
+
+    #[test]
     fn the_ledge_is_out_of_reach_until_the_ramp_rises() {
         for seed in 0..24 {
             let layout = Ch1Layout::generate(seed);

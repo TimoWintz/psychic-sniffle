@@ -205,6 +205,20 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
         }
     }
 
+    if !ctx.side_machines.is_empty() {
+        let _ = writeln!(
+            w,
+            "\nOff the road stand machines of the builders that the route doesn't need, which the player can solve by moving blocks, with nothing to type:"
+        );
+        for (title, woken) in &ctx.side_machines {
+            let _ = writeln!(w, "- {title} ({})", if *woken { "awake: the player has solved it" } else { "asleep" });
+        }
+        let _ = writeln!(
+            w,
+            "If the player asks about one, you may talk about looking for a pattern and testing a rule on a case they haven't tried. Never say what to put where: no counts of blocks, no seats, no arrangement."
+        );
+    }
+
     if !ctx.landmarks.is_empty() {
         let _ = writeln!(w, "\nPlaces you can point at with [look: NAME]:");
         for name in &ctx.landmarks {

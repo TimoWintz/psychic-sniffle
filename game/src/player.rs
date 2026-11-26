@@ -238,9 +238,9 @@ pub(crate) fn move_player(
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
-    // At an open station the avatar stays at the console: the keys are for the panel.
+    // At an open station (or the beam's console) the avatar stays there: the keys are for the panel.
     // While the way wakes, the avatar waits too.
-    let still = wants.wants_any_keyboard_input() || ui.station.is_some() || waking.playing();
+    let still = wants.wants_any_keyboard_input() || ui.at_console() || waking.playing();
 
     // Walk relative to where the camera looks.
     let mut wish = Vec3::ZERO;

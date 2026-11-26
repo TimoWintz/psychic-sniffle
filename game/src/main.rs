@@ -1,6 +1,7 @@
 //! First Principles: a physics game. See `docs/` for the design.
 
 mod avatar;
+mod beam;
 mod carry;
 mod cinematic;
 mod companion;
@@ -34,6 +35,7 @@ fn main() {
     // The island is built awake: put the way to the stage the save is at before anything meshes it
     // or collides with it.
     waking::settle(&mut world, &sites.way, waking::stage(&game));
+    beam::settle(&mut world, &sites.beam, beam::woken(&game));
 
     App::new()
         .add_plugins(
@@ -64,5 +66,6 @@ fn main() {
             waking::WakingPlugin,
             devscript::DevScriptPlugin,
         ))
+        .add_plugins(beam::BeamPlugin)
         .run();
 }

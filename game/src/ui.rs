@@ -32,7 +32,7 @@ pub(crate) const WARN: Color32 = Color32::from_rgb(240, 190, 80);
 pub(crate) const BAD: Color32 = Color32::from_rgb(240, 110, 100);
 pub(crate) const DIM: Color32 = Color32::from_rgb(160, 165, 175);
 /// Lumen's colour, the cyan of its eye, for its words in the panels.
-const LUMEN: Color32 = Color32::from_rgb(110, 205, 240);
+pub(crate) const LUMEN: Color32 = Color32::from_rgb(110, 205, 240);
 
 pub struct UiPlugin;
 
@@ -87,6 +87,7 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: 
             ruler.put_away();
         } else {
             ui.station = None;
+            ui.beam_open = false;
         }
     }
 }
@@ -241,8 +242,12 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
 fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler: &Ruler, carry: &Carry) {
     let prompt = if ruler.active {
         Some("Left-click two points to measure between them. R or Esc cancels.".to_string())
-    } else if let Some(line) = crate::carry::hint(carry).filter(|_| ui_state.station.is_none()) {
+    } else if let Some(line) = crate::carry::hint(carry).filter(|_| !ui_state.at_console()) {
         Some(line)
+    } else if ui_state.beam_open {
+        Some("You're at the beam's console. Press E or Esc to leave.".to_string())
+    } else if ui_state.near_beam {
+        Some("Press E to use the console: The beam".to_string())
     } else {
         match (ui_state.near_station, ui_state.station) {
             (_, Some(_)) => Some("You're at the station. Press E or Esc to leave.".to_string()),

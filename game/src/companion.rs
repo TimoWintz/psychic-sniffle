@@ -73,6 +73,7 @@ impl Landmarks {
         places.push(("The bridge".into(), way.bridge.centre() + Vec3::Y * 1.0));
         places.push(("The seal".into(), way.seal.centre() + Vec3::Y * 0.5));
         places.push((crate::waking::LIGHT_ON_THE_ROAD.into(), way.machines[0]));
+        places.push((BEAM.into(), sites.beam.pivot + Vec3::Y * 1.0));
         Landmarks(places)
     }
 
@@ -123,6 +124,8 @@ const RAIL_CART: &str = "Rail cart";
 /// The light gate on its stand, and the drop tower it clamps on.
 const LIGHT_GATE: &str = "Light gate on its stand";
 const TOWER_NOTCHES: &str = "Notches on the drop tower";
+/// The beam, the side-machine off the road.
+const BEAM: &str = "The beam";
 /// The main hull on the mainland, where the rest of Lumen is, and the island's shore facing it.
 const MAIN_HULL: &str = "The main hull, across the strait";
 const SHORE: &str = "The shore";
@@ -233,6 +236,11 @@ pub struct Companion {
     showing: Option<String>,
     /// Whether Lumen has said why the engineer stopped at deep water, this session.
     warned_of_water: bool,
+    /// At the beam, this session: whether Lumen has said why it's worth a look, the releases that
+    /// missed since a load last held, and whether it has suggested looking for a rule.
+    beam_why: bool,
+    beam_misses: u32,
+    beam_rule: bool,
 }
 
 impl Companion {
@@ -331,7 +339,8 @@ fn quiet(q: &Quiet) -> bool {
 
 /// Whether a remark's condition holds.
 fn remark_due(when: &RemarkWhen, game: &Game) -> bool {
-    let solved = |id: &str| game.chapter.puzzles.iter().position(|p| p.id == id).is_some_and(|i| game.solved(i));
+    // A side-machine counts once it has woken.
+    let solved = |id: &str| game.chapter.puzzles.iter().position(|p| p.id == id).is_some_and(|i| game.solved(i)) || game.save.side_woken(id);
     match when {
         RemarkWhen::Always => true,
         RemarkWhen::Before(id) => !solved(id),
@@ -464,6 +473,9 @@ struct Seen {
     quizzes: BTreeSet<String>,
     station: Option<usize>,
     recharging: [bool; PUZZLES],
+    beam_open: bool,
+    beam_releases: u32,
+    beam_woken: bool,
 }
 
 pub struct CompanionPlugin;
@@ -501,6 +513,7 @@ fn direct(
     mut orbit: ResMut<crate::player::OrbitCamera>,
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
+    beam: Res<crate::beam::Beam>,
     mut last: Local<Option<Seen>>,
 ) {
     let dt = time.delta_secs();
@@ -534,6 +547,9 @@ fn direct(
         quizzes: game.chapter.concepts.iter().filter(|c| game.save.quiz_done(&game.chapter, &c.id)).map(|c| c.id.clone()).collect(),
         station: ui.station,
         recharging: std::array::from_fn(|i| ui.recharging[i].is_some()),
+        beam_open: ui.beam_open,
+        beam_releases: beam.releases,
+        beam_woken: crate::beam::woken(&game),
     };
     match last.as_ref() {
         None => {
@@ -576,6 +592,22 @@ fn direct(
             for puzzle in 0..PUZZLES {
                 if now.watched[puzzle] && !before.watched[puzzle] {
                     react_to_demo(companion, &game, puzzle);
+                }
+            }
+            if now.beam_open && !before.beam_open && !now.beam_woken && !companion.beam_why {
+                companion.beam_why = true;
+                if let Some(side) = game.chapter.side(crate::beam::BEAM_ID) {
+                    companion.say(side.why.clone());
+                }
+            }
+            if now.beam_releases > before.beam_releases {
+                react_to_release(companion, &game, &beam);
+            }
+            if now.beam_woken && !before.beam_woken {
+                companion.hold(BEAM, RESULT_LOOK_SECONDS, false);
+                companion.feel(Mood::Pleased, 6.0);
+                if let Some(side) = game.chapter.side(crate::beam::BEAM_ID) {
+                    companion.say(side.done.clone());
                 }
             }
             for id in now.found.difference(&before.found) {
@@ -677,7 +709,7 @@ fn direct(
 
     // A remark about where the player is, if nothing else is going on.
     let calm = Quiet {
-        station_open: ui.station.is_some(),
+        station_open: ui.at_console(),
         running: testing.is_some() || sim.demo().is_some(),
         ruler: ruler.active || ruler.in_use(),
         conversation_open: ui.tutor_open,
@@ -728,7 +760,7 @@ fn direct(
     // While the story names a place, the camera turns to show it past the avatar, and turns back
     // once it moves on.
     let story = companion.lines.first().filter(|l| l.keep && l.shown > 0.0).and_then(|l| l.look.clone());
-    let show = story.filter(|_| ui.station.is_none() && !waking.playing()).and_then(|place| Some((landmarks.position(&place)?, place)));
+    let show = story.filter(|_| !ui.at_console() && !waking.playing()).and_then(|place| Some((landmarks.position(&place)?, place)));
     match show {
         Some((at, place)) => {
             if companion.showing.as_ref() != Some(&place) {
@@ -737,7 +769,7 @@ fn direct(
             }
         }
         None => {
-            if companion.showing.take().is_some() && ui.station.is_none() && !waking.playing() {
+            if companion.showing.take().is_some() && !ui.at_console() && !waking.playing() {
                 orbit.ease_home();
             }
         }
@@ -789,6 +821,36 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
             }
         }
     }
+}
+
+/// After a release of the beam: glad when it holds, otherwise which end went down. The last load's
+/// hold is answered by the wake instead, and a run of misses by a suggestion to look for a rule.
+fn react_to_release(companion: &mut Companion, game: &Game, beam: &crate::beam::Beam) {
+    let Some(swing) = beam.last else { return };
+    companion.hold(BEAM, RESULT_LOOK_SECONDS, false);
+    let held = crate::beam::held(game) as usize;
+    if swing.holds() {
+        companion.beam_misses = 0;
+        if crate::beam::woken(game) {
+            companion.feel(Mood::Pleased, 3.0);
+            companion.say("Level again. It still answers.");
+        } else if held < physics_core::beam::CASES {
+            companion.feel(Mood::Pleased, 5.0);
+            companion.say("It's holding! And the machine's setting out a new load already.");
+        }
+        return;
+    }
+    companion.beam_misses += 1;
+    companion.feel(Mood::Concerned, 3.0);
+    if companion.beam_misses >= 4 && held + 1 == physics_core::beam::CASES && !companion.beam_rule {
+        companion.beam_rule = true;
+        companion.say("Before you carry anything else, look back at the loads that held. What did they have in common? If you can say it as a rule, it'll tell you what to try.");
+        return;
+    }
+    companion.say(match swing {
+        physics_core::beam::Swing::LoadDown => "The load's end went down. Have a look at what's on each arm.",
+        _ => "The far end went down this time, so that side has too much.",
+    });
 }
 
 /// After an experiment's first run: how the guess went, then what was seen.
@@ -1006,7 +1068,7 @@ fn draw(
     let toward = if speaking || (a.linger > 0.0 && !ui_state.tutor_open) { 1.0 } else { 0.0 };
     a.forward += (toward - a.forward).clamp(-dt / FORWARD_SECONDS, dt / FORWARD_SECONDS);
     let forward = crate::voxel::smoothstep(0.0, 1.0, a.forward);
-    let right_edge = if ui_state.station.is_some() { screen.right() - STATION_PANEL } else { screen.right() };
+    let right_edge = if ui_state.at_console() { screen.right() - STATION_PANEL } else { screen.right() };
     let rest = eye_place(screen, a.lift, forward, right_edge);
     let centre = rest + vec2(0.0, (t * 1.7).sin() * 3.0);
     let (camera, at) = *camera;

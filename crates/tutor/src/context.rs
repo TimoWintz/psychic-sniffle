@@ -155,6 +155,9 @@ pub struct TutorContext {
 
     /// Places Lumen can turn its eye to, by name. Filled in by the game, which knows where they are.
     pub landmarks: Vec<String>,
+    /// The chapter's side-machines, by title, and whether each has woken: optional machines off the
+    /// road that Lumen knows of and must not solve (see "Side-machines" in the game design).
+    pub side_machines: Vec<(String, bool)>,
 
     /// Used by the leak filter, not sent to the model.
     #[serde(skip)]
@@ -310,6 +313,7 @@ impl TutorContext {
             solution_note: solution.note.clone(),
             true_measurements: instance.givens().iter().map(|g| format!("{} = {}", g.label, g.quantity.display())).collect(),
             landmarks: Vec::new(),
+            side_machines: chapter.sides.iter().map(|side| (side.title.clone(), save.side_woken(&side.id))).collect(),
             secrets,
             known_numbers,
         }

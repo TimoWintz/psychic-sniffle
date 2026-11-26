@@ -32,7 +32,7 @@ pub const GROUND: i32 = 20;
 /// The water's surface: as far below the ground as the simulator has the channel's water.
 pub const SEA_LEVEL: f32 = GROUND as f32 - Ch1Layout::WATER_DROP as f32;
 /// The deepest water the castaway wades into: the ground under it at most this far below the
-/// surface. Anywhere deeper, it stops at the water's edge.
+/// surface. Anywhere deeper, it falls in.
 pub const WADE_DEPTH: f32 = 1.2;
 
 /// Whether the water over a column with its top at `surface` is too deep to wade.
@@ -144,6 +144,45 @@ pub struct Sites {
     pub lantern_machine: Vec<usize>,
     /// The ancient road and what wakes along it.
     pub way: Way,
+    /// The beam, the chapter's side-machine off the road.
+    pub beam: BeamSite,
+}
+
+/// The beam: the builders' side-machine north of the railway, between the wreck and the drop tower
+/// (see `beam`, and "Side-machines" in the game design). It runs east and west, the load arm west.
+#[derive(Clone, Debug)]
+pub struct BeamSite {
+    /// The axle the beam turns about, at the middle of the beam.
+    pub pivot: Vec3,
+    /// Its console block, south of the pivot.
+    pub console: IVec3,
+    /// Foot of its lamp.
+    pub lamp: Vec3,
+    /// Cells of the pile of blocks for it, where they lie at the start.
+    pub pile: Vec<IVec3>,
+    /// Corners (inclusive) of the ground where its blocks may be put down, around the pile.
+    pub yard: [IVec3; 2],
+    /// The path of quartz from the beam down to the road, which lights as the beam wakes.
+    pub path: Inlay,
+}
+
+/// How high the beam's axle is above the ground, and how thick the beam is: its ends come down
+/// onto stone set in the ground when it tips all the way.
+pub const BEAM_AXLE: f32 = 1.15;
+pub const BEAM_THICK: f32 = 0.3;
+
+impl BeamSite {
+    /// Where the beam's upper face is over seat `seat` of `arm` while the beam is level: the
+    /// middle of the seat, where its first block's underside rests.
+    pub fn seat(&self, arm: physics_core::beam::Arm, seat: u32) -> Vec3 {
+        let sign = if arm == physics_core::beam::Arm::Load { -1.0 } else { 1.0 };
+        self.pivot + Vec3::new(sign * seat as f32, BEAM_THICK / 2.0, 0.0)
+    }
+
+    /// The row of columns the beam stands over.
+    pub fn row(&self) -> i32 {
+        self.pivot.z.floor() as i32
+    }
 }
 
 /// How many machines stand along the way: the five stations, then the north gate.
@@ -414,6 +453,12 @@ impl Route {
         (PAD_Z - 6, PAD_Z - 42)
     }
 
+    /// The column of the beam's pivot: off the road north of the railway, between the wreck and the
+    /// drop tower.
+    fn beam(&self) -> IVec2 {
+        IVec2::new(self.rail_x + 26, self.line_z - 13)
+    }
+
     /// Where the castaway stands at the start, beside the wreck.
     fn spawn(&self) -> Vec3 {
         Vec3::new(self.rail_x as f32 + 2.5, GROUND as f32, self.line_z as f32 - 6.5)
@@ -498,6 +543,8 @@ impl Plan {
             ridge.rect(layout.ridge_x as i32 - 4, -12, layout.ridge_x as i32 + 5, 8),
             // The skiff on the slipway, on the north shore.
             Rect::new(RIDGE_X - 11, route.quay_rows().1 - 3, RIDGE_X + 11, PAD_Z + 3),
+            // The beam, its pile and the path down to the road.
+            Rect::new(route.beam().x - 8, route.beam().y - 4, route.beam().x + 17, line - 3),
         ];
         // Each side view looks across its line from one side: the railway's from the south, the
         // launchers' (which fire north) from the east.
@@ -926,6 +973,32 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         });
     }
 
+    // --- The beam: a side-machine off the road, north of the railway --------------------------
+    // A pivot post with stone set in the ground under each end, where the beam comes down when it
+    // tips; its console and lamp south of it, either side of the path that runs down to the road;
+    // and the pile of its blocks, a walk away to the east. The beam itself and its blocks are
+    // entities (see `beam`); the blocks in the pile are put there when the game starts (see `carry`).
+    let beam_at = route.beam();
+    let beam_cell = |dx: i32, dz: i32, y: i32| IVec3::new(beam_at.x + dx, y, beam_at.y + dz);
+    world.set(beam_cell(0, 0, GROUND), Material::Limestone);
+    for dx in [-(physics_core::beam::SEATS as i32), physics_core::beam::SEATS as i32] {
+        world.set(beam_cell(dx, 0, GROUND - 1), Material::Limestone);
+    }
+    let beam_path = road(&mut world, &[(beam_at.x, beam_at.y + 1), (beam_at.x, row - 3)]);
+    let beam_pile: Vec<IVec3> = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1)]
+        .into_iter()
+        .take(physics_core::beam::PILE as usize)
+        .map(|(dx, dz, dy)| beam_cell(13 + dx, 3 + dz, GROUND + dy))
+        .collect();
+    let beam = BeamSite {
+        pivot: Vec3::new(beam_at.x as f32 + 0.5, ground + BEAM_AXLE, beam_at.y as f32 + 0.5),
+        console: beam_cell(2, 3, GROUND),
+        lamp: beam_cell(-2, 3, GROUND).as_vec3() + Vec3::new(0.5, 0.0, 0.5),
+        pile: beam_pile,
+        yard: [beam_cell(10, 1, GROUND), beam_cell(16, 6, GROUND + 2)],
+        path: beam_path,
+    };
+
     // The seal: a slab of stone filling the pass through the spine where the road crosses it, between
     // two standing stones (see `spine`). The island is built awake, so it is listed, not laid. It
     // sinks once the tiller is in the landing circle, before the light runs through the pass.
@@ -1016,6 +1089,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         sites: plan.zones.iter().map(|r| [r.min, r.max]).collect(),
         lantern_machine,
         way,
+        beam,
     };
     (world, sites)
 }
@@ -1619,6 +1693,50 @@ mod tests {
                 if (top as f32) < SEA_LEVEL { -Ch1Layout::WATER_DROP } else { (top - GROUND) as f64 }
             })
             .collect()
+    }
+
+    #[test]
+    fn the_beam_stands_clear_on_flat_ground_with_its_pile_a_walk_away() {
+        use physics_core::beam::{Arm, SEATS};
+        for seed in 0..60 {
+            let (world, sites) = build(&Ch1Layout::generate(seed));
+            let beam = &sites.beam;
+            let (x, row) = (beam.pivot.x.floor() as i32, beam.row());
+            // Flat ground all along it, and nothing but its post in the way of its swing.
+            for dx in -(SEATS as i32 + 2)..=SEATS as i32 + 2 {
+                for dz in -1..=1 {
+                    let post = dx == 0 && dz == 0;
+                    assert_eq!(world.surface(x + dx, row + dz), GROUND + post as i32, "seed {seed}: ground at {dx}, {dz}");
+                }
+            }
+            assert_eq!(beam.pivot.y, GROUND as f32 + BEAM_AXLE);
+            // Each end comes down on stone set in the ground.
+            for dx in [-(SEATS as i32), SEATS as i32] {
+                assert_eq!(world.get(IVec3::new(x + dx, GROUND - 1, row)), Material::Limestone, "seed {seed}");
+            }
+            // The pile is a walk away from every seat, on flat ground, inside its yard.
+            let seats: Vec<Vec3> = [Arm::Load, Arm::Far].into_iter().flat_map(|arm| (1..=SEATS).map(move |s| beam.seat(arm, s))).collect();
+            assert_eq!(beam.pile.len(), physics_core::beam::PILE as usize);
+            let [low, high] = beam.yard;
+            for cell in &beam.pile {
+                let centre = cell.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
+                let nearest = seats.iter().map(|s| s.xz().distance(centre.xz())).fold(f32::INFINITY, f32::min);
+                assert!(nearest >= 8.0, "seed {seed}: the pile is {nearest} m from a seat");
+                assert!(cell.cmpge(low).all() && cell.cmple(high).all(), "seed {seed}");
+                assert!(!world.is_solid(*cell), "seed {seed}: the pile's cells are left for its blocks");
+                assert_eq!(world.surface(cell.x, cell.z), GROUND, "seed {seed}");
+            }
+            // The path runs from under the beam to the middle of the road, and the console and lamp
+            // stand clear of it.
+            let path: Vec<IVec3> = beam.path.cells.iter().map(|&(c, _)| c).collect();
+            assert!(path.len() >= 8, "seed {seed}");
+            assert!(path.iter().all(|c| world.get(*c) == Material::Quartz), "seed {seed}");
+            let end = *path.iter().max_by_key(|c| c.z).unwrap();
+            assert_eq!(world.get(end + IVec3::Z), Material::Quartz, "seed {seed}: the path ends on the road's inlay");
+            assert!(sites.way.runs.iter().any(|run| run.cells.iter().any(|&(c, _)| c == end + IVec3::Z)), "seed {seed}");
+            assert!(!path.iter().any(|c| c.xz() == beam.console.xz()), "seed {seed}");
+            assert!(world.is_solid(beam.console - IVec3::Y) && !world.is_solid(beam.console), "seed {seed}");
+        }
     }
 
     #[test]

@@ -1,25 +1,18 @@
-# Handover: open issues from the November 2026 review
+# Handover: issues from the November 2026 review
 
-A review of the whole repository found a list of issues. All but one are fixed on
-`claude/confident-ptolemy-hz598f` (see [Done](#done)). The one left is a design decision.
+A review of the whole repository found a list of issues. All of them are now fixed (see [Done](#done)).
 
 Before changing words the player sees, read [writing.md](writing.md) (see `CLAUDE.md`). Before
 changing how the game plays, read the design documents it lists.
 
-## Open: the drop tower's result gives g away
-
-At the drop tower, a failed test prints the mast's real fall time to three figures, from which
-g = 2h/t² follows directly. One throwaway test therefore solves the puzzle without the light gate.
-`guessing_at_the_drop_tower_takes_two_tests` in `crates/physics_core/src/puzzle.rs` now plays a
-guesser against it: for every seed, from any first guess, the second test passes, well inside the
-station's three charges. The other stations' guesser tests ask for six tests on average.
-
-Decide whether that is acceptable (the mast's time is still a measurement, and a player who uses it
-has done the physics) or whether the result should report less, for example only "sooner" or
-"later" without the time. If it changes, raise the bar in that test to match the others, and check
-that the handbook page and Lumen's lines don't rely on the time being shown.
-
 ## Done
+
+### Third round
+
+- **Drop tower shortcut closed.** A failed test at the drop tower now reports only whether the real
+  mass landed sooner or later than predicted (never the mast's observed fall time), and omits the
+  comparison row on a miss. `guessing_at_the_drop_tower_takes_more_tests_than_a_station_has_charges`
+  checks that guessing now takes well over a station's three charges on average.
 
 Fixed on `claude/confident-ptolemy-hz598f`, with tests where a program can check it.
 

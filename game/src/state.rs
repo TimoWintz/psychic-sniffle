@@ -279,6 +279,13 @@ pub enum PageEvent {
 /// Seconds a station takes to recharge once its prototype charges are used up.
 pub const RECHARGE_SECONDS: f32 = 20.0;
 
+/// Which text field most recently had focus, so clicking a notebook variable inserts it there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputTarget {
+    Calculator,
+    Blueprint(usize, usize),
+}
+
 /// What the interface is showing and what the player has typed.
 #[derive(Resource, Default)]
 pub struct Ui {
@@ -295,6 +302,8 @@ pub struct Ui {
     pub refusal: Option<String>,
     /// Result of the last finished test, per puzzle.
     pub results: [Option<Outcome>; PUZZLES],
+    /// Scroll the station panel down to the result section on the next frame (set when a test ends).
+    pub scroll_to_result: [bool; PUZZLES],
     /// Time left until a station has recharged.
     pub recharging: [Option<f32>; PUZZLES],
     /// Whether the notebook, the handbook and Lumen's panel are expanded. They are always on
@@ -306,6 +315,16 @@ pub struct Ui {
     /// clear of it.
     pub dock_bottom: f32,
     pub calculator: String,
+    /// Recent calculator expressions (oldest first), for Up/Down recall.
+    pub calc_history: Vec<String>,
+    /// Position in `calc_history` while stepping through it with Up/Down.
+    pub calc_history_idx: Option<usize>,
+    /// Unsubmitted calculator text kept while browsing `calc_history`.
+    pub calc_draft_saved: String,
+    /// Most recently focused calculator or blueprint field, for click-to-insert from the notebook.
+    pub last_input: Option<InputTarget>,
+    /// Notebook entry currently being renamed inline: `(original_name, draft_name)`.
+    pub renaming_entry: Option<(String, String)>,
     pub chat: String,
     /// The choice picked in a station's demonstration before its first run.
     pub guess: [Option<usize>; PUZZLES],

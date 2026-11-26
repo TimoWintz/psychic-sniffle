@@ -808,7 +808,7 @@ impl Instance {
                 let predicted_time = fall_time(height, g_player);
                 let actual_time = fall_time(height, l.g);
                 let pass = ((g_player - l.g) / l.g).abs() <= GRAVITY_TOLERANCE;
-                let (headline, detail) = if pass {
+                let (headline, detail, comparisons) = if pass {
                     (
                         "Calibrated".to_string(),
                         format!(
@@ -817,31 +817,25 @@ impl Instance {
                             sig(actual_time, 3),
                             sig(predicted_time, 3)
                         ),
+                        vec![Comparison {
+                            label: format!("Fall time from the mast ({} m)", l.mast_h),
+                            expected: Quantity::seconds(predicted_time),
+                            observed: Quantity::seconds(actual_time),
+                        }],
                     )
                 } else {
                     let (speed_word, strength_word) = if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
                     (
                         "Prediction doesn't match".to_string(),
                         format!(
-                            "The mass fell from the {} m mast in {} s, but your value predicted {} s. It landed \
-                             {speed_word} than predicted, so gravity here is {strength_word} than your value.",
+                            "Your value predicted {} s for the {} m mast, but the mass landed {speed_word}, so gravity here is {strength_word} than your value.",
+                            sig(predicted_time, 3),
                             l.mast_h,
-                            sig(actual_time, 3),
-                            sig(predicted_time, 3)
                         ),
+                        Vec::new(),
                     )
                 };
-                Outcome {
-                    pass,
-                    headline,
-                    detail,
-                    comparisons: vec![Comparison {
-                        label: format!("Fall time from the mast ({} m)", l.mast_h),
-                        expected: Quantity::seconds(predicted_time),
-                        observed: Quantity::seconds(actual_time),
-                    }],
-                    playback: Playback::Drop { height, g: l.g, predicted_time, actual_time },
-                }
+                Outcome { pass, headline, detail, comparisons, playback: Playback::Drop { height, g: l.g, predicted_time, actual_time } }
             }
             PuzzleKind::Channel => {
                 let (projectile, flight) = l.channel_shot(value("stack").round() as u32, value("speed"));
@@ -1464,36 +1458,31 @@ mod tests {
         assert!(lucky <= 0.35, "a guesser lands within three tests {:.0}% of the time", lucky * 100.0);
     }
 
-    /// A guesser at the drop tower: commit a value, read the mast's fall time off the result (as shown,
-    /// to three figures), work g out from it, commit that.
-    fn gravity_tests_by_guessing(layout: &Ch1Layout, first_guess: f64) -> u32 {
+    /// A guesser at the drop tower: without the mast's fall time on a miss, the best a guesser can
+    /// do is halve a plausible band on whichever side the miss points to.
+    fn gravity_tests_by_guessing(layout: &Ch1Layout) -> u32 {
         let gravity = Instance::new(PuzzleKind::Gravity, layout);
-        let mut g = first_guess;
+        let (mut low, mut high) = (0.0, 25.0);
         for tests in 1..=60 {
+            let g = (low + high) / 2.0;
             let outcome = gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g))])).unwrap();
             if outcome.pass {
                 return tests;
             }
-            let shown = outcome.detail.split(" mast in ").nth(1).and_then(|rest| rest.split(" s,").next()).expect("the time is shown");
-            let t: f64 = shown.parse().expect("a number");
-            g = 2.0 * layout.mast_h as f64 / (t * t);
+            assert!(outcome.comparisons.is_empty(), "a miss must not report the mast's observed fall time");
+            if outcome.detail.contains("stronger") { low = g } else { high = g }
         }
         60
     }
 
-    /// The open question in docs/handover.md: unlike the other stations, a failed test here reports
-    /// enough to solve the puzzle (the mast's fall time), so a guesser needs two tests, within the
-    /// station's three charges. This records how it plays now; if the result is made to say less,
-    /// raise the bar here to match the other guesser tests.
     #[test]
-    fn guessing_at_the_drop_tower_takes_two_tests() {
-        for seed in 0..SEEDS {
-            let layout = Ch1Layout::generate(seed);
-            for first_guess in [9.81, 5.0, 20.0] {
-                let tests = gravity_tests_by_guessing(&layout, first_guess);
-                assert!(tests <= 2, "seed {seed}, first guess {first_guess}: {tests} tests");
-            }
-        }
+    fn guessing_at_the_drop_tower_takes_more_tests_than_a_station_has_charges() {
+        let tests: Vec<u32> = (0..SEEDS).map(|seed| gravity_tests_by_guessing(&Ch1Layout::generate(seed))).collect();
+        let mean = tests.iter().sum::<u32>() as f64 / tests.len() as f64;
+        let lucky = tests.iter().filter(|t| **t <= 3).count() as f64 / tests.len() as f64;
+        println!("guessing g: {mean:.2} tests on average, {:.0}% within three", lucky * 100.0);
+        assert!(mean >= 5.0, "a guesser needs only {mean:.2} tests on average");
+        assert!(lucky <= 0.15, "a guesser calibrates g within three tests {:.0}% of the time", lucky * 100.0);
     }
 
     #[test]

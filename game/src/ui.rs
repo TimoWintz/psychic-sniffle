@@ -11,7 +11,7 @@ use crate::carry::Carry;
 use crate::companion::Landmarks;
 use crate::ruler::Ruler;
 use crate::sim::{CRAWLER_TIME, Request, Sim};
-use crate::state::{Game, Mode, Ui};
+use crate::state::{Game, InputTarget, Mode, Ui};
 use crate::tutor_bridge::Lumen;
 use crate::waking::Waking;
 use bevy::prelude::*;
@@ -123,6 +123,9 @@ pub fn draw(
     }
     if ruler.in_use() {
         ruler_panel(&ctx, game, ruler);
+    }
+    if ruler.active {
+        ruler_hover_label(&ctx, ruler);
     }
     if ui_state.handbook_open {
         *handbook_was_open = true;
@@ -314,7 +317,6 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     ui.label(RichText::new(format!("Lumen: {}", def.why)).italics().color(LUMEN));
                     ui.add_space(4.0);
                 }
-                ui.label(&def.brief);
                 if def.kind == PuzzleKind::Ridge {
                     ui.label(RichText::new(format!("Launcher rating: {} maximum.", Quantity::speed(game.layout.v_max).display())).strong());
                 }
@@ -324,13 +326,27 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if def.kind == PuzzleKind::Channel {
                     rating_plate(ui, game);
                 }
-                ui.add_space(6.0);
-                ui.label(RichText::new("Investigate").strong());
-                ui.label(RichText::new(&def.investigate).color(DIM));
+                ui.add_space(4.0);
+                egui::CollapsingHeader::new(RichText::new("Brief and how to measure").strong())
+                    .id_salt(("station-brief", puzzle))
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.label(&def.brief);
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("Investigate").strong());
+                        ui.label(RichText::new(&def.investigate).color(DIM));
+                    });
 
                 if let Some(demo) = &def.demo {
-                    ui.add_space(6.0);
-                    experiment_section(ui, game, ui_state, sim, puzzle, demo);
+                    ui.add_space(4.0);
+                    let watched = game.save.demo_watched(&def.id);
+                    let heading = if watched { "Try it first (watched)" } else { "Try it first" };
+                    egui::CollapsingHeader::new(RichText::new(heading).strong())
+                        .id_salt(("station-demo", puzzle))
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            experiment_section(ui, game, ui_state, sim, puzzle, demo);
+                        });
                 }
                 ui.add_space(4.0);
                 pages_row(ui, game, ui_state, &def);
@@ -349,6 +365,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     let todo = if loaded { "" } else { " Leave the console and carry it on (F)." };
                     ui.label(RichText::new(format!("    {}.{todo}", capitalise(&built))).small().color(DIM));
                 }
+                let mut enter_commit = false;
                 for (i, spec) in specs.iter().enumerate() {
                     if spec.source == InputSource::Placed {
                         // Built in the world, not typed: the blueprint reads it off the jack frame.
@@ -367,10 +384,18 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         );
                         continue;
                     }
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{}:", spec.label));
-                        ui.add(egui::TextEdit::singleline(&mut ui_state.drafts[puzzle][i]).hint_text(spec.example).desired_width(170.0));
-                    });
+                    let field = ui
+                        .horizontal(|ui| {
+                            ui.label(format!("{}:", spec.label));
+                            ui.add(egui::TextEdit::singleline(&mut ui_state.drafts[puzzle][i]).hint_text(spec.example).desired_width(170.0))
+                        })
+                        .inner;
+                    if field.has_focus() {
+                        ui_state.last_input = Some(InputTarget::Blueprint(puzzle, i));
+                    }
+                    if field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        enter_commit = true;
+                    }
                     let text = ui_state.drafts[puzzle][i].trim();
                     if !text.is_empty() {
                         match evaluate(text, &game.save.notebook) {
@@ -390,9 +415,17 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 }
 
                 let charges = game.charges_left(puzzle);
+                let ready = !sim.busy() && charges > 0;
+                let all_typed_filled = specs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| s.source == InputSource::Typed)
+                    .all(|(i, _)| !ui_state.drafts[puzzle][i].trim().is_empty());
+                if enter_commit && ready && all_typed_filled {
+                    sim.request = Some(Request::Commit(puzzle));
+                }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    let ready = !sim.busy() && charges > 0;
                     if ui.add_enabled(ready, egui::Button::new(RichText::new("Commit and test").strong())).clicked() {
                         sim.request = Some(Request::Commit(puzzle));
                     }
@@ -412,6 +445,9 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if let Some(outcome) = &ui_state.results[puzzle] {
                     ui.separator();
                     result_section(ui, &instance, outcome);
+                    if std::mem::take(&mut ui_state.scroll_to_result[puzzle]) {
+                        ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                    }
                 }
 
                 let progress = game.save.progress(&def.id);
@@ -472,7 +508,6 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
     let running = sim.demo() == Some(puzzle);
     // What has to stand in the world before the experiment runs (the light gate on the drop tower).
     let unready = game.instance(puzzle).experiment_unready(game.placed(puzzle));
-    ui.label(RichText::new("Try it first").strong());
     ui.label(&demo.question);
     let first_guess = game.save.first_guess(id);
     for (i, choice) in demo.choices.iter().enumerate() {
@@ -574,19 +609,21 @@ fn pages_row(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, def: &PuzzleDef)
 fn result_section(ui: &mut egui::Ui, instance: &Instance, outcome: &Outcome) {
     ui.label(RichText::new(&outcome.headline).strong().size(17.0).color(if outcome.pass { GOOD } else { BAD }));
     ui.label(&outcome.detail);
-    let is_drop = matches!(outcome.playback, Playback::Drop { .. });
-    egui::Grid::new("comparisons").num_columns(3).striped(true).show(ui, |ui| {
-        ui.label("");
-        ui.label(RichText::new(if is_drop { "your prediction" } else { "target" }).color(DIM));
-        ui.label(RichText::new("observed").color(DIM));
-        ui.end_row();
-        for row in &outcome.comparisons {
-            ui.label(&row.label);
-            ui.label(row.expected.display());
-            ui.label(row.observed.display());
+    if !outcome.comparisons.is_empty() {
+        let is_drop = matches!(outcome.playback, Playback::Drop { .. });
+        egui::Grid::new("comparisons").num_columns(3).striped(true).show(ui, |ui| {
+            ui.label("");
+            ui.label(RichText::new(if is_drop { "your prediction" } else { "target" }).color(DIM));
+            ui.label(RichText::new("observed").color(DIM));
             ui.end_row();
-        }
-    });
+            for row in &outcome.comparisons {
+                ui.label(&row.label);
+                ui.label(row.expected.display());
+                ui.label(row.observed.display());
+                ui.end_row();
+            }
+        });
+    }
     if let Playback::Flight { projectile, flight } = &outcome.playback
         && let Some(profile) = instance.profile()
     {
@@ -663,6 +700,40 @@ fn chase_graph(ui: &mut egui::Ui, layout: &Ch1Layout, cart_speed: f64, crawler_s
     ui.label(RichText::new("Distance along the track against time. Red: the cart. Yellow: the crawler. Orange: the marker.").small().color(DIM));
 }
 
+/// Compact floating label near the hovered pin or block face while the ruler is aiming.
+fn ruler_hover_label(ctx: &egui::Context, ruler: &Ruler) {
+    let (Some(hover), Some(screen_px)) = (&ruler.hover, ruler.hover_screen) else { return };
+    let zoom = ctx.zoom_factor();
+    let screen = ctx.content_rect();
+    let pos = egui::pos2(screen_px.x / zoom, screen_px.y / zoom);
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("ruler-hover")));
+    let title_colour = if hover.snapped { Color32::from_rgb(255, 232, 130) } else { Color32::from_rgb(230, 235, 245) };
+    let border_colour = if hover.snapped { WARN } else { Color32::from_rgb(120, 135, 155) };
+    let title = painter.layout_no_wrap(hover.label.clone(), egui::FontId::proportional(13.0), title_colour);
+    let live = if ruler.first.is_some() && ruler.second.is_none() {
+        ruler.preview().map(|m| {
+            let line = format!("Horizontal: {}   Vertical: {}", Quantity::metres(m.horizontal as f64).display(), Quantity::metres(m.vertical as f64).display());
+            painter.layout_no_wrap(line, egui::FontId::proportional(11.5), Color32::from_rgb(170, 235, 250))
+        })
+    } else {
+        None
+    };
+    let width = title.size().x.max(live.as_ref().map_or(0.0, |g| g.size().x));
+    let height = title.size().y + live.as_ref().map_or(0.0, |g| g.size().y + 2.0);
+    let size = egui::vec2(width + 14.0, height + 8.0);
+    let mut rect = egui::Rect::from_min_size(pos + egui::vec2(14.0, -size.y - 10.0), size);
+    rect = rect.translate(egui::vec2(
+        (screen.left() + 8.0 - rect.left()).max(0.0) - (rect.right() - screen.right() + 8.0).max(0.0),
+        (screen.top() + 8.0 - rect.top()).max(0.0) - (rect.bottom() - screen.bottom() + 8.0).max(0.0),
+    ));
+    painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(12, 20, 32, 220));
+    painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, border_colour), egui::StrokeKind::Inside);
+    painter.galley(rect.min + egui::vec2(7.0, 4.0), title, Color32::WHITE);
+    if let Some(live) = live {
+        painter.galley(rect.min + egui::vec2(7.0, 4.0 + height - live.size().y), live, Color32::WHITE);
+    }
+}
+
 fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
     let mut open = true;
     egui::Window::new("Ruler").open(&mut open).collapsible(false).resizable(false).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).show(ctx, |ui| {
@@ -675,6 +746,17 @@ fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
             (Some(first), None) => {
                 ui.label(format!("From: {}", first.label));
                 ui.label(RichText::new(format!("To: {}", hover.unwrap_or("click the second point"))).color(DIM));
+                if let Some(m) = ruler.preview() {
+                    ui.separator();
+                    egui::Grid::new("ruler-preview").num_columns(2).show(ui, |ui| {
+                        for (word, value) in [("Horizontal", m.horizontal), ("Vertical", m.vertical), ("Direct", m.direct)] {
+                            ui.label(RichText::new(word).color(DIM));
+                            ui.label(RichText::new(Quantity::metres(value as f64).display()).color(Color32::from_rgb(180, 235, 250)));
+                            ui.end_row();
+                        }
+                    });
+                    ui.label(RichText::new("Click to lock this reading.").small().color(DIM));
+                }
             }
             (Some(first), Some(second)) => {
                 ui.label(format!("From: {}", first.label));
@@ -686,18 +768,24 @@ fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
         let between = format!("{} to {}", first.label, second.label);
         let mut saved = None;
         egui::Grid::new("ruler").num_columns(3).show(ui, |ui| {
-            for (word, prefix, value) in [("Horizontal", "d", m.horizontal), ("Vertical", "h", m.vertical), ("Direct", "s", m.direct)] {
+            for (idx, (word, prefix, value)) in
+                [("Horizontal", "d", m.horizontal), ("Vertical", "h", m.vertical), ("Direct", "s", m.direct)].into_iter().enumerate()
+            {
                 ui.label(word);
                 ui.label(RichText::new(Quantity::metres(value as f64).display()).strong());
-                if ui.button(format!("Note as {prefix}…")).clicked() {
-                    saved = Some((prefix, word, value));
+                let existing = ruler.noted[idx].as_deref().filter(|name| game.save.notebook.get(name).is_some());
+                if let Some(name) = existing {
+                    ui.colored_label(GOOD, format!("Noted as {name}"));
+                } else if ui.button(format!("Note as {prefix}…")).clicked() {
+                    saved = Some((idx, prefix, word, value));
                 }
                 ui.end_row();
             }
         });
-        if let Some((prefix, word, value)) = saved {
+        if let Some((idx, prefix, word, value)) = saved {
             let label = format!("{} distance, {between}", word.to_lowercase());
-            game.save.notebook.add_numbered(prefix, &label, Quantity::metres(value as f64), source::RULER);
+            let name = game.save.notebook.add_numbered(prefix, &label, Quantity::metres(value as f64), source::RULER);
+            ruler.noted[idx] = Some(name);
             game.persist();
         }
         ui.label(RichText::new("R measures again · Esc puts the ruler away").small().color(DIM));
@@ -707,34 +795,161 @@ fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
     }
 }
 
+/// How many calculator expressions are kept for Up/Down recall.
+const MAX_CALC_HISTORY: usize = 30;
+
+fn push_history(history: &mut Vec<String>, entry: &str) {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() || history.last().map(String::as_str) == Some(trimmed) {
+        return;
+    }
+    history.push(trimmed.to_string());
+    if history.len() > MAX_CALC_HISTORY {
+        let drop = history.len() - MAX_CALC_HISTORY;
+        history.drain(..drop);
+    }
+}
+
+/// Insert a notebook variable name into the most recently focused blueprint or calculator field.
+fn insert_into_target(ui_state: &mut Ui, name: &str) {
+    let target = match ui_state.last_input {
+        Some(InputTarget::Blueprint(puzzle, idx)) if ui_state.station == Some(puzzle) && idx < ui_state.drafts[puzzle].len() => {
+            &mut ui_state.drafts[puzzle][idx]
+        }
+        _ => {
+            ui_state.calc_history_idx = None;
+            &mut ui_state.calculator
+        }
+    };
+    if target.chars().last().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+        target.push(' ');
+    }
+    target.push_str(name);
+}
+
 fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f32) {
     if game.save.notebook.entries.is_empty() {
         ui.label(RichText::new("Nothing measured yet. Readings from the ruler and the stopwatch will show up here.").color(DIM));
     }
     let mut remove = None;
+    let mut insert = None;
+    let mut start_rename = None;
+    let mut commit_rename: Option<(String, String)> = None;
+    let mut cancel_rename = false;
+    let mut rename_error: Option<String> = None;
     // The calculator under the entries needs about this much.
-    let entries_room = (room - 90.0).max(30.0);
+    let entries_room = (room - 105.0).max(30.0);
     egui::ScrollArea::vertical().id_salt("notebook-entries").max_height(entries_room).show(ui, |ui| {
         egui::Grid::new("notebook").num_columns(4).striped(true).show(ui, |ui| {
             for entry in &game.save.notebook.entries {
-                ui.label(RichText::new(&entry.name).strong().monospace());
-                ui.label(entry.quantity.display());
-                ui.label(RichText::new(&entry.label).small().color(DIM)).on_hover_text(format!("Source: {}", entry.source));
-                if ui.small_button("×").on_hover_text("Remove this entry").clicked() {
-                    remove = Some(entry.name.clone());
+                let editing = ui_state.renaming_entry.as_ref().is_some_and(|(orig, _)| orig == &entry.name);
+                if editing {
+                    let (orig, draft) = ui_state.renaming_entry.as_mut().expect("checked above");
+                    let edit = ui.add(egui::TextEdit::singleline(draft).desired_width(64.0));
+                    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    let esc = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+                    ui.label(entry.quantity.display());
+                    ui.label(RichText::new(&entry.label).small().color(DIM)).on_hover_text(format!("Source: {}", entry.source));
+                    ui.horizontal(|ui| {
+                        if ui.small_button("Save").clicked() || enter {
+                            commit_rename = Some((orig.clone(), draft.trim().to_string()));
+                        }
+                        if ui.small_button("Cancel").clicked() || esc {
+                            cancel_rename = true;
+                        }
+                    });
+                    if !draft.trim().is_empty() && draft.trim() != orig.as_str() {
+                        let candidate = draft.trim();
+                        if !valid_name(candidate) {
+                            rename_error =
+                                Some(format!("'{candidate}' cannot be a notebook name: use letters and digits, starting with a letter, and not a unit."));
+                        } else if game.save.notebook.get(candidate).is_some() {
+                            rename_error = Some(format!("'{candidate}' is already in the notebook."));
+                        }
+                    }
+                } else {
+                    if ui
+                        .small_button(RichText::new(&entry.name).strong().monospace())
+                        .on_hover_text("Click to insert into the calculator or blueprint")
+                        .clicked()
+                    {
+                        insert = Some(entry.name.clone());
+                    }
+                    ui.label(entry.quantity.display());
+                    ui.label(RichText::new(&entry.label).small().color(DIM)).on_hover_text(format!("Source: {}", entry.source));
+                    ui.horizontal(|ui| {
+                        if ui.small_button("Rename").on_hover_text("Rename this entry").clicked() {
+                            start_rename = Some(entry.name.clone());
+                        }
+                        if ui.small_button("×").on_hover_text("Remove this entry").clicked() {
+                            remove = Some(entry.name.clone());
+                        }
+                    });
                 }
                 ui.end_row();
             }
         });
     });
+    if let Some(err) = rename_error {
+        ui.colored_label(WARN, err);
+    }
+    if cancel_rename {
+        ui_state.renaming_entry = None;
+    } else if let Some((orig, new_name)) = commit_rename {
+        if new_name == orig {
+            ui_state.renaming_entry = None;
+        } else if valid_name(&new_name) && game.save.notebook.rename(&orig, &new_name) {
+            game.persist();
+            ui_state.renaming_entry = None;
+        }
+    } else if let Some(name) = start_rename {
+        ui_state.renaming_entry = Some((name.clone(), name));
+    }
+    if let Some(name) = insert {
+        insert_into_target(ui_state, &name);
+    }
     if let Some(name) = remove {
+        if ui_state.renaming_entry.as_ref().is_some_and(|(orig, _)| orig == &name) {
+            ui_state.renaming_entry = None;
+        }
         game.save.notebook.remove(&name);
         game.persist();
     }
 
     ui.separator();
     ui.label(RichText::new("Calculator").strong());
-    ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2").desired_width(360.0));
+    let calc_field = ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2").desired_width(360.0));
+    if calc_field.changed() {
+        ui_state.calc_history_idx = None;
+    }
+    if calc_field.has_focus() {
+        ui_state.last_input = Some(InputTarget::Calculator);
+        if !ui_state.calc_history.is_empty() {
+            if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                let next = match ui_state.calc_history_idx {
+                    None => {
+                        ui_state.calc_draft_saved = ui_state.calculator.clone();
+                        ui_state.calc_history.len() - 1
+                    }
+                    Some(idx) => idx.saturating_sub(1),
+                };
+                ui_state.calc_history_idx = Some(next);
+                ui_state.calculator = ui_state.calc_history[next].clone();
+            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
+                && let Some(idx) = ui_state.calc_history_idx
+            {
+                if idx + 1 < ui_state.calc_history.len() {
+                    let next = idx + 1;
+                    ui_state.calc_history_idx = Some(next);
+                    ui_state.calculator = ui_state.calc_history[next].clone();
+                } else {
+                    ui_state.calc_history_idx = None;
+                    ui_state.calculator = std::mem::take(&mut ui_state.calc_draft_saved);
+                }
+            }
+        }
+    }
+    let submitted = calc_field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let text = ui_state.calculator.trim().to_string();
     // "name = expression" keeps the result in the notebook.
     let (name, expression) = match text.split_once('=') {
@@ -752,17 +967,32 @@ fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f3
                 });
                 match name {
                     Some(name) if valid_name(&name) => {
-                        if ui.button(format!("Note as {name}")).clicked() {
+                        if ui.button(format!("Note as {name}")).clicked() || submitted {
                             game.save.notebook.set(&name, &expression, q, source::CALCULATED);
+                            push_history(&mut ui_state.calc_history, &text);
                             game.persist();
                             ui_state.calculator.clear();
+                            ui_state.calc_history_idx = None;
+                            if submitted {
+                                calc_field.request_focus();
+                            }
                         }
                     }
                     Some(name) => {
                         ui.colored_label(WARN, format!("'{name}' cannot be a notebook name: use letters and digits, starting with a letter, and not a unit."));
                     }
                     None => {
-                        ui.label(RichText::new("Write  name = expression  to keep a result.").small().color(DIM));
+                        if submitted {
+                            push_history(&mut ui_state.calc_history, &text);
+                            ui_state.calc_history_idx = None;
+                            calc_field.request_focus();
+                        }
+                        let tip = if ui_state.calc_history.is_empty() {
+                            "Write  name = expression  and press Enter to keep a result."
+                        } else {
+                            "Write  name = expression  and press Enter to keep a result. Up and Down recall past entries."
+                        };
+                        ui.label(RichText::new(tip).small().color(DIM));
                     }
                 }
             }
@@ -770,6 +1000,8 @@ fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f3
                 ui.colored_label(BAD, e.to_string());
             }
         }
+    } else if !ui_state.calc_history.is_empty() {
+        ui.label(RichText::new("Press Up and Down to recall past entries.").small().color(DIM));
     }
 }
 
@@ -824,5 +1056,41 @@ pub fn tutor_body(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, lumen: &mut
     if send && !ui_state.chat.trim().is_empty() {
         let text = std::mem::take(&mut ui_state.chat);
         lumen.ask(game, ui_state, landmarks, puzzle, &text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clicking_a_notebook_name_inserts_into_the_focused_field() {
+        let mut ui = Ui { station: Some(2), ..Ui::default() };
+        ui.drafts[2] = vec!["2 * ".into()];
+        ui.last_input = Some(InputTarget::Blueprint(2, 0));
+        insert_into_target(&mut ui, "h1");
+        assert_eq!(ui.drafts[2][0], "2 * h1");
+        // Adjacent identifier gets a separating space.
+        insert_into_target(&mut ui, "g");
+        assert_eq!(ui.drafts[2][0], "2 * h1 g");
+        // Leaving the station falls back to the calculator.
+        ui.station = None;
+        insert_into_target(&mut ui, "d1");
+        assert_eq!(ui.calculator, "d1");
+    }
+
+    #[test]
+    fn calculator_history_deduplicates_consecutive_entries_and_caps() {
+        let mut history = Vec::new();
+        push_history(&mut history, "  ");
+        assert!(history.is_empty());
+        push_history(&mut history, "d1 / t1");
+        push_history(&mut history, "d1 / t1");
+        assert_eq!(history, ["d1 / t1"]);
+        for i in 0..40 {
+            push_history(&mut history, &format!("x = {i} m"));
+        }
+        assert_eq!(history.len(), MAX_CALC_HISTORY);
+        assert_eq!(history.last().unwrap(), "x = 39 m");
     }
 }

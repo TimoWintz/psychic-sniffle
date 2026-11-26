@@ -127,12 +127,19 @@ struct Verdict {
     outcome: Outcome,
 }
 
+/// How many previous test trails at the same station stay visible as faint ghost arcs.
+const MAX_PAST_TRAILS: usize = 3;
+
 #[derive(Resource, Default)]
 pub struct Sim {
     pub request: Option<Request>,
     running: Option<Running>,
     /// Paths of the last test or demonstration with their colours, drawn until the next one.
     pub trails: Vec<(Vec<Vec3>, [f32; 3])>,
+    /// Which puzzle `trails` and `past_trails` belong to (cleared on demos or switching stations).
+    trail_puzzle: Option<usize>,
+    /// Faint ghost trails from earlier tests at the same station, oldest first.
+    past_trails: Vec<Vec<Vec3>>,
     /// Where the strobe caught the test mass (its centre), drawn as ticks until the next release.
     strobe: Vec<Vec3>,
     /// Seconds until the camera stops watching the test.
@@ -176,8 +183,31 @@ impl Sim {
         }
     }
 
-    fn start_trail(&mut self, colour: [f32; 3]) {
+    /// Begin a new test trail at `puzzle`, archiving any previous test trail at the same station as
+    /// a faint ghost arc so successive attempts can be compared in 3D.
+    fn start_test_trail(&mut self, puzzle: usize, colour: [f32; 3]) {
+        if self.trail_puzzle == Some(puzzle) {
+            for (trail, _) in self.trails.drain(..) {
+                if trail.len() >= 2 {
+                    self.past_trails.push(trail);
+                }
+            }
+            if self.past_trails.len() > MAX_PAST_TRAILS {
+                let drop = self.past_trails.len() - MAX_PAST_TRAILS;
+                self.past_trails.drain(..drop);
+            }
+        } else {
+            self.past_trails.clear();
+            self.trail_puzzle = Some(puzzle);
+        }
         self.trails = vec![(Vec::new(), colour)];
+    }
+
+    /// Begin demonstration trails, clearing any archived test ghost arcs.
+    fn start_demo_trails(&mut self, trails: Vec<(Vec<Vec3>, [f32; 3])>) {
+        self.past_trails.clear();
+        self.trail_puzzle = None;
+        self.trails = trails;
     }
 }
 
@@ -673,6 +703,7 @@ fn handle_requests(
                     commands.entity(mark).despawn();
                 }
                 sim.strobe.clear();
+                sim.start_demo_trails(Vec::new());
                 sim.gate_tripped = false;
                 orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
                 Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
@@ -685,7 +716,7 @@ fn handle_requests(
                 let run = Run { cart_speed: cart_speed as f32, crawler_speed: crawler_speed as f32, head_start: head_start as f32, end: duration as f32 };
                 let (_, crawler_end) = run.at(run.end);
                 frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
-                sim.trails = PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect();
+                sim.start_demo_trails(PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect());
                 Running::Pace { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, run }
             }
             DemoPlayback::DropAndFire { dropped, fired } => {
@@ -717,7 +748,7 @@ fn handle_requests(
             }
             // The verdict exists now, but it is shown only when the test has played out.
             ui.results[puzzle] = None;
-            sim.start_trail(TRAIL);
+            sim.start_test_trail(puzzle, TRAIL);
             let verdict = Verdict { outcome: outcome.clone() };
             match outcome.playback {
                 Playback::Drop { predicted_time, actual_time, .. } => {
@@ -837,7 +868,7 @@ fn start_pair(
     let across = site.direction.cross(Vec3::Y).normalize();
     let offsets = [across * 0.22, -across * 0.22];
     let ground = GROUND as f32;
-    sim.trails = PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect();
+    sim.start_demo_trails(PAIR_COLOURS.iter().map(|c| (Vec::new(), *c)).collect());
     for (k, shot) in shots.iter().enumerate() {
         let (x, y) = shot.projectile.pos(0.0);
         commands.spawn((
@@ -1183,6 +1214,7 @@ fn advance(
         }
     }
     ui.results[puzzle] = Some(outcome);
+    ui.scroll_to_result[puzzle] = true;
 }
 
 /// What the stopwatch's reading is called in the notebook at the haul track.
@@ -1392,6 +1424,19 @@ fn draw_trail(sim: Res<Sim>, sites: Res<Sites>, mut gizmos: Gizmos) {
         let base = *at - Vec3::Y * MASS_SIZE.y / 2.0;
         gizmos.line(base + Vec3::X * (MASS_SIZE.x / 2.0 + 0.2), base + Vec3::X * 3.2, Color::srgb(1.0, 0.85, 0.3));
     }
+    // Faint dashed ghost arcs from earlier tests at the same station, older ones dimmer.
+    let past_count = sim.past_trails.len();
+    for (idx, trail) in sim.past_trails.iter().enumerate() {
+        if trail.len() < 2 {
+            continue;
+        }
+        let recency = (idx + 1) as f32 / past_count as f32;
+        let alpha = 0.22 + 0.28 * recency;
+        let colour = Color::srgba(0.78, 0.72, 0.58, alpha);
+        for pair in trail.chunks_exact(2) {
+            gizmos.line(pair[0], pair[1], colour);
+        }
+    }
     for (trail, c) in &sim.trails {
         if trail.len() >= 2 {
             gizmos.linestrip(trail.iter().copied(), Color::srgb(c[0], c[1], c[2]));
@@ -1533,5 +1578,26 @@ mod tests {
         let times: Vec<_> = game.save.notebook.entries.iter().filter(|e| e.label == CRAWLER_TIME).collect();
         assert_eq!(times.len(), 1);
         assert_eq!(times[0].name, "t1");
+    }
+
+    #[test]
+    fn past_test_trails_are_kept_per_station_and_capped() {
+        let mut sim = Sim::default();
+        for n in 0..5 {
+            sim.start_test_trail(3, TRAIL);
+            sim.trails[0].0.extend([Vec3::new(0.0, n as f32, 0.0), Vec3::new(1.0, n as f32, 0.0)]);
+        }
+        assert_eq!(sim.past_trails.len(), MAX_PAST_TRAILS);
+        assert_eq!(sim.past_trails[0][0].y, 1.0, "oldest trail beyond the cap is dropped");
+        assert_eq!(sim.past_trails[2][0].y, 3.0);
+        // Switching stations clears the archived trails.
+        sim.start_test_trail(4, TRAIL);
+        assert!(sim.past_trails.is_empty());
+        // Running a demo also clears them.
+        sim.trails[0].0.extend([Vec3::ZERO, Vec3::X]);
+        sim.start_test_trail(4, TRAIL);
+        assert_eq!(sim.past_trails.len(), 1);
+        sim.start_demo_trails(Vec::new());
+        assert!(sim.past_trails.is_empty());
     }
 }

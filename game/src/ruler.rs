@@ -16,6 +16,8 @@ use bevy_egui::input::EguiWantsInput;
 pub struct Picked {
     pub point: Vec3,
     pub label: String,
+    /// Whether this point snapped to a survey pin (rather than a block face).
+    pub snapped: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,6 +27,13 @@ pub struct Measurement {
     pub direct: f32,
 }
 
+impl Measurement {
+    fn between(a: Vec3, b: Vec3) -> Self {
+        let d = b - a;
+        Measurement { horizontal: d.with_y(0.0).length(), vertical: d.y.abs(), direct: d.length() }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct Ruler {
     /// Taking points: clicks in the world go to the ruler.
@@ -32,13 +41,24 @@ pub struct Ruler {
     pub first: Option<Picked>,
     pub second: Option<Picked>,
     pub hover: Option<Picked>,
+    /// Viewport position (physical pixels) of `hover`, for a floating label beside the cursor.
+    pub hover_screen: Option<Vec2>,
+    /// Notebook names each component (`[horizontal, vertical, direct]`) of the finished reading was
+    /// saved under, to confirm the save and guard against duplicate clicks.
+    pub noted: [Option<String>; 3],
 }
 
 impl Ruler {
     pub fn measurement(&self) -> Option<Measurement> {
         let (a, b) = (self.first.as_ref()?.point, self.second.as_ref()?.point);
-        let d = b - a;
-        Some(Measurement { horizontal: d.with_y(0.0).length(), vertical: d.y.abs(), direct: d.length() })
+        Some(Measurement::between(a, b))
+    }
+
+    /// Live reading while hovering the second point, or the finished reading once locked in.
+    pub fn preview(&self) -> Option<Measurement> {
+        let a = self.first.as_ref()?.point;
+        let b = self.second.as_ref().or(self.hover.as_ref())?.point;
+        Some(Measurement::between(a, b))
     }
 
     /// Start a new measurement, replacing any reading on screen.
@@ -61,10 +81,12 @@ impl Ruler {
         if self.first.is_none() || self.second.is_some() {
             self.first = Some(picked);
             self.second = None;
+            self.noted = [None, None, None];
         } else {
             self.second = Some(picked);
             self.active = false;
             self.hover = None;
+            self.hover_screen = None;
         }
     }
 }
@@ -117,14 +139,14 @@ pub fn pick_at(world: &VoxelWorld, sites: &Sites, camera: &Camera, camera_transf
         })
         .min_by(|a, b| a.0.total_cmp(&b.0));
     if let Some((_, pin)) = nearest_pin {
-        return Some(Picked { point: pin.position, label: pin.label.to_string() });
+        return Some(Picked { point: pin.position, label: pin.label.to_string(), snapped: true });
     }
     let ray = camera.viewport_to_world(camera_transform, cursor).ok()?;
     let hit = world.raycast(ray.origin, *ray.direction, 300.0)?;
     let face_centre = hit.cell.as_vec3() + Vec3::splat(0.5) + hit.normal.as_vec3() * 0.5;
     let name = world.get(hit.cell).properties().name.to_lowercase();
     let face = if hit.normal == IVec3::Y { "top" } else { "side" };
-    Some(Picked { point: face_centre, label: format!("{name} block, {face} face") })
+    Some(Picked { point: face_centre, label: format!("{name} block, {face} face"), snapped: false })
 }
 
 fn aim(
@@ -140,12 +162,14 @@ fn aim(
         return;
     }
     ruler.hover = None;
+    ruler.hover_screen = None;
     if wants.wants_any_pointer_input() {
         return;
     }
     let Some(cursor) = window.cursor_position() else { return };
     let (camera, camera_transform) = *camera;
     ruler.hover = pick_at(&world, &sites, camera, camera_transform, cursor);
+    ruler.hover_screen = ruler.hover.as_ref().and_then(|p| camera.world_to_viewport(camera_transform, p.point).ok());
     if buttons.just_pressed(MouseButton::Left)
         && let Some(picked) = ruler.hover.clone()
     {
@@ -181,7 +205,7 @@ mod tests {
     use super::*;
 
     fn picked(x: f32, y: f32, z: f32) -> Picked {
-        Picked { point: Vec3::new(x, y, z), label: String::new() }
+        Picked { point: Vec3::new(x, y, z), label: String::new(), snapped: true }
     }
 
     #[test]
@@ -190,15 +214,23 @@ mod tests {
         ruler.start();
         ruler.pick(picked(70.0, 28.0, 56.5));
         assert_eq!(ruler.measurement(), None);
+        assert_eq!(ruler.preview(), None);
         assert!(ruler.active);
+        // Hovering a second point yields a live preview before clicking.
+        ruler.hover = Some(picked(80.0, 24.0, 56.5));
+        let preview = ruler.preview().unwrap();
+        assert_eq!((preview.horizontal, preview.vertical), (10.0, 4.0));
         ruler.pick(picked(91.5, 20.0, 56.5));
         let m = ruler.measurement().unwrap();
         assert_eq!((m.horizontal, m.vertical), (21.5, 8.0));
+        assert_eq!(ruler.preview(), Some(m));
         assert!((m.direct - (21.5f32 * 21.5 + 64.0).sqrt()).abs() < 1e-5);
         // The second point ends the measurement; the reading stays until put away.
         assert!(!ruler.active && ruler.in_use());
+        ruler.noted[0] = Some("d1".into());
         ruler.start();
         assert_eq!(ruler.measurement(), None);
+        assert_eq!(ruler.noted, [None, None, None]);
         ruler.put_away();
         assert!(!ruler.in_use());
     }

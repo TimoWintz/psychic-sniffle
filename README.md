@@ -45,7 +45,7 @@ The road's machines sleep at the start. Each pass wakes the next one: a light ru
 quartz to it, it stirs (a gate opens, a ramp of steps rises, a beam reaches across the strait), and
 its own console and lamp light with it. E or Esc skips the scene.
 
-![The first pass wakes the way: the light has run up the road's quartz, the stone gate is open, and the cart rolls on to the haul track](docs/screenshots/waking.png)
+![The first pass wakes the way: the light has run up the road's quartz, the stone gate opens in a burst of its light, and the cart rolls on to the haul track](docs/screenshots/waking.png)
 
 Some things are done with your hands. The supply rail's cart will not run until you have carried its
 block onto it. On the haul track the road builders' crawler walks at one steady speed you can only

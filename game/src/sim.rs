@@ -275,6 +275,13 @@ fn splash(commands: &mut Commands, assets: &PropAssets, at: Vec3) {
     }
 }
 
+/// Rings of foam where the avatar fell into deep water.
+fn splash_the_avatar(mut commands: Commands, assets: Res<PropAssets>, mut shore: ResMut<crate::player::Shore>) {
+    if let Some(at) = shore.splash.take() {
+        splash(&mut commands, &assets, at);
+    }
+}
+
 /// Spread each ring of foam, sink it under the water as it fades, and clear it away.
 fn spread_splashes(time: Res<Time>, mut commands: Commands, mut splashes: Query<(Entity, &mut Splash, &mut Transform)>) {
     for (entity, mut splash, mut transform) in &mut splashes {
@@ -340,6 +347,7 @@ impl Plugin for SimPlugin {
                 props::spin_wheels,
                 props::step_legs,
                 reshape_terrain,
+                splash_the_avatar,
                 spread_splashes,
             )
                 .chain(),

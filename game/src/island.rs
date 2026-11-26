@@ -32,7 +32,7 @@ pub const GROUND: i32 = 20;
 /// The water's surface: as far below the ground as the simulator has the channel's water.
 pub const SEA_LEVEL: f32 = GROUND as f32 - Ch1Layout::WATER_DROP as f32;
 /// The deepest water the castaway wades into: the ground under it at most this far below the
-/// surface. Anywhere deeper, it stops at the water's edge.
+/// surface. Anywhere deeper, it falls in.
 pub const WADE_DEPTH: f32 = 1.2;
 
 /// Whether the water over a column with its top at `surface` is too deep to wade.

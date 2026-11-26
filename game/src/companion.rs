@@ -112,7 +112,8 @@ impl Landmarks {
 }
 
 /// What Lumen says the first time deep water stops the engineer.
-const WATER_LINE: &str = "Not out there, please. It gets deep fast, and if you went under I couldn't pull you out.";
+const WATER_LINE: &str =
+    "Oh, thank goodness, you scrambled back to the bank. It gets deep fast out there, and I couldn't have pulled you out. Let's keep to the shallows.";
 
 /// The blocks on the ledge, and the frame at its edge they go into.
 const LEDGE_BLOCKS: &str = "Blocks on the ledge";
@@ -579,7 +580,7 @@ fn direct(
                     companion.say("It's recharging. While we wait, let's check your readings against the handbook.");
                 }
             }
-            if shore.stopped && !companion.warned_of_water {
+            if shore.fallen_in > 0 && !companion.warned_of_water {
                 companion.warned_of_water = true;
                 companion.feel(Mood::Concerned, 4.0);
                 companion.say(WATER_LINE);

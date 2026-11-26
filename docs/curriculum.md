@@ -268,6 +268,65 @@ explains itself; every question right ticks the page. Nothing in the world depen
 | *Splitting a launch into components* | a football kick with its `vx`, `vy` and `v` arrows; `vy` shrinks and turns, `vx` stays | steeper means more `vy`; `vx` at 90°; `vy` at 30° |
 | *Range on level ground* | two kicks at 30° and 60° landing on one flag | the best angle; the partner angle; which stays up longer |
 
+### Side-machine: the beam
+
+The first side-machine (see "Side-machines" in the game design). It is off the road north of the
+railway, between the wreck and the drop tower, and can be used from the start. Its id is `1.1.s1`.
+
+- **The machine.** A long beam of the builders' stone on a pivot post, running east and west at
+  about waist height, with a shallow seat every metre from the pivot: five on each arm. The machine
+  sets its own load, a stack of its plain blocks (the same blocks the player carries, without the
+  orange handles), on one seat of the west arm, the load arm. A pile of seven blocks with handles lies
+  about a dozen metres away, and the beam's console and lamp stand on the south side of the pivot.
+- **The job.** Make the beam hold level. The player carries blocks from the pile onto any seat of
+  either arm, up to three on a seat, then releases the beam at the console. Until it is released, the
+  beam is pinned level, so what is built doesn't move while it is built.
+- **Release.** Free, and as often as the player likes. The beam swings until one end rests on its
+  stop, or holds level for a moment. The result is one line: "The beam held level.", "The load's end
+  went down." or "The far end went down." It never says by how much.
+- **Three cases.** When the beam holds, a stud of quartz on the pivot post lights for that case and
+  the machine sets the next load. The player's blocks stay where they are.
+  1. One load block on seat 2 or 3.
+  2. Two load blocks on seat 2 or 3.
+  3. Three load blocks on seat 5, or four on seat 4 or 5, always at least eleven more than case 2
+     counted as blocks times seats.
+  Cases 1 and 2 are small enough to find by trying. Case 3 is not: the beam tips the same way for most
+  of what can be built, the pile is a walk away, and since one block moved changes the count by at
+  most ten, no single move turns case 2's answer into case 3's. Seen as a rule (blocks times seats
+  match on both arms), it takes one trip's planning. The cases are seeded, from their own stream of
+  numbers, so the chapter's layout keeps all of its draws.
+- **Checked.** `physics_core::beam` tests, for every seed: case 3 has several balancing arrangements
+  among everything the pile and the seats allow, but few compared with the rest; no single move from
+  any of case 2's answers balances case 3; the pile is at least eight metres from the nearest seat.
+- **Wake.** After case 3 holds, the beam's quartz and its lamp light, and a short channel of quartz
+  lights from the beam to the road, where it joins the inlay. No letterbox and no camera: it happens
+  while the player watches. Lumen says the `done` line, and the page is written.
+- **Afterwards.** The blocks stay movable and releases still answer against case 3's load.
+- **Page.** *A rule is a guess until it predicts*: a pattern noticed in a few cases is a guess about
+  all of them; test it on a case not tried yet; a failed prediction says the rule is wrong or
+  incomplete; change one thing at a time while looking for it. The picture is a ball bouncing on a
+  floor, each bounce rising to the same fraction of the one before, with the next bounce's height
+  marked before the ball gets there. It is not a seesaw on purpose: a picture of balance would give
+  the beam's rule away, and the *Balance* page belongs to chapter 2.1. Quiz: which test checks a
+  guessed rule (change one thing); what to do when a prediction fails; the best test of a rule (a case
+  not tried yet).
+- **Lumen.** A remark when the player first walks near while it sleeps, and another after it wakes.
+  It reacts to a release in a short line (pleased when the beam holds, otherwise a nudge to look at
+  which end went down), and says the `done` line at the wake. In conversation it knows the beam exists
+  and must not be solved for the player, nothing more.
+
+## Planned: side-machines in tier 1
+
+One per chapter, each with a method page. Direction only; none of these is in code.
+
+| Chapter | Method page | Idea | Sketch |
+|---|---|---|---|
+| 1.1 | *A rule is a guess until it predicts* | balance (2.1, by feel) | the beam (built) |
+| 1.2 | *Change one thing at a time* | a lamp's brightness | a builders' lamp fed through blocks of different stone: find which choice of blocks lights it, changing one at a time |
+| 1.3 | *Repeat and take the spread* | sliding | the same block slid down a builders' chute again and again stops in a spread of places: place the catcher where most of them land |
+| 1.4 | *Estimate before you measure* | heat flow | a row of stones warming from a quartz hearth: guess which reaches warm first, then watch |
+| 1.5 | *Look for what stays the same* | conservation | a builders' water clock: arrange its vessels so the level ends where it started |
+
 ## Planned: 1.3 The Haul, place the catcher
 
 Direction only; chapter 1.3 has no puzzles in code yet. It is the third "doing it with your hands"

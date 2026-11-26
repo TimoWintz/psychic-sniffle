@@ -72,6 +72,25 @@ pub struct Save {
     /// practice; it changes nothing in the world.
     #[serde(default)]
     pub quizzes: BTreeMap<String, BTreeSet<usize>>,
+    /// The side-machines off the road, by id: what the player has built on each and how far it has
+    /// got. Optional; nothing on the main route reads it.
+    #[serde(default)]
+    pub sides: BTreeMap<String, SideProgress>,
+}
+
+/// A side-machine's state (see "Side-machines" in the game design).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SideProgress {
+    /// What is built on it, as its kind keeps it (the beam: blocks on each seat, see
+    /// `beam::Placement::to_saved`).
+    #[serde(default)]
+    pub placed: Vec<u32>,
+    /// How many of its cases have held.
+    #[serde(default)]
+    pub held: u32,
+    /// Whether it has woken: every case done.
+    #[serde(default)]
+    pub woken: bool,
 }
 
 impl Save {
@@ -89,6 +108,7 @@ impl Save {
             demos: BTreeMap::new(),
             placed: BTreeMap::new(),
             quizzes: BTreeMap::new(),
+            sides: BTreeMap::new(),
         }
     }
 
@@ -137,10 +157,20 @@ impl Save {
         self.found.insert(concept_id.to_string())
     }
 
-    /// Whether a handbook page can be read. Solving the puzzle whose station writes it counts as
-    /// having found it, so a page is never missing for a puzzle that is done.
+    /// Whether a handbook page can be read. Solving the puzzle whose station writes it (or waking
+    /// the side-machine that does) counts as having found it, so a page is never missing for a job
+    /// that is done.
     pub fn is_found(&self, chapter: &Chapter, concept_id: &str) -> bool {
-        self.found.contains(concept_id) || chapter.concept(concept_id).is_some_and(|c| self.is_solved(c.found.puzzle()))
+        self.found.contains(concept_id) || chapter.concept(concept_id).is_some_and(|c| self.is_solved(c.found.puzzle()) || self.side_woken(c.found.puzzle()))
+    }
+
+    /// A side-machine's state, empty if nothing has been done there.
+    pub fn side(&self, side_id: &str) -> SideProgress {
+        self.sides.get(side_id).cloned().unwrap_or_default()
+    }
+
+    pub fn side_woken(&self, side_id: &str) -> bool {
+        self.sides.get(side_id).is_some_and(|s| s.woken)
     }
 
     pub fn demo_watched(&self, puzzle_id: &str) -> bool {
@@ -274,6 +304,26 @@ mod tests {
         let mut placed = Save::new(5);
         placed.placed.insert("1.1.0".into(), 1);
         assert!(!placed.untouched());
+        let mut beam = Save::new(5);
+        beam.sides.entry("1.1.s1".into()).or_default().placed = vec![0, 1];
+        assert!(!beam.untouched());
+    }
+
+    #[test]
+    fn a_side_machine_is_kept_and_its_page_comes_with_its_wake() {
+        let chapter = chapter_1_1();
+        let mut save = Save::new(6);
+        assert_eq!(save.side("1.1.s1"), SideProgress::default());
+        assert!(!save.is_found(&chapter, "a_rule_predicts"));
+        let beam = save.sides.entry("1.1.s1".into()).or_default();
+        beam.placed = vec![0, 0, 0, 0, 0, 0, 2, 0, 0, 1];
+        beam.held = 3;
+        beam.woken = true;
+        assert!(save.side_woken("1.1.s1"));
+        assert!(save.is_found(&chapter, "a_rule_predicts"));
+        // Nothing on the main route moves with it.
+        assert!(!save.is_unlocked(&chapter, "1.1.1") && !save.chapter_complete(&chapter));
+        assert_eq!(Save::from_ron(&save.to_ron()).unwrap(), save);
     }
 
     #[test]
@@ -294,7 +344,7 @@ mod tests {
     fn saves_from_before_pages_and_demonstrations_still_load() {
         let old = r#"(version: 2, seed: 5, notebook: (entries: []), puzzles: {"1.1.0": (attempts: [], charges_used: 1, solved: true)})"#;
         let save = Save::from_ron(old).unwrap();
-        assert!(save.found.is_empty() && save.demos.is_empty() && save.placed.is_empty() && save.quizzes.is_empty());
+        assert!(save.found.is_empty() && save.demos.is_empty() && save.placed.is_empty() && save.quizzes.is_empty() && save.sides.is_empty());
         // The tutorial is done, so its page is there; the drop tower's is not yet.
         let chapter = chapter_1_1();
         assert!(save.is_found(&chapter, "units"));

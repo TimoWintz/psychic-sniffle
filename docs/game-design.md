@@ -171,6 +171,8 @@ the pattern, wonders about it in a line or two, and is honest that it does not k
 through the whole tier: each chapter wakes another part of it, the gate on the north shore points at
 the main hull, and the mainland may hold more of the builders' work in tier 2. The builders never
 give a number, a relation or an answer (pillar 1), and nothing that wakes does the player's job.
+A few smaller machines of theirs stand off the road and wake nothing further on (see
+[Side-machines](#side-machines)): when one wakes, its light runs to the road and joins it.
 
 **Lumen.** What survived in the forward section is a backup of Lumen, a sliver of it running on that
 section's cells: sensors, no hands, and tables made for home. It does not know this planet, and it
@@ -385,6 +387,43 @@ Unlocked as the curriculum needs them.
   frame as blocks go in.
   The player's choice is visible in the world before it is committed; the path is never previewed.
 - **Grapher** (tier 2 onward). Plot a notebook series; read slopes and areas.
+
+## Side-machines
+
+Off the road stand a few small machines of the builders that the way never needed: **side-machines**.
+They are side-tracks. Nothing on the main route needs them, and they give no charges, no part
+quality and nothing else the stations use. What they give is a handbook page, a line or two from
+Lumen and a small change in the world.
+
+- **No typed answer.** A side-machine is solved by moving things in the world. The world stays
+  measurable as always, and counting or measuring helps, but the console never asks for a value.
+- **A physics idea, a method page.** Each one rests on a physics idea the player gets a feel for by
+  hand, but the page it writes is about how science is done (a rule is a guess until it predicts,
+  change one thing at a time...). It never writes a physics page that a later chapter plans, so the
+  chapter that teaches the idea properly still has it to teach.
+- **The builders', asleep.** Each has its own console and lamp. The console answers from the start,
+  like the supply rail's, but the lamp and the machine's quartz are dark, and it wakes when its job
+  is done right, like every machine on the way. It doesn't wake the next machine. Instead a short
+  channel of quartz runs from it and joins the road, so it was part of the way all along. Lumen
+  wonders whether the builders made these to learn on, which hints that the whole way teaches without
+  ever saying so.
+- **Commit, then find out, for free.** What the player builds is held until they release it at the
+  console, and then the world answers. Releases cost nothing and can be repeated as often as the
+  player likes. A miss says which way it went and never how far.
+- **Insight beats fiddling.** With no charges, pillar 3 is kept by design: the arrangements a
+  machine accepts are many, few of them are right, each wrong one costs a walk with blocks, and the
+  last case can't be reached from the one before by moving a single block. A test in
+  `physics_core` checks this for every seed.
+- **Found, not shown.** Lumen's beam never points at a side-machine, and nothing counts them. Each
+  can be seen from the road, dark, and Lumen remarks on it once when the player walks near.
+- **Lumen in conversation** knows that a side-machine exists and that it must not solve it for the
+  player; it isn't in the snapshot the way a station is. (An answer that is an arrangement of blocks
+  is a new kind of leak, which the filter doesn't guard yet.)
+- **Afterwards** it stays a toy: what was built can be moved, and releases still answer, so the
+  player can come back and test their rule. Its page and its wake are kept in the save.
+
+The first is the beam, in chapter 1.1 (see the curriculum). The planned ones for the rest of tier 1
+are listed there too.
 
 ## Avatar, camera, controls
 

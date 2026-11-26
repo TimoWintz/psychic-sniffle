@@ -286,6 +286,9 @@ pub struct Ui {
     pub station: Option<usize>,
     /// Station the avatar is standing at.
     pub near_station: Option<usize>,
+    /// Whether the beam's console is open, and whether the avatar stands at it (see `beam`).
+    pub beam_open: bool,
+    pub near_beam: bool,
     /// Text typed into the blueprint, per puzzle and input.
     pub drafts: [Vec<String>; PUZZLES],
     /// Why the last commit was refused (costs no charge).
@@ -328,6 +331,11 @@ pub struct Anim {
 }
 
 impl Ui {
+    /// Whether a console is open, a station's or the beam's: the avatar stays at it.
+    pub fn at_console(&self) -> bool {
+        self.station.is_some() || self.beam_open
+    }
+
     /// Open the handbook at a page.
     pub fn open_page(&mut self, concept_id: &str) {
         self.handbook_open = true;

@@ -82,7 +82,7 @@ The same file sets the graphics: `quality = "low"` (the default, for integrated 
 cargo test --workspace
 ```
 
-Five scripted runs drive the real game and fail loudly if something is off:
+Six scripted runs drive the real game and fail loudly if something is off:
 
 ```bash
 GAME_SCRIPT=tour GAME_SEED=7 GAME_SAVE=/tmp/fp-tour.ron cargo run -p game
@@ -104,6 +104,10 @@ GAME_SCRIPT=pose GAME_SEED=7 GAME_SAVE=/tmp/fp-pose.ron cargo run -p game
 GAME_SCRIPT=way GAME_SEED=7 GAME_SAVE=/tmp/fp-way.ron cargo run -p game
 ```
 
+```bash
+GAME_SCRIPT=beam GAME_SEED=7 GAME_SAVE=/tmp/fp-beam.ron cargo run -p game
+```
+
 `tour` plays the chapter with the expressions a player would type, loads the rail cart, times the
 crawler and catches it (once too soon, once on the marker), times drops
 with the light gate at two notches, photographs each handbook page as it is found and answers the
@@ -113,7 +117,9 @@ screenshots to `shots/`;
 presses Start and checks that the game takes over; `pose` films the avatar's animations up close
 (standing, walking, running, jumping, carrying a block, at a console, watching a test, a miss and a
 pass); `way` photographs each of the way's machines asleep in a new game, then with every puzzle
-solved. All but `intro` press Start first.
+solved; `beam` plays the side-machine off the road, carrying a block onto it, releasing it short and
+then level for each of its loads, and photographs it waking and its handbook page. All but `intro`
+press Start first.
 
 `look` is the benchmark for how the game looks and how fast it draws. It photographs the same views
 every time (each of the way's machines asleep and awake, the whole island, the ringed giant, the

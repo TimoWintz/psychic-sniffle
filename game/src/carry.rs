@@ -7,8 +7,10 @@
 //!
 //! What a station reads is a [`Slot`]: the cart on the supply rail (its one block), the notches of
 //! the drop tower (the light gate), the jack frame under the ledge launcher (a stack of blocks). `F`
-//! facing a slot puts in what is carried, or takes it out again. What is in each slot is kept in the
-//! save; loose blocks are not: they are back where they started the next time the game starts.
+//! facing a slot puts in what is carried, or takes it out again. The beam, the side-machine off the
+//! road, takes its own blocks on the seats of its two arms the same way. What is in each slot and on
+//! the beam is kept in the save; loose blocks are not: they are back where they started the next
+//! time the game starts.
 
 use crate::island::{Pin, Sites};
 use crate::player::Player;
@@ -19,6 +21,7 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::EguiWantsInput;
+use physics_core::beam::{Arm, MOST_ON_A_SEAT, PILE, Placement, SEATS};
 use physics_core::materials::Material;
 use physics_core::puzzle::{Ch1Layout, PuzzleKind};
 
@@ -46,6 +49,8 @@ pub enum Yard {
     Ledge,
     /// Beside the supply rail's start: the cart's block.
     Rail,
+    /// Around the beam's pile, off the road: the beam's blocks.
+    Beam,
 }
 
 /// What can be carried.
@@ -161,6 +166,10 @@ pub enum Target {
     PutIn(Slot, u32),
     /// Take something out of a slot, which then holds this much.
     TakeOut(Slot, u32),
+    /// Put the block on a seat of the beam.
+    PutOnBeam(Arm, u32),
+    /// Take the top block off a seat of the beam.
+    TakeOffBeam(Arm, u32),
     /// Nothing can be done here, and why.
     Blocked(&'static str),
 }
@@ -180,6 +189,10 @@ pub struct Carry {
     /// Whether the rail cart has carried its block to the marker and gone on up the line, past the stone gate,
     /// to wait for the crawler: its slot can no longer be reached.
     pub cart_gone: bool,
+    /// The player's blocks on the beam's seats.
+    pub beam: Placement,
+    /// Whether the beam is swinging, released, so nothing can be put on it or taken off.
+    pub beam_swinging: bool,
 }
 
 impl Carry {
@@ -227,20 +240,31 @@ impl Plugin for CarryPlugin {
 
 /// The yard a cell of loose block lies in.
 fn yard_of(sites: &Sites, cell: IVec3) -> Yard {
-    let [low, high] = sites.cargo_yard;
-    if cell.cmpge(low).all() && cell.cmple(high).all() { Yard::Rail } else { Yard::Ledge }
+    let inside = |[low, high]: [IVec3; 2]| cell.cmpge(low).all() && cell.cmple(high).all();
+    if inside(sites.cargo_yard) {
+        Yard::Rail
+    } else if inside(sites.beam.yard) {
+        Yard::Beam
+    } else {
+        Yard::Ledge
+    }
 }
 
 fn yard_corners(sites: &Sites, yard: Yard) -> [IVec3; 2] {
     match yard {
         Yard::Ledge => sites.block_yard,
         Yard::Rail => sites.cargo_yard,
+        Yard::Beam => sites.beam.yard,
     }
 }
 
+/// How many blocks of its own each yard's pile holds at the start, so how many marks there are.
+const MARKS: usize = Ch1Layout::MAX_STACK as usize + 1 + PILE as usize;
+
 /// Put everything where the save says: as many blocks in the jack frame as were left there, the
 /// rest on the pile (the top layer leaves the pile first); the cart's block on the cart or beside the
-/// rail; the light gate on its notch or its stand.
+/// rail; the light gate on its notch or its stand; the beam's blocks on its seats, the rest on its
+/// pile.
 #[allow(clippy::too_many_arguments)]
 fn lay_out(
     mut commands: Commands,
@@ -266,6 +290,12 @@ fn lay_out(
     if filled[Slot::Cart.index()] == 0 {
         pile.push(sites.cargo_cell);
     }
+    let on_beam = Placement::from_saved(&game.save.side(crate::beam::BEAM_ID).placed);
+    let mut beam_pile = sites.beam.pile.clone();
+    beam_pile.sort_by_key(|c| (c.y, c.z, c.x));
+    beam_pile.truncate(beam_pile.len().saturating_sub(on_beam.blocks() as usize));
+    pile.extend(beam_pile);
+    carry.beam = on_beam;
     for cell in &pile {
         world.set(*cell, Material::Limestone);
         dirty.0.push(*cell);
@@ -279,8 +309,9 @@ fn lay_out(
     let handle = meshes.add(Cuboid::new(0.62, 0.07, 0.14));
     let grip = meshes.add(Cuboid::new(0.5, 0.1, 0.05));
     let glow = materials.add(StandardMaterial { base_color: HANDLE, emissive: LinearRgba::rgb(0.5, 0.2, 0.02), ..default() });
-    // One mark for every block that can lie loose or stand in the frame: the ledge's and the cargo.
-    for i in 0..=Ch1Layout::MAX_STACK as usize {
+    // One mark for every block that can lie loose or stand in the frame: the ledge's, the cargo and
+    // the beam's.
+    for i in 0..MARKS {
         // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
         commands
             .spawn((BlockMark(i), RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0), Transform::from_translation(Vec3::NEG_Y * 100.0), Visibility::default()))
@@ -401,7 +432,16 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
     };
     let at = |slot: Slot| faces(slot.foot(sites), slot.reach()) && !(slot == Slot::Cart && carry.cart_gone);
     let level = (feet.y + 0.01).floor() as i32;
+    let seat = beam_seat(sites, feet, forward);
     if let Some(item) = carry.holding {
+        if let (Some(seat), Item::Block(Yard::Beam)) = (seat, item) {
+            return Some(match seat {
+                _ if carry.beam_swinging => Target::Blocked("Wait for the beam to come back level."),
+                None => Target::Blocked("That's the pivot. Put the block on a seat of either arm."),
+                Some((arm, seat)) if carry.beam.get(arm, seat) >= MOST_ON_A_SEAT => Target::Blocked("That seat is full."),
+                Some((arm, seat)) => Target::PutOnBeam(arm, seat),
+            });
+        }
         if let Some(slot) = SLOTS.into_iter().find(|s| s.takes() == item && at(*s)) {
             let holds = carry.holds(slot);
             return Some(match slot.kind() {
@@ -430,7 +470,13 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
             (true, _) => "No room to put the block down here.",
             (false, Yard::Ledge) => "Blocks go on the ledge, west of the launcher's rail.",
             (false, Yard::Rail) => "The cart's block goes on the cart, or down beside the start of the rail.",
+            (false, Yard::Beam) => "The beam's blocks go on the beam, or down by their pile.",
         }));
+    }
+    if let Some(Some((arm, seat))) = seat
+        && carry.beam.get(arm, seat) > 0
+    {
+        return Some(if carry.beam_swinging { Target::Blocked("Wait for the beam to come back level.") } else { Target::TakeOffBeam(arm, seat) });
     }
     if let Some(slot) = SLOTS.into_iter().find(|s| carry.holds(*s) > 0 && at(*s)) {
         let left = if slot.kind() == SlotKind::Stack { carry.holds(slot) - 1 } else { 0 };
@@ -449,6 +495,24 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
         .filter(|(d, _)| *d < 1.2)
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, c)| Target::Take(c))
+}
+
+/// The beam's seat the avatar faces, if it faces the beam: `Some(None)` for the pivot, where nothing
+/// goes.
+pub fn beam_seat(sites: &Sites, feet: Vec3, forward: Vec3) -> Option<Option<(Arm, u32)>> {
+    let beam = &sites.beam;
+    let ahead = feet + forward * AHEAD;
+    let row = beam.row() as f32 + 0.5;
+    let beside = (feet.z - row).abs();
+    let along = ahead.x - beam.pivot.x;
+    let facing = forward.z * (row - feet.z) > 0.0;
+    let level = (feet.y - (beam.pivot.y - crate::island::BEAM_AXLE)).abs() < 0.6;
+    if !(level && facing && beside < 2.2 && (ahead.z - row).abs() < 0.9 && along.abs() < SEATS as f32 + 0.5) {
+        return None;
+    }
+    let offset = along.round() as i32;
+    let arm = if offset < 0 { Arm::Load } else { Arm::Far };
+    Some((offset != 0).then_some((arm, offset.unsigned_abs())))
 }
 
 /// Where the pointer marks the drop tower's fall line: the height on it nearest the pointer's ray,
@@ -486,7 +550,7 @@ fn point(
 
 #[allow(clippy::too_many_arguments)]
 fn aim(world: Res<VoxelWorld>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, mut carry: ResMut<Carry>, player: Single<&Transform, With<Player>>) {
-    let busy = ui.station.is_some() || sim.busy();
+    let busy = ui.at_console() || sim.busy();
     let forward = (player.rotation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
     let target = if busy { None } else { target_for(&world, &sites, &carry, player.translation, forward, carry.aim) };
     if carry.target != target {
@@ -548,6 +612,14 @@ pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty
             let puzzle = game.puzzle_of(slot.puzzle());
             let id = game.def(puzzle).id.clone();
             game.save.placed.insert(id, holds);
+            game.persist();
+        }
+        Target::PutOnBeam(arm, seat) | Target::TakeOffBeam(arm, seat) => {
+            let on = carry.beam.get(arm, seat);
+            let put = matches!(target, Target::PutOnBeam(..));
+            carry.beam.set(arm, seat, if put { on + 1 } else { on.saturating_sub(1) });
+            carry.holding = (!put).then_some(Item::Block(Yard::Beam));
+            game.save.sides.entry(crate::beam::BEAM_ID.to_string()).or_default().placed = carry.beam.to_saved();
             game.persist();
         }
         Target::Blocked(_) => return,
@@ -640,9 +712,25 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
         Target::TakeOut(Slot::Tower, _) => {
             cube(&mut gizmos, gate_at(&sites, carry.holds(Slot::Tower)) - Vec3::X * 0.9, Vec3::new(2.4, 0.3, 1.6), take);
         }
+        Target::PutOnBeam(arm, seat) => {
+            let at = sites.beam.seat(arm, seat) + Vec3::Y * (HELD_SIZE * (carry.beam.get(arm, seat) as f32 + 0.5));
+            cube(&mut gizmos, at, Vec3::splat(HELD_SIZE + 0.04), put);
+        }
+        Target::TakeOffBeam(arm, seat) => {
+            let at = sites.beam.seat(arm, seat) + Vec3::Y * (HELD_SIZE * (carry.beam.get(arm, seat) as f32 - 0.5));
+            cube(&mut gizmos, at, Vec3::splat(HELD_SIZE + 0.04), take);
+        }
         Target::TakeGate => cube(&mut gizmos, sites.gate_stand + Vec3::new(0.5, 1.12, 0.0), Vec3::new(1.4, 0.3, 0.8), take),
         Target::StowGate => cube(&mut gizmos, sites.gate_stand + Vec3::new(0.5, 1.12, 0.0), Vec3::new(1.4, 0.3, 0.8), put),
         Target::Blocked(_) => {}
+    }
+}
+
+/// The beam's arms as the hints name them.
+fn arm_name(arm: Arm) -> &'static str {
+    match arm {
+        Arm::Load => "load's arm (west)",
+        Arm::Far => "far arm (east)",
     }
 }
 
@@ -661,6 +749,8 @@ pub fn hint(carry: &Carry) -> Option<String> {
             format!("F: clamp the gate {notch} m below the release point (point higher or lower on the tower to choose the notch)")
         }
         Target::TakeOut(Slot::Tower, _) => "F: unclamp the light gate".into(),
+        Target::PutOnBeam(arm, seat) => format!("F: put the block on seat {seat} of the beam's {}", arm_name(arm)),
+        Target::TakeOffBeam(arm, seat) => format!("F: take a block off seat {seat} of the beam's {}", arm_name(arm)),
         Target::Blocked(why) => format!("{} {why}", if carry.holding == Some(Item::Gate) { "Carrying the light gate." } else { "Carrying a block." }),
     })
 }
@@ -757,6 +847,51 @@ mod tests {
             carry.holding = None;
             carry.filled[Slot::Cart.index()] = 1;
             assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X, None), Some(Target::TakeOut(Slot::Cart, 0)));
+        }
+    }
+
+    #[test]
+    fn the_beams_blocks_go_on_its_seats_and_come_off_again() {
+        for seed in [0, 7, 42, 199] {
+            let (mut world, sites, mut carry) = laid_out(seed);
+            let beam = sites.beam.clone();
+            for cell in &beam.pile {
+                world.set(*cell, Material::Limestone);
+                carry.loose.push(*cell);
+            }
+            // A block from the pile is the beam's.
+            let top = *beam.pile.iter().max_by_key(|c| (c.y, c.z, c.x)).unwrap();
+            assert_eq!(yard_of(&sites, top), Yard::Beam);
+            carry.holding = Some(Item::Block(Yard::Beam));
+            // South of the beam, facing it, in front of seat 3 of the far arm.
+            let feet = Vec3::new(beam.pivot.x + 3.0, beam.pivot.y - crate::island::BEAM_AXLE, beam.pivot.z + 1.4);
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::PutOnBeam(Arm::Far, 3)), "seed {seed}");
+            // And from the north side, in front of seat 2 of the load's arm.
+            let north = Vec3::new(beam.pivot.x - 2.0, feet.y, beam.pivot.z - 1.4);
+            assert_eq!(target_for(&world, &sites, &carry, north, Vec3::Z, None), Some(Target::PutOnBeam(Arm::Load, 2)), "seed {seed}");
+            // Over the pivot, nothing goes.
+            let pivot = Vec3::new(beam.pivot.x, feet.y, feet.z);
+            assert!(matches!(target_for(&world, &sites, &carry, pivot, Vec3::NEG_Z, None), Some(Target::Blocked(_))));
+            // Facing away from it, the block goes down by the pile or nowhere.
+            assert!(!matches!(target_for(&world, &sites, &carry, feet, Vec3::Z, None), Some(Target::PutOnBeam(..))));
+
+            let mut dirty = DirtyCells::default();
+            let mut game = Game::for_test(seed);
+            apply(&mut world, &mut sites.clone(), &mut carry, &mut dirty, &mut game, Target::PutOnBeam(Arm::Far, 3));
+            assert_eq!(carry.beam.get(Arm::Far, 3), 1);
+            assert!(carry.holding.is_none());
+            assert_eq!(Placement::from_saved(&game.save.side(crate::beam::BEAM_ID).placed), carry.beam, "the save keeps it");
+            // Empty-handed, the top block comes off again.
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::TakeOffBeam(Arm::Far, 3)));
+            // Not while the beam swings.
+            carry.beam_swinging = true;
+            assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::Blocked(_))));
+            carry.beam_swinging = false;
+            // A full seat takes no more.
+            carry.beam.set(Arm::Far, 3, MOST_ON_A_SEAT);
+            carry.holding = Some(Item::Block(Yard::Beam));
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::Blocked("That seat is full.")));
+            let _ = std::fs::remove_file(&game.save_path);
         }
     }
 

@@ -1,6 +1,7 @@
 //! Game logic with no engine dependency: units, the calculator, exact simulators, puzzles, progress.
 
 pub mod ballistics;
+pub mod beam;
 pub mod content;
 pub mod demo;
 pub mod expr;

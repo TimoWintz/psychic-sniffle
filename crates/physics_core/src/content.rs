@@ -27,13 +27,15 @@ pub enum Found {
     Demo(String),
     /// Committing a value (tested or refused) at this puzzle's station for the first time.
     FirstCommit(String),
+    /// Waking this side-machine: its job done right, every case of it.
+    Side(String),
 }
 
 impl Found {
-    /// Id of the puzzle whose station writes the page.
+    /// Id of the puzzle whose station writes the page, or of the side-machine that does.
     pub fn puzzle(&self) -> &str {
         match self {
-            Found::Demo(id) | Found::FirstCommit(id) => id,
+            Found::Demo(id) | Found::FirstCommit(id) | Found::Side(id) => id,
         }
     }
 }
@@ -75,6 +77,8 @@ pub enum Scene {
     KickSplit,
     /// Two kicks at the same speed and complementary angles.
     TwinKicks,
+    /// A ball dropped on a floor, each bounce a set fraction of the last, the next one predicted.
+    Bounce,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -134,6 +138,30 @@ pub struct PuzzleDef {
     pub done: String,
 }
 
+/// What kind of side-machine it is: how it is built and judged (game code), as a puzzle's kind is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SideKind {
+    /// A beam on a pivot, balanced with blocks (see `beam`).
+    Beam,
+}
+
+/// A side-machine of the builders off the road: optional, answered by moving things, never by a
+/// typed value (see "Side-machines" in the game design). It writes a page about how science is
+/// done when it wakes.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SideDef {
+    pub id: String,
+    pub kind: SideKind,
+    /// The name its console shows.
+    pub title: String,
+    /// What to do, as plain instructions.
+    pub brief: String,
+    /// Lumen's line when its console is first used. Spoken, so it holds no digits.
+    pub why: String,
+    /// Lumen's line when it wakes. Spoken.
+    pub done: String,
+}
+
 /// A line Lumen says, with a place its eye holds while it says it (a landmark's name).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Spoken {
@@ -146,9 +174,9 @@ pub struct Spoken {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RemarkWhen {
     Always,
-    /// While this puzzle is not solved.
+    /// While this puzzle is not solved (or this side-machine not woken).
     Before(String),
-    /// Once this puzzle is solved.
+    /// Once this puzzle is solved (or this side-machine woken).
     After(String),
 }
 
@@ -216,6 +244,9 @@ pub struct Chapter {
     pub remarks: Vec<Remark>,
     pub concepts: Vec<Concept>,
     pub puzzles: Vec<PuzzleDef>,
+    /// The builders' side-machines off the road, if the chapter has any.
+    #[serde(default)]
+    pub sides: Vec<SideDef>,
 }
 
 impl Chapter {
@@ -225,6 +256,10 @@ impl Chapter {
 
     pub fn puzzle(&self, id: &str) -> Option<&PuzzleDef> {
         self.puzzles.iter().find(|p| p.id == id)
+    }
+
+    pub fn side(&self, id: &str) -> Option<&SideDef> {
+        self.sides.iter().find(|s| s.id == id)
     }
 
     pub fn concept(&self, id: &str) -> Option<&Concept> {
@@ -286,7 +321,27 @@ impl Chapter {
                 }
             }
         }
+        for side in &self.sides {
+            if self.puzzle(&side.id).is_some() || self.sides.iter().filter(|s| s.id == side.id).count() > 1 {
+                problems.push(format!("side-machine id {} is used more than once", side.id));
+            }
+            if side.why.trim().is_empty() || side.done.trim().is_empty() {
+                problems.push(format!("side-machine {}: Lumen needs a why and a done line", side.id));
+            }
+            if has_digit(&side.why) || has_digit(&side.done) {
+                problems.push(format!("side-machine {}: the why and done lines are spoken and must hold no digits", side.id));
+            }
+            if !self.concepts.iter().any(|c| c.found == Found::Side(side.id.clone())) {
+                problems.push(format!("side-machine {} writes no page", side.id));
+            }
+        }
         for concept in &self.concepts {
+            if let Found::Side(id) = &concept.found {
+                if self.side(id).is_none() {
+                    problems.push(format!("page {} is found at unknown side-machine {id}", concept.id));
+                }
+                continue;
+            }
             match self.puzzle(concept.found.puzzle()) {
                 None => problems.push(format!("page {} is found at unknown puzzle {}", concept.id, concept.found.puzzle())),
                 Some(puzzle) if matches!(concept.found, Found::Demo(_)) && puzzle.demo.is_none() => {
@@ -315,6 +370,7 @@ impl Chapter {
         for remark in &self.remarks {
             if let Some(id) = remark.puzzle()
                 && self.puzzle(id).is_none()
+                && self.side(id).is_none()
             {
                 problems.push(format!("a remark at {} names unknown puzzle {id}", remark.near));
             }
@@ -343,6 +399,10 @@ impl Chapter {
                 spoken.push((format!("puzzle {} reveal", puzzle.id), &demo.reveal));
             }
         }
+        for side in &self.sides {
+            spoken.push((format!("side-machine {} why", side.id), &side.why));
+            spoken.push((format!("side-machine {} done", side.id), &side.done));
+        }
 
         let mut shown: Vec<(String, &str)> = vec![("intro".into(), &self.intro), ("goal".into(), &self.goal)];
         for concept in &self.concepts {
@@ -370,6 +430,11 @@ impl Chapter {
                     shown.push((format!("puzzle {} demo choice", puzzle.id), choice));
                 }
             }
+        }
+
+        for side in &self.sides {
+            shown.push((format!("side-machine {} title", side.id), &side.title));
+            shown.push((format!("side-machine {} brief", side.id), &side.brief));
         }
 
         let mut problems = Vec::new();
@@ -508,6 +573,36 @@ mod tests {
         // The story: a goal, an opening and a closing, and something to say about places.
         assert!(!chapter.goal.is_empty() && !chapter.opening.is_empty() && !chapter.closing.is_empty());
         assert!(!chapter.remarks.is_empty());
+    }
+
+    #[test]
+    fn the_beam_is_a_side_machine_with_a_method_page() {
+        let chapter = chapter_1_1();
+        assert_eq!(chapter.sides.len(), 1);
+        let beam = &chapter.sides[0];
+        assert_eq!((beam.id.as_str(), beam.kind), ("1.1.s1", SideKind::Beam));
+        assert!(chapter.puzzle(&beam.id).is_none(), "a side-machine is not one of the chapter's puzzles");
+        let pages: Vec<&str> = chapter.pages_found_at(&beam.id).iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(pages, ["a_rule_predicts"]);
+        // No puzzle needs its page: the main route never waits for a side-track.
+        for puzzle in &chapter.puzzles {
+            assert!(!puzzle.concepts.iter().any(|c| c == "a_rule_predicts"), "{} needs the beam's page", puzzle.id);
+        }
+        // Lumen remarks on it, asleep and awake.
+        let remarks: Vec<&RemarkWhen> = chapter.remarks.iter().map(|r| &r.when).collect();
+        assert!(remarks.contains(&&RemarkWhen::Before(beam.id.clone())) && remarks.contains(&&RemarkWhen::After(beam.id.clone())));
+
+        let mut broken = chapter.clone();
+        broken.sides[0].done = "Done in 3.".into();
+        broken.concepts.last_mut().unwrap().found = Found::Side("1.1.s9".into());
+        broken.puzzles[1].concepts.push("a_rule_predicts".into());
+        let problems = broken.problems();
+        assert!(problems.iter().any(|p| p.contains("side-machine 1.1.s1: the why and done lines")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("unknown side-machine 1.1.s9")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("side-machine 1.1.s1 writes no page")), "{problems:?}");
+        let mut needs = chapter.clone();
+        needs.puzzles[1].concepts.push("a_rule_predicts".into());
+        assert!(needs.problems().iter().any(|p| p.contains("1.1.1 needs page a_rule_predicts")), "{:?}", needs.problems());
     }
 
     #[test]

@@ -188,6 +188,12 @@ fn spawn(commands: &mut Commands, looks: &Looks, material: Handle<StandardMateri
     commands.spawn((particle, Mesh3d(looks.cube.clone()), MeshMaterial3d(material), Transform::from_translation(at).with_scale(scale), NotShadowCaster));
 }
 
+/// How much of its size a particle keeps at this distance from the camera: all of it from two metres
+/// out, none of it within half a metre.
+fn near_the_eye(distance: f32) -> f32 {
+    ((distance - 0.5) / 1.5).clamp(0.0, 1.0)
+}
+
 /// One particle of a burst, with its own speed, size and life.
 fn make(kind: Kind, dice: &mut Dice) -> Particle {
     let out = dice.across();
@@ -249,8 +255,14 @@ fn mote(dice: &mut Dice, rise: f32, life: f32) -> Particle {
     }
 }
 
-fn drift(time: Res<Time>, mut commands: Commands, mut particles: Query<(Entity, &mut Particle, &mut Transform)>) {
+fn drift(
+    time: Res<Time>,
+    mut commands: Commands,
+    camera: Single<&GlobalTransform, With<Camera3d>>,
+    mut particles: Query<(Entity, &mut Particle, &mut Transform)>,
+) {
     let dt = time.delta_secs().min(0.1);
+    let eye = camera.translation();
     for (entity, mut p, mut transform) in &mut particles {
         p.age += dt;
         let falling_in = p.drowns && p.velocity.y < 0.0 && transform.translation.y < SEA_LEVEL;
@@ -263,9 +275,10 @@ fn drift(time: Res<Time>, mut commands: Commands, mut particles: Query<(Entity, 
         p.velocity *= slow;
         let sway = if p.sway > 0.0 { Vec3::new((p.age * 2.3 + p.size * 97.0).sin(), 0.0, (p.age * 1.7 + p.size * 53.0).cos()) * p.sway } else { Vec3::ZERO };
         transform.translation += (p.velocity + sway) * dt;
-        // Full size for most of its life, then shrinking away.
+        // Full size for most of its life, then shrinking away; and shrinking away as it comes near the
+        // camera, where a speck of a few centimetres would fill the picture.
         let u = p.age / p.life;
-        transform.scale = Vec3::splat(p.size * (1.0 - u * u * u));
+        transform.scale = Vec3::splat(p.size * (1.0 - u * u * u) * near_the_eye(transform.translation.distance(eye)));
         // The motes turn as they drift, catching the eye now and then.
         if p.sway > 0.0 {
             transform.rotate_y(dt * 1.3);
@@ -434,6 +447,13 @@ fn wake_flourishes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn particles_shrink_away_at_the_camera() {
+        assert_eq!(near_the_eye(0.3), 0.0);
+        assert_eq!(near_the_eye(2.0), 1.0);
+        assert!(near_the_eye(1.0) > 0.0 && near_the_eye(1.0) < 1.0);
+    }
 
     #[test]
     fn the_dice_stay_in_range_and_vary() {

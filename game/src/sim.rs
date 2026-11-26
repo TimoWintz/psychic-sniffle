@@ -262,8 +262,9 @@ fn on_water(flight: &Flight) -> bool {
     (flight.surface + Ch1Layout::WATER_DROP).abs() < 1e-9
 }
 
-/// Rings of foam where something falls into the water at `at`.
+/// Rings of foam where something falls into the water at `at`, and the water it throws up.
 fn splash(commands: &mut Commands, assets: &PropAssets, at: Vec3) {
+    crate::particles::burst(commands, crate::particles::Kind::Splash, at.with_y(SEA_LEVEL), 1.0);
     for delay in [0.0, 0.25] {
         commands.spawn((
             Splash { age: 0.0, delay },

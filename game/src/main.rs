@@ -1,5 +1,6 @@
 //! First Principles: a physics game. See `docs/` for the design.
 
+mod aloft;
 mod avatar;
 mod carry;
 mod cinematic;
@@ -9,6 +10,7 @@ mod graphics;
 mod handbook;
 mod intro;
 mod island;
+mod particles;
 mod player;
 mod prefill;
 mod props;
@@ -66,6 +68,6 @@ fn main() {
             waking::WakingPlugin,
             devscript::DevScriptPlugin,
         ))
-        .add_plugins(water::WaterPlugin)
+        .add_plugins((water::WaterPlugin, particles::ParticlesPlugin, aloft::AloftPlugin))
         .run();
 }

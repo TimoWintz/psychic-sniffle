@@ -75,19 +75,19 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
 }
 
 /// Light each machine's console face and lamps as it wakes.
-fn light_consoles(waking: Res<Waking>, quartz: Res<ConsoleQuartz>, mut materials: ResMut<Assets<StandardMaterial>>, mut lit: Local<Option<[bool; MACHINES]>>) {
-    let now: [bool; MACHINES] = std::array::from_fn(|machine| waking.console_awake(machine));
-    if *lit == Some(now) {
-        return;
-    }
-    for (machine, handle) in quartz.0.iter().enumerate() {
-        if lit.is_none_or(|before| before[machine] != now[machine])
-            && let Some(mut material) = materials.get_mut(handle)
-        {
-            *material = MachineTrim::look(now[machine]);
+fn light_consoles(
+    time: Res<Time>,
+    waking: Res<Waking>,
+    quartz: Res<ConsoleQuartz>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut shown: Local<Option<[f32; MACHINES]>>,
+) {
+    let lit: [bool; MACHINES] = std::array::from_fn(|machine| waking.console_awake(machine));
+    for (machine, f) in crate::waking::fade_towards(&mut shown, lit, time.delta_secs()) {
+        if let Some(mut material) = materials.get_mut(&quartz.0[machine]) {
+            *material = MachineTrim::look_at(f);
         }
     }
-    *lit = Some(now);
 }
 
 /// Whether a station opens: its puzzle is unlocked and its console is awake (once the machine has

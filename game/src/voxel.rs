@@ -49,6 +49,11 @@ impl VoxelWorld {
         self.wild.insert(p);
     }
 
+    /// The wild quartz that still stands.
+    pub fn wild_cells(&self) -> impl Iterator<Item = IVec3> + '_ {
+        self.wild.iter().copied().filter(|&p| self.get(p) == Material::Quartz)
+    }
+
     fn index(&self, p: IVec3) -> Option<usize> {
         let inside = p.cmpge(IVec3::ZERO).all() && p.cmplt(self.size).all();
         inside.then(|| ((p.y * self.size.z + p.z) * self.size.x + p.x) as usize)

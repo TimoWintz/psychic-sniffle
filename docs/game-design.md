@@ -104,6 +104,14 @@ it meets the land, a broken line of foam traces every shore and cliff, with fain
 and out; surf breaks over the reefs just under the surface. The foam along the channel's walls also
 marks where the water stops and the cliff begins.
 
+The island is never quite still. The grass and the fronds lean in slow gusts off the sea. Motes of
+light drift up from the awake lamps and consoles, and more faintly from the wild quartz. Waves throw
+up spray against the cliffs; what falls into the water throws up drops beside its ring of foam; a
+block set down or lifted raises a little dust. High clouds of white blocks drift over on the wind,
+and flocks of flyers circle far out over the sea. None of it gets in the way of a measurement: the
+clouds cast no shadows and the flocks keep well away from the island, no tufts grow at the puzzle
+sites, and no motes or spray are made while a test or an experiment runs or the ruler is out.
+
 What glows, and how much, keeps the two hands apart and shows progress at a glance. Brightest first:
 
 1. **The builders' quartz, awake:** in the road, the machines, the consoles, the lamps, the bridge's
@@ -219,10 +227,13 @@ few seconds), the way wakes, in a short scene behind letterbox bars:
    sight off its back and sets it down at its foot; after the casket's, the bridge's pylons rise out
    of the water and its deck runs out from both banks to meet in the middle, so the light can cross;
    after the tiller's, the seal in the pass sinks, so the light can run through it).
-2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it.
+2. A light runs up the road's quartz to the next machine; the camera and Lumen's eye follow it. Its
+   head is a bright point that leaves motes of light drifting behind it along the road.
 3. That machine wakes: its quartz lights and its parts move (the stone gate's leaf sinks and the
    cart rolls through, the ramp's steps rise out of the ground, the north gate's beam reaches
-   across the strait). Its console's face and its lamp light with it.
+   across the strait), with a burst of motes where the light arrives. Its console's face and its
+   lamp fade in with it, and all the way's awake quartz brightens once, as if answering. Moving
+   stonework raises dust, or spray where it stands in the water.
 4. The camera glides back to the player's own view, and the letterbox goes.
 
 Only then does Lumen point on to the next job. `E` or `Esc` skips the scene. The island visibly

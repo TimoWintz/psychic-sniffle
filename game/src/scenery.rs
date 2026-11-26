@@ -7,9 +7,13 @@ use crate::island::{GROUND, SEA_LEVEL, Sites};
 use crate::state::Game;
 use crate::voxel::{VoxelWorld, fbm, hash01, tint};
 use bevy::asset::RenderAssetUsages;
+use bevy::asset::embedded_asset;
 use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
+use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
+use bevy::render::render_resource::AsBindGroup;
+use bevy::shader::ShaderRef;
 use physics_core::content::Light;
 use physics_core::materials::Material;
 
@@ -30,6 +34,11 @@ pub(crate) struct TerrainChunk {
 /// Moves with the camera, so the sky and what is in it never come closer.
 #[derive(Component)]
 struct SkyAnchor;
+
+/// The material every glowing block of the island is drawn with: brightening it brightens all the
+/// awake quartz at once.
+#[derive(Resource)]
+pub struct WayGlow(pub Handle<StandardMaterial>);
 
 /// The sky's dome, which the intro hides while it shows space.
 #[derive(Component)]
@@ -87,6 +96,8 @@ pub struct SceneryPlugin;
 impl Plugin for SceneryPlugin {
     fn build(&self, app: &mut App) {
         let sky = Sky::of(app.world().resource::<Game>().chapter.light);
+        embedded_asset!(app, "sway.wesl");
+        app.add_plugins(MaterialPlugin::<SwayMaterial>::default());
         app.insert_resource(ClearColor(sky.horizon))
             .add_systems(Startup, spawn)
             .add_systems(Update, rebuild_chunks)
@@ -98,7 +109,7 @@ pub(crate) fn spawn(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut block_materials: ResMut<Assets<crate::graphics::BlockMaterial>>,
+    (mut block_materials, mut sway_materials): (ResMut<Assets<crate::graphics::BlockMaterial>>, ResMut<Assets<SwayMaterial>>),
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
     game: Res<Game>,
@@ -108,6 +119,7 @@ pub(crate) fn spawn(
     // each face), and one unlit material serves everything that glows.
     let blocks = crate::graphics::block_material(&mut block_materials);
     let glow = materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() });
+    commands.insert_resource(WayGlow(glow.clone()));
     for z0 in (0..world.size.z).step_by(CHUNK as usize) {
         for x0 in (0..world.size.x).step_by(CHUNK as usize) {
             let (x1, z1) = ((x0 + CHUNK).min(world.size.x), (z0 + CHUNK).min(world.size.z));
@@ -120,8 +132,9 @@ pub(crate) fn spawn(
             ));
         }
     }
-    let plain = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
-    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(plain), NotShadowCaster));
+    let swaying = sway_materials
+        .add(SwayMaterial { base: StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() }, extension: Sway { reach: 0.14 } });
+    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(swaying), NotShadowCaster));
 
     // Islands on the horizon, larger than life so the haze softens them.
     for (i, (centre, scale)) in
@@ -351,31 +364,35 @@ fn tufts(world: &VoxelWorld, sites: &Sites) -> Mesh {
                 let foot = Vec3::new(x as f32 + 0.15 + 0.7 * r(0), top as f32, z as f32 + 0.15 + 0.7 * r(1));
                 let height = 0.15 + 0.3 * r(2);
                 let shade = colour * (0.85 + 0.3 * r(3));
-                out.push(foot - Vec3::new(0.03, 0.0, 0.03), foot + Vec3::new(0.03, height, 0.03), shade);
+                out.push(foot - Vec3::new(0.03, 0.0, 0.03), foot + Vec3::new(0.03, height, 0.03), shade, foot.y, r(4));
             }
             // Now and then a frond with a pale violet tip.
             if h < 0.008 {
                 let foot = Vec3::new(x as f32 + 0.5, top as f32, z as f32 + 0.5);
-                out.push(foot - Vec3::new(0.05, 0.0, 0.05), foot + Vec3::new(0.05, 0.8, 0.05), colour);
-                out.push(foot + Vec3::new(-0.11, 0.8, -0.11), foot + Vec3::new(0.11, 1.0, 0.11), Vec3::new(0.78, 0.66, 0.95));
+                out.push(foot - Vec3::new(0.05, 0.0, 0.05), foot + Vec3::new(0.05, 0.8, 0.05), colour, foot.y, h * 50.0);
+                out.push(foot + Vec3::new(-0.11, 0.8, -0.11), foot + Vec3::new(0.11, 1.0, 0.11), Vec3::new(0.78, 0.66, 0.95), foot.y, h * 50.0);
             }
         }
     }
     out.mesh()
 }
 
-/// Axis-aligned boxes gathered into one vertex-coloured mesh.
+/// Axis-aligned boxes gathered into one vertex-coloured mesh. Each vertex carries, in its first UVs,
+/// how high it stands above the ground its plant grows from and the plant's own phase, for the wind
+/// to bend it by (`sway.wesl`).
 #[derive(Default)]
 struct Boxes {
     positions: Vec<[f32; 3]>,
     normals: Vec<[f32; 3]>,
     colours: Vec<[f32; 4]>,
+    uvs: Vec<[f32; 2]>,
     indices: Vec<u32>,
 }
 
 impl Boxes {
-    /// A box from `min` to `max`, sRGB `colour`; the bottom face is left out (it rests on the ground).
-    fn push(&mut self, min: Vec3, max: Vec3, colour: Vec3) {
+    /// A box from `min` to `max`, sRGB `colour`, part of a plant rooted at height `ground` that sways
+    /// in its own `phase`; the bottom face is left out (it rests on the ground).
+    fn push(&mut self, min: Vec3, max: Vec3, colour: Vec3, ground: f32, phase: f32) {
         let c = Color::srgb(colour.x.min(1.0), colour.y.min(1.0), colour.z.min(1.0)).to_linear();
         let faces: [(Vec3, [Vec3; 4]); 5] = [
             (Vec3::X, [Vec3::new(1., 0., 0.), Vec3::new(1., 1., 0.), Vec3::new(1., 1., 1.), Vec3::new(1., 0., 1.)]),
@@ -387,8 +404,10 @@ impl Boxes {
         for (normal, corners) in faces {
             let first = self.positions.len() as u32;
             for corner in corners {
-                self.positions.push((min + (max - min) * corner).to_array());
+                let at = min + (max - min) * corner;
+                self.positions.push(at.to_array());
                 self.normals.push(normal.to_array());
+                self.uvs.push([at.y - ground, phase.fract()]);
                 // Darker at the root, as if shaded by the turf around it.
                 let light = 0.8 + 0.2 * corner.y;
                 self.colours.push([c.red * light, c.green * light, c.blue * light, 1.0]);
@@ -402,9 +421,31 @@ impl Boxes {
             .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, self.positions)
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, self.colours)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs)
             .with_inserted_indices(Indices::U32(self.indices))
     }
 }
+
+/// The tufts' material: the standard one, with a vertex shader that bends each plant in the wind.
+#[derive(Asset, AsBindGroup, Reflect, Debug, Clone)]
+pub struct Sway {
+    /// How far a tip one metre up leans at the strongest gust, in metres.
+    #[uniform(100)]
+    pub reach: f32,
+}
+
+impl MaterialExtension for Sway {
+    fn vertex_shader() -> ShaderRef {
+        "embedded://game/sway.wesl".into()
+    }
+
+    // The depth prepass would draw the plants standing still; they are too thin to matter to it.
+    fn enable_prepass() -> bool {
+        false
+    }
+}
+
+pub type SwayMaterial = ExtendedMaterial<StandardMaterial, Sway>;
 
 #[cfg(test)]
 mod tests {

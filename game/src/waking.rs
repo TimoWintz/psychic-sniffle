@@ -462,13 +462,41 @@ pub struct MachineTrim(pub [Handle<StandardMaterial>; MACHINES]);
 
 impl MachineTrim {
     pub fn look(lit: bool) -> StandardMaterial {
-        if lit {
-            let q = Material::Quartz.properties().colour;
-            StandardMaterial { base_color: crate::graphics::glowing(q, crate::graphics::glow::WAY), unlit: true, ..default() }
-        } else {
-            StandardMaterial { base_color: Color::srgb(DARK_QUARTZ[0], DARK_QUARTZ[1], DARK_QUARTZ[2]), perceptual_roughness: 0.5, ..default() }
+        Self::look_at(lit as u8 as f32)
+    }
+
+    /// Quartz part of the way from dark (0) to fully lit (1), as it fades in when its machine wakes.
+    pub fn look_at(lit: f32) -> StandardMaterial {
+        let dark = Color::srgb(DARK_QUARTZ[0], DARK_QUARTZ[1], DARK_QUARTZ[2]);
+        if lit <= 0.0 {
+            return StandardMaterial { base_color: dark, perceptual_roughness: 0.5, ..default() };
+        }
+        let q = Material::Quartz.properties().colour;
+        let glowing = crate::graphics::glowing(q, crate::graphics::glow::WAY).to_linear();
+        let colour = dark.to_linear().mix(&glowing, ease(lit));
+        StandardMaterial { base_color: Color::LinearRgba(colour), unlit: true, ..default() }
+    }
+}
+
+/// How long a machine's quartz takes to fade in as it wakes, in seconds.
+pub const FADE_IN: f32 = 0.7;
+
+/// Move each machine's quartz a step towards lit or dark, fading in as it wakes and going dark at
+/// once (only a new game puts it out). Returns the machines whose look changed. The first call
+/// shows the world as it is, without fading.
+pub fn fade_towards(shown: &mut Option<[f32; MACHINES]>, lit: [bool; MACHINES], dt: f32) -> Vec<(usize, f32)> {
+    let mut changed = Vec::new();
+    let first = shown.is_none();
+    let now = shown.get_or_insert([0.0; MACHINES]);
+    for machine in 0..MACHINES {
+        let target = lit[machine] as u8 as f32;
+        let next = if first || target < now[machine] { target } else { (now[machine] + dt / FADE_IN).min(target) };
+        if first || next != now[machine] {
+            now[machine] = next;
+            changed.push((machine, next));
         }
     }
+    changed
 }
 
 /// Quartz on a moving part that is always lit (the crawler, which never slept).
@@ -679,19 +707,19 @@ fn letterbox(mut contexts: EguiContexts, waking: Res<Waking>) -> Result {
 }
 
 /// Light the quartz on each machine's moving parts as the machine wakes.
-fn light_trim(waking: Res<Waking>, trim: Res<MachineTrim>, mut materials: ResMut<Assets<StandardMaterial>>, mut lit: Local<Option<[bool; MACHINES]>>) {
-    let now: [bool; MACHINES] = std::array::from_fn(|machine| waking.glows(machine));
-    if *lit == Some(now) {
-        return;
-    }
-    for (machine, handle) in trim.0.iter().enumerate() {
-        if lit.is_none_or(|before| before[machine] != now[machine])
-            && let Some(mut material) = materials.get_mut(handle)
-        {
-            *material = MachineTrim::look(now[machine]);
+fn light_trim(
+    time: Res<Time>,
+    waking: Res<Waking>,
+    trim: Res<MachineTrim>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut shown: Local<Option<[f32; MACHINES]>>,
+) {
+    let lit: [bool; MACHINES] = std::array::from_fn(|machine| waking.glows(machine));
+    for (machine, f) in fade_towards(&mut shown, lit, time.delta_secs()) {
+        if let Some(mut material) = materials.get_mut(&trim.0[machine]) {
+            *material = MachineTrim::look_at(f);
         }
     }
-    *lit = Some(now);
 }
 
 /// Put the moving parts where the way has them: the beam reaching out, the crane's arm turned, its
@@ -739,6 +767,27 @@ mod tests {
     use crate::island::{self, GROUND};
     use physics_core::puzzle::Ch1Layout;
     use std::collections::{HashSet, VecDeque};
+
+    #[test]
+    fn quartz_fades_in_as_its_machine_wakes_and_shows_a_loaded_game_at_once() {
+        let mut shown = None;
+        let mut lit = [false; MACHINES];
+        lit[0] = true;
+        // A game loaded: what is lit shows lit, from the first frame.
+        let first = fade_towards(&mut shown, lit, 0.016);
+        assert_eq!(first.len(), MACHINES);
+        assert_eq!(shown.unwrap()[0], 1.0);
+        // Machine 1 wakes: it fades in over FADE_IN, and nothing else changes.
+        lit[1] = true;
+        let step = fade_towards(&mut shown, lit, FADE_IN / 2.0);
+        assert_eq!(step, vec![(1, 0.5)]);
+        fade_towards(&mut shown, lit, FADE_IN);
+        assert_eq!(shown.unwrap()[1], 1.0);
+        assert!(fade_towards(&mut shown, lit, 0.016).is_empty(), "nothing left to change");
+        // A new game puts it out at once.
+        let dark = fade_towards(&mut shown, [false; MACHINES], 0.016);
+        assert!(dark.iter().all(|&(_, f)| f == 0.0) && dark.len() == 2);
+    }
 
     #[test]
     fn the_rules_at_each_stage() {

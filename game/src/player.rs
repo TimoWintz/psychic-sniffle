@@ -41,11 +41,24 @@ pub struct OrbitCamera {
     /// The camera is on a side view (a test, or a station's puzzle), which may stand further back
     /// than the player zooms out.
     side_view: bool,
+    /// A wake has the camera (see [`OrbitCamera::borrow`]): it keeps its distance.
+    held: bool,
 }
 
 impl Default for OrbitCamera {
     fn default() -> Self {
-        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, returning: None, turning: None, side_view: false }
+        OrbitCamera {
+            yaw: -0.6,
+            pitch: 0.45,
+            distance: 14.0,
+            watch: None,
+            focus: Vec3::ZERO,
+            saved: None,
+            returning: None,
+            turning: None,
+            side_view: false,
+            held: false,
+        }
     }
 }
 
@@ -88,13 +101,16 @@ impl OrbitCamera {
         self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * distance);
     }
 
-    /// Take the camera to watch something with this pitch and distance (set `watch` to say what),
-    /// keeping the player's own view to come back with [`OrbitCamera::release_view`].
-    pub fn borrow(&mut self, pitch: f32, distance: f32) {
+    /// Take the camera to watch something from this yaw, pitch and distance (set `watch` to say
+    /// what), keeping the player's own view to come back with [`OrbitCamera::release_view`]. It
+    /// keeps that distance while it watches: a block between it and what it watches (a post the
+    /// light runs past) hides that for a moment rather than pulling the camera in to the block.
+    /// Only a block where the camera would stand pulls it in.
+    pub fn borrow(&mut self, yaw: f32, pitch: f32, distance: f32) {
         self.keep_view();
         self.side_view = false;
-        self.pitch = pitch;
-        self.distance = distance;
+        self.held = true;
+        (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
     }
 
     /// Turn the camera, over a moment, to look past `from` (the avatar) towards `to`, with this
@@ -109,6 +125,7 @@ impl OrbitCamera {
     /// Keep the player's own view to come back to, unless it is kept already. Whatever the camera
     /// was turning to or easing back to stops: it is taken from here.
     fn keep_view(&mut self) {
+        self.held = false;
         if self.saved.is_none() {
             self.saved = Some(self.returning.take().unwrap_or((self.yaw, self.pitch, self.distance)));
         }
@@ -118,12 +135,14 @@ impl OrbitCamera {
     /// Set the yaw, pitch and distance outright, cancelling any glide (the scripts' `Look`).
     pub fn set_view(&mut self, yaw: f32, pitch: f32, distance: f32) {
         (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
+        self.held = false;
         self.returning = None;
         self.turning = None;
     }
 
     pub fn release_view(&mut self) {
         self.watch = None;
+        self.held = false;
         self.returning = None;
         self.turning = None;
         self.side_view = false;
@@ -136,6 +155,7 @@ impl OrbitCamera {
     /// a moment instead of cutting to it.
     pub fn ease_home(&mut self) {
         self.watch = None;
+        self.held = false;
         self.turning = None;
         self.side_view = false;
         self.returning = self.saved.take();
@@ -147,9 +167,53 @@ impl OrbitCamera {
         focus + self.back() * self.distance
     }
 
+    /// What the camera looks at now: it trails the point it is told to watch.
+    pub fn focus(&self) -> Vec3 {
+        self.focus
+    }
+
+    /// Move what the camera looks at `blend` of the way towards `target`.
+    pub fn follow(&mut self, target: Vec3, blend: f32) {
+        self.focus = self.focus.lerp(target, blend);
+    }
+
+    /// How far back from its focus the camera stands: as far as asked, unless terrain is in the way
+    /// (or, while a wake holds it, where it would stand).
+    pub fn reach(&self, world: &VoxelWorld) -> f32 {
+        let back = self.back();
+        if self.held && !world.is_solid((self.focus + back * self.distance).floor().as_ivec3()) {
+            return self.distance;
+        }
+        reach(world, self.focus, back, self.distance)
+    }
+
     /// Direction from what the camera looks at back to the camera.
     fn back(&self) -> Vec3 {
-        Quat::from_euler(EulerRot::YXZ, self.yaw, -self.pitch, 0.0) * Vec3::Z
+        back(self.yaw, self.pitch)
+    }
+}
+
+/// How much of the way the camera closes in a frame `dt` long, on what it watches and on the view
+/// it is easing back to.
+pub fn follow_blend(dt: f32) -> f32 {
+    (dt * 6.0).min(1.0)
+}
+
+/// Direction from what the camera looks at back to the camera, at this yaw and pitch.
+pub fn back(yaw: f32, pitch: f32) -> Vec3 {
+    Quat::from_euler(EulerRot::YXZ, yaw, -pitch, 0.0) * Vec3::Z
+}
+
+/// How far back along `back` from `focus` a camera may stand, up to `distance`: pulled in to just
+/// short of terrain in the way. A focus that is itself inside terrain (a fixed test view can be) is
+/// left alone.
+pub fn reach(world: &VoxelWorld, focus: Vec3, back: Vec3, distance: f32) -> f32 {
+    if world.is_solid(focus.floor().as_ivec3()) {
+        return distance;
+    }
+    match world.raycast(focus, back, distance) {
+        Some(hit) => (hit.distance - 0.4).max(1.0),
+        None => distance,
     }
 }
 
@@ -320,7 +384,7 @@ fn orbit_camera(
     mut camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let dt = time.delta_secs();
-    let blend = (dt * 6.0).min(1.0);
+    let blend = follow_blend(dt);
     // Back to the player's view, or round to show something or a station's puzzle: slower, so the
     // eye can follow.
     let easing = orbit.returning.map(|view| (view, blend)).or(orbit.turning.map(|view| (view, (dt * 2.5).min(1.0))));
@@ -354,17 +418,9 @@ fn orbit_camera(
     orbit.pitch = orbit.pitch.clamp(-0.3, 1.45);
 
     let target = orbit.watch.unwrap_or(player.translation + Vec3::Y * 1.5);
-    orbit.focus = orbit.focus.lerp(target, blend);
-
-    // A focus that is itself inside terrain (a fixed test view can be) is left alone.
-    let open_focus = !world.is_solid(orbit.focus.floor().as_ivec3());
-    let back = orbit.back();
+    orbit.follow(target, blend);
     // Pull the camera in if terrain is between it and what it looks at.
-    let reach = match world.raycast(orbit.focus, back, orbit.distance) {
-        Some(hit) if open_focus => (hit.distance - 0.4).max(1.0),
-        _ => orbit.distance,
-    };
-    camera.translation = orbit.focus + back * reach;
+    camera.translation = orbit.focus + orbit.back() * orbit.reach(&world);
     camera.look_at(orbit.focus, Vec3::Y);
 }
 

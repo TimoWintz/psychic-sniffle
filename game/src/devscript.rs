@@ -336,7 +336,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Key(KeyCode::KeyE, false),
         UntilWakeAt { stage: 1, at: 0.8, within: 30.0 },
         Shot("06_wake_marker_lights"),
-        UntilWakeAt { stage: 1, at: 1.0 + wakes[0].wake_starts() * 0.5, within: 30.0 },
+        UntilWakeAt { stage: 1, at: (wakes[0].run_starts() + wakes[0].wake_starts()) / 2.0, within: 30.0 },
         Shot("06_wake_light_runs"),
         UntilWakeAt { stage: 1, at: wakes[0].wake_starts() + 1.8, within: 30.0 },
         Shot("06_wake_stone_gate_opens"),

@@ -18,7 +18,7 @@ use crate::carry::{Carry, Item, Slot, Yard};
 use crate::island::Sites;
 use crate::ruler::Ruler;
 use crate::sim::Sim;
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, not_paused};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -247,6 +247,8 @@ pub struct Companion {
     beam_why: bool,
     beam_misses: u32,
     beam_rule: bool,
+    /// Last frame's view of the game, stored here so world reloads reset it cleanly.
+    last_seen: Option<Seen>,
 }
 
 impl Companion {
@@ -514,10 +516,20 @@ impl Plugin for CompanionPlugin {
         let landmarks = Landmarks::new(app.world().resource::<Sites>(), app.world().resource::<Game>());
         app.insert_resource(landmarks)
             .init_resource::<Companion>()
+            .add_systems(BuildWorld, reset)
             // The greeting comes with the first frame of the game, after Start.
-            .add_systems(Update, (follow_sites, advance_speech.run_if(in_state(Mode::Playing)), direct.run_if(in_state(Mode::Playing))).chain())
+            .add_systems(
+                Update,
+                (follow_sites, advance_speech.run_if(in_state(Mode::Playing)).run_if(not_paused), direct.run_if(in_state(Mode::Playing)).run_if(not_paused))
+                    .chain(),
+            )
             .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).after(crate::beam::panel).run_if(in_state(Mode::Playing)));
     }
+}
+
+fn reset(sites: Res<Sites>, game: Res<Game>, mut landmarks: ResMut<Landmarks>, mut companion: ResMut<Companion>) {
+    *landmarks = Landmarks::new(&sites, &game);
+    *companion = Companion::default();
 }
 
 /// Pressing Enter while exploring advances or dismisses Lumen's current speech bubble.
@@ -559,7 +571,6 @@ fn direct(
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
     beam: Res<crate::beam::Beam>,
-    mut last: Local<Option<Seen>>,
 ) {
     let dt = time.delta_secs();
     let companion = &mut *companion;
@@ -596,7 +607,7 @@ fn direct(
         beam_releases: beam.releases,
         beam_woken: crate::beam::woken(&game),
     };
-    match last.as_ref() {
+    match companion.last_seen.clone() {
         None => {
             // The first frame: a greeting. The opening plays until the player has done anything at
             // all, so it isn't heard again by someone who has already been measuring.
@@ -731,7 +742,7 @@ fn direct(
             }
         }
     }
-    *last = Some(now);
+    companion.last_seen = Some(now);
 
     // Time passes for held looks, moods and lines.
     if let Some((_, left, _)) = &mut companion.held {
@@ -1130,6 +1141,9 @@ fn draw(
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
+    if ui_state.paused {
+        return Ok(());
+    }
     let dt = time.delta_secs().min(0.1);
     let companion = &mut *companion;
     let mood = companion.mood;

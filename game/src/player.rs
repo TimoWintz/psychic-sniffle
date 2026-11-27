@@ -2,7 +2,7 @@
 
 use crate::island::Sites;
 use crate::ruler::Ruler;
-use crate::state::{Game, Mode, Ui};
+use crate::state::{BuildWorld, Game, Mode, Ui, not_paused};
 use crate::voxel::VoxelWorld;
 use crate::waking::Waking;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
@@ -35,6 +35,8 @@ pub struct Player {
     jump_buffer: f32,
     /// Negative vertical offset after a 1-block step-up, decayed smoothly so the camera glides up.
     pub step_offset: f32,
+    /// Space also starts the game from the menu: a press still held from there is not a jump.
+    jump_armed: bool,
 }
 
 #[derive(Resource)]
@@ -90,9 +92,9 @@ impl Default for OrbitCamera {
 const STORY_PAN_CANCEL_PX: f32 = 18.0;
 
 /// Whether button-free mouse look may engage: focused window, exploring with no panel, ruler,
-/// hidden HUD (wake/test/swing), or explicit cursor unlock active.
-pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, hud_hidden: bool, cursor_free: bool) -> bool {
-    window_focused && !at_console && !panel_open && !ruler_in_use && !hud_hidden && !cursor_free
+/// hidden HUD (wake/test/swing), or pause menu active.
+pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, hud_hidden: bool, paused: bool) -> bool {
+    window_focused && !at_console && !panel_open && !ruler_in_use && !hud_hidden && !paused
 }
 
 /// Automated screenshot/test scripts drive the camera themselves and should not lock the OS cursor.
@@ -266,7 +268,8 @@ impl Plugin for PlayerPlugin {
         app.init_resource::<OrbitCamera>()
             .init_resource::<Shore>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (move_player, orbit_camera).chain().run_if(in_state(Mode::Playing)));
+            .add_systems(BuildWorld, reset)
+            .add_systems(Update, (move_player.run_if(not_paused), orbit_camera).chain().run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -282,6 +285,15 @@ fn spawn(
     let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
     crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;
+}
+
+/// Place the avatar and camera back at the current island's landing site.
+pub(crate) fn reset(sites: Res<Sites>, mut camera: ResMut<OrbitCamera>, mut shore: ResMut<Shore>, mut player: Single<(&mut Player, &mut Transform)>) {
+    let (player, transform) = &mut *player;
+    **player = Player::default();
+    **transform = Transform::from_translation(sites.spawn);
+    *shore = Shore { dry: sites.spawn, ..Shore::default() };
+    *camera = OrbitCamera { focus: sites.spawn + Vec3::Y * 1.5, ..OrbitCamera::default() };
 }
 
 fn collides(world: &VoxelWorld, feet: Vec3) -> bool {
@@ -334,7 +346,6 @@ pub(crate) fn move_player(
     camera: Res<OrbitCamera>,
     mut shore: ResMut<Shore>,
     mut player: Single<(&mut Player, &mut Transform)>,
-    mut jump_armed: Local<bool>,
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
@@ -366,21 +377,21 @@ pub(crate) fn move_player(
     player.velocity.y = (player.velocity.y - game.layout.g as f32 * dt).max(-40.0);
     // Space also starts the game from the menu: a press still held from there is not a jump.
     if !keys.pressed(KeyCode::Space) {
-        *jump_armed = true;
+        player.jump_armed = true;
     }
     if player.grounded {
         player.coyote = COYOTE_SECONDS;
     } else {
         player.coyote = (player.coyote - dt).max(0.0);
     }
-    if !still && *jump_armed && keys.just_pressed(KeyCode::Space) {
+    if !still && player.jump_armed && keys.just_pressed(KeyCode::Space) {
         player.jump_buffer = JUMP_BUFFER_SECONDS;
     } else {
         player.jump_buffer = (player.jump_buffer - dt).max(0.0);
     }
     let can_jump = player.grounded || player.coyote > 0.0;
     let wants_jump = player.jump_buffer > 0.0 || (player.grounded && keys.pressed(KeyCode::Space));
-    if can_jump && wants_jump && !still && *jump_armed {
+    if can_jump && wants_jump && !still && player.jump_armed {
         player.velocity.y = JUMP_SPEED;
         player.grounded = false;
         player.coyote = 0.0;
@@ -470,7 +481,7 @@ fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     wants: Res<EguiWantsInput>,
     world: Res<VoxelWorld>,
-    mut ui: ResMut<Ui>,
+    ui: Res<Ui>,
     sim: Res<crate::sim::Sim>,
     beam: Res<crate::beam::Beam>,
     ruler: Res<Ruler>,
@@ -485,15 +496,7 @@ fn orbit_camera(
     let (mut win, mut cursor) = window.into_inner();
     let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open;
     let hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
-    if ui.at_console()
-        || panel_open
-        || ruler.in_use()
-        || hidden
-        || (ui.cursor_free && !wants.wants_any_pointer_input() && buttons.just_pressed(MouseButton::Left))
-    {
-        ui.cursor_free = false;
-    }
-    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), hidden, ui.cursor_free);
+    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), hidden, ui.paused);
     let entering = want_free_look && !orbit.free_look;
     if entering {
         orbit.lock_settle = 2;
@@ -510,6 +513,9 @@ fn orbit_camera(
     }
     if cursor.visible != want_visible {
         cursor.visible = want_visible;
+    }
+    if ui.paused {
+        return;
     }
     let settling = orbit.lock_settle > 0;
     if orbit.lock_settle > 0 {
@@ -690,7 +696,7 @@ mod tests {
         assert!(!can_free_look(true, false, true, false, false, false), "open dock panel releases cursor");
         assert!(!can_free_look(true, false, false, true, false, false), "ruler in use releases cursor");
         assert!(!can_free_look(true, false, false, false, true, false), "hidden HUD (wake/run/swing) releases cursor");
-        assert!(!can_free_look(true, false, false, false, false, true), "Esc cursor unlock releases cursor");
+        assert!(!can_free_look(true, false, false, false, false, true), "pause menu releases cursor");
     }
 
     #[test]

@@ -18,6 +18,7 @@ mod props;
 mod rig;
 mod ruler;
 mod scenery;
+mod session;
 mod sim;
 mod state;
 mod stations;
@@ -70,6 +71,6 @@ fn main() {
             waking::WakingPlugin,
             devscript::DevScriptPlugin,
         ))
-        .add_plugins((water::WaterPlugin, particles::ParticlesPlugin, aloft::AloftPlugin, beam::BeamPlugin))
+        .add_plugins((session::SessionPlugin, water::WaterPlugin, particles::ParticlesPlugin, aloft::AloftPlugin, beam::BeamPlugin))
         .run();
 }

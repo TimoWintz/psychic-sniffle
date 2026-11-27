@@ -7,6 +7,7 @@
 //! otherwise to the centre of the block face under the cursor.
 
 use crate::island::Sites;
+use crate::state::{BuildWorld, Mode, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -98,7 +99,9 @@ pub struct RulerPlugin;
 
 impl Plugin for RulerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Ruler>().add_systems(Startup, spawn_pins).add_systems(Update, (follow_pins, aim, draw).chain());
+        app.init_resource::<Ruler>()
+            .add_systems(BuildWorld, spawn_pins)
+            .add_systems(Update, (follow_pins, aim.run_if(in_state(Mode::Playing)).run_if(not_paused), draw.run_if(in_state(Mode::Playing))).chain());
     }
 }
 
@@ -106,7 +109,7 @@ fn spawn_pins(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mate
     let mesh = meshes.add(Sphere::new(0.16));
     let material = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.9, 0.2), emissive: LinearRgba::rgb(0.9, 0.7, 0.05), ..default() });
     for (i, pin) in sites.pins.iter().enumerate() {
-        commands.spawn((PinMark(i), Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), Transform::from_translation(pin.position)));
+        commands.spawn((WorldEntity, PinMark(i), Mesh3d(mesh.clone()), MeshMaterial3d(material.clone()), Transform::from_translation(pin.position)));
     }
 }
 

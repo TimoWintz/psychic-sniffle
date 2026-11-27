@@ -1124,6 +1124,7 @@ fn draw(
     mut ui_state: ResMut<Ui>,
     ruler: Res<Ruler>,
     waking: Res<crate::waking::Waking>,
+    orbit: Res<crate::player::OrbitCamera>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
@@ -1248,14 +1249,15 @@ fn draw(
         }
     }
 
-    // The eye itself, which can be clicked to talk.
+    // The eye itself, which can be clicked to talk when the cursor is visible.
     let reach = EYE + 16.0;
     let area = egui::Area::new(egui::Id::new("lumen-eye")).order(egui::Order::Foreground).fixed_pos(centre - vec2(reach, reach)).show(&ctx, |ui| {
-        let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
-        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
-        response.on_hover_text("Lumen. Click here or press T to talk to me.")
+        let sense = if orbit.free_look { egui::Sense::empty() } else { egui::Sense::click() };
+        let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, sense);
+        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, !orbit.free_look && response.hovered());
+        if !orbit.free_look { response.on_hover_text("Lumen. Click here or press T to talk to me.") } else { response }
     });
-    if area.inner.clicked() {
+    if !orbit.free_look && area.inner.clicked() {
         ui_state.tutor_open = !ui_state.tutor_open;
     }
 
@@ -1288,16 +1290,22 @@ fn draw(
             painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
         }
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
-        let hint_text = if more { "Click or press Enter for next" } else { "Click or press Enter to dismiss" };
+        let hint_text = match (orbit.free_look, more) {
+            (true, true) => "Press Enter for next",
+            (true, false) => "Press Enter to dismiss",
+            (false, true) => "Click or press Enter for next",
+            (false, false) => "Click or press Enter to dismiss",
+        };
         let hint_galley = painter.layout_no_wrap(hint_text.into(), egui::FontId::proportional(11.0), tint([160.0, 180.0, 200.0], alpha * 0.85));
         let width = galley.size().x.max(hint_galley.size().x);
         let size = vec2(width + 20.0, galley.size().y + hint_galley.size().y + 18.0);
         let rect = bubble_rect(screen, centre, size, forward);
         let hit = egui::Area::new(egui::Id::new("lumen-bubble")).order(egui::Order::Foreground).fixed_pos(rect.min).show(&ctx, |ui| {
-            let (_, response) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
+            let sense = if orbit.free_look { egui::Sense::empty() } else { egui::Sense::click() };
+            let (_, response) = ui.allocate_exact_size(rect.size(), sense);
             response
         });
-        let hovered = hit.inner.hovered();
+        let hovered = !orbit.free_look && hit.inner.hovered();
         let fill = BUBBLE_FILL.gamma_multiply(alpha);
         let stroke = Stroke::new(if hovered { 2.0 } else { 1.5 }, tint(colour, (if hovered { 1.0 } else { 0.8 }) * alpha));
         painter.rect_filled(rect, 8.0, fill);
@@ -1305,7 +1313,7 @@ fn draw(
         paint_tail(&painter, rect, centre, fill, stroke);
         painter.galley(rect.min + vec2(10.0, 7.0), galley, Color32::WHITE);
         painter.galley(pos2(rect.right() - 10.0 - hint_galley.size().x, rect.bottom() - 6.0 - hint_galley.size().y), hint_galley, Color32::WHITE);
-        if hit.inner.clicked() {
+        if !orbit.free_look && hit.inner.clicked() {
             companion.advance_line();
         }
     }

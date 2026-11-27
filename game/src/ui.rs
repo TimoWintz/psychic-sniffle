@@ -61,14 +61,7 @@ const HANDBOOK_WIDTH: f32 = 540.0;
 const HANDBOOK_LEFT: f32 = 10.0 + DOCK_WIDTH + 2.0 * (6.0 + 1.0) + 10.0;
 const HANDBOOK_BOTTOM_RESERVE: f32 = 80.0;
 
-fn hotkeys(
-    keys: Res<ButtonInput<KeyCode>>,
-    wants: Res<EguiWantsInput>,
-    waking: Res<Waking>,
-    mut ui: ResMut<Ui>,
-    mut ruler: ResMut<Ruler>,
-    mut orbit: ResMut<OrbitCamera>,
-) {
+fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, waking: Res<Waking>, mut ui: ResMut<Ui>, mut ruler: ResMut<Ruler>) {
     if wants.wants_any_keyboard_input() {
         return;
     }
@@ -93,7 +86,7 @@ fn hotkeys(
         ui.controls_open = !ui.controls_open;
     }
     if keys.just_pressed(KeyCode::Escape) && !waking.playing() {
-        // One thing at a time: the ruler, the station, any open panel, or cursor free-look.
+        // One thing at a time: the ruler, the station, or any open panel.
         if ruler.in_use() {
             ruler.put_away();
         } else if ui.at_console() {
@@ -104,8 +97,6 @@ fn hotkeys(
             ui.handbook_open = false;
             ui.tutor_open = false;
             ui.controls_open = false;
-        } else {
-            orbit.cursor_released = !orbit.cursor_released;
         }
     }
 }
@@ -147,7 +138,7 @@ pub fn draw(
     }
 
     dock(&ctx, game, ui_state, ruler);
-    hints(&ctx, game, &waking, ui_state, ruler, &carry, &orbit);
+    hints(&ctx, game, &waking, ui_state, ruler, &carry);
     controls_help(&ctx, ui_state);
     if let Some(puzzle) = ui_state.station {
         station_panel(&ctx, game, ui_state, sim, puzzle);
@@ -284,7 +275,7 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
     response.on_hover_text(format!("{verb} ({key})")).clicked()
 }
 
-fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, ruler: &Ruler, carry: &Carry, orbit: &OrbitCamera) {
+fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, ruler: &Ruler, carry: &Carry) {
     let prompt = if ruler.active {
         Some("Left-click two points to measure between them. R or Esc cancels.".to_string())
     } else if let Some(line) = crate::carry::hint(carry).filter(|_| !ui_state.at_console()) {
@@ -302,15 +293,6 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, r
                 let needs: Vec<&str> =
                     game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| crate::stations::machine_name(p.kind)).collect();
                 Some(format!("This console is dark. Finish at {} first.", needs.join(" and ")))
-            }
-            _ if orbit.cursor_released
-                && !ui_state.notebook_open
-                && !ui_state.handbook_open
-                && !ui_state.tutor_open
-                && !ui_state.controls_open
-                && !waking.playing() =>
-            {
-                Some("Cursor free. Click the world or press Esc to look around.".to_string())
             }
             _ => None,
         }
@@ -360,7 +342,6 @@ fn controls_help(ctx: &egui::Context, ui_state: &mut Ui) {
                     ("Space", "Jump"),
                     ("Mouse / Arrows", "Look around"),
                     ("Scroll", "Zoom"),
-                    ("Alt (hold) / Esc", "Free cursor"),
                     ("E", "Use or leave a station"),
                     ("F", "Pick up, put down or clamp"),
                     ("R", "Measure with the ruler"),

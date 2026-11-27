@@ -21,6 +21,7 @@ use crate::sim::Sim;
 use crate::state::{Game, Mode, PUZZLES, Ui};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
+use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
 use physics_core::content::{RemarkWhen, Spoken};
@@ -210,6 +211,9 @@ struct Line {
     said: u64,
 }
 
+/// How many recent spoken lines Lumen keeps in its log for the player to reread.
+const MAX_HISTORY: usize = 40;
+
 /// Lumen's state: where it looks, how it feels, what it is saying, and its animation.
 #[derive(Resource, Default)]
 pub struct Companion {
@@ -220,6 +224,8 @@ pub struct Companion {
     held: Option<(String, f32, bool)>,
     mood_left: f32,
     lines: Vec<Line>,
+    /// Recent lines Lumen has spoken this session, oldest first, shown in Lumen's panel.
+    pub history: Vec<String>,
     anim: Animation,
     /// Stations where Lumen has already suggested trying the experiment, and what to build, this
     /// session.
@@ -265,7 +271,28 @@ impl Companion {
         self.speak(line.text.clone(), line.look.clone(), keep);
     }
 
+    /// Skip straight to the next queued line, or dismiss the bubble if this is the last one.
+    pub fn advance_line(&mut self) -> bool {
+        if self.lines.is_empty() {
+            return false;
+        }
+        self.lines.remove(0);
+        true
+    }
+
+    fn record_history(&mut self, text: &str) {
+        if self.history.last().map(String::as_str) == Some(text) {
+            return;
+        }
+        self.history.push(text.to_string());
+        if self.history.len() > MAX_HISTORY {
+            let drop = self.history.len() - MAX_HISTORY;
+            self.history.drain(..drop);
+        }
+    }
+
     fn speak(&mut self, text: String, look: Option<String>, keep: bool) {
+        self.record_history(&text);
         let telling = self.lines.iter().any(|l| l.keep);
         if telling {
             let now = self.frame;
@@ -491,8 +518,24 @@ impl Plugin for CompanionPlugin {
         app.insert_resource(landmarks)
             .init_resource::<Companion>()
             // The greeting comes with the first frame of the game, after Start.
-            .add_systems(Update, (follow_sites, direct.run_if(in_state(Mode::Playing))).chain())
+            .add_systems(Update, (follow_sites, advance_speech.run_if(in_state(Mode::Playing)), direct.run_if(in_state(Mode::Playing))).chain())
             .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
+    }
+}
+
+/// Pressing Enter while exploring advances or dismisses Lumen's current speech bubble.
+fn advance_speech(
+    keys: Res<ButtonInput<KeyCode>>,
+    wants: Res<EguiWantsInput>,
+    ui: Res<Ui>,
+    waking: Res<crate::waking::Waking>,
+    mut companion: ResMut<Companion>,
+) {
+    if wants.wants_any_keyboard_input() || ui.at_console() || ui.tutor_open || waking.playing() {
+        return;
+    }
+    if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]) {
+        companion.advance_line();
     }
 }
 
@@ -1176,13 +1219,14 @@ fn draw(
                         ui_state.tutor_open = false;
                     }
                     ui.separator();
-                    crate::ui::tutor_body(ui, &game, &mut ui_state, &mut lumen, &landmarks, room);
+                    crate::ui::tutor_body(ui, &game, &mut ui_state, &mut lumen, &landmarks, &companion.history, room);
                 });
             });
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-panel-tail")));
         paint_tail(&painter, panel.response.rect, centre, BUBBLE_FILL, stroke);
     } else if let Some(line) = companion.lines.first() {
-        // What Lumen is saying, in a bubble over the eye.
+        // What Lumen is saying, in a clickable bubble over the eye.
+        let more = companion.lines.len() > 1;
         let alpha = (line.shown / 0.25).min(1.0) * (line.left / 0.5).min(1.0);
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-says")));
         // A ring spreads from the eye as a line starts, to catch the eye of the player.
@@ -1191,14 +1235,26 @@ fn draw(
             painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
         }
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
-        let size = galley.size() + vec2(20.0, 14.0);
+        let hint_text = if more { "Click or press Enter for next" } else { "Click or press Enter to dismiss" };
+        let hint_galley = painter.layout_no_wrap(hint_text.into(), egui::FontId::proportional(11.0), tint([160.0, 180.0, 200.0], alpha * 0.85));
+        let width = galley.size().x.max(hint_galley.size().x);
+        let size = vec2(width + 20.0, galley.size().y + hint_galley.size().y + 18.0);
         let rect = bubble_rect(screen, centre, size, forward);
+        let hit = egui::Area::new(egui::Id::new("lumen-bubble")).order(egui::Order::Foreground).fixed_pos(rect.min).show(&ctx, |ui| {
+            let (_, response) = ui.allocate_exact_size(rect.size(), egui::Sense::click());
+            response
+        });
+        let hovered = hit.inner.hovered();
         let fill = BUBBLE_FILL.gamma_multiply(alpha);
-        let stroke = Stroke::new(1.5, tint(colour, 0.8 * alpha));
+        let stroke = Stroke::new(if hovered { 2.0 } else { 1.5 }, tint(colour, (if hovered { 1.0 } else { 0.8 }) * alpha));
         painter.rect_filled(rect, 8.0, fill);
         painter.rect_stroke(rect, 8.0, stroke, egui::StrokeKind::Inside);
         paint_tail(&painter, rect, centre, fill, stroke);
         painter.galley(rect.min + vec2(10.0, 7.0), galley, Color32::WHITE);
+        painter.galley(pos2(rect.right() - 10.0 - hint_galley.size().x, rect.bottom() - 6.0 - hint_galley.size().y), hint_galley, Color32::WHITE);
+        if hit.inner.clicked() {
+            companion.advance_line();
+        }
     }
     Ok(())
 }
@@ -1576,5 +1632,27 @@ mod tests {
         let corner = eye_place(screen, 0.0, 0.0, screen.right());
         let rect = bubble_rect(screen, corner, size, 1.0);
         assert!(rect.left() >= 8.0, "centred over the corner it would run off the screen");
+    }
+
+    #[test]
+    fn spoken_lines_can_be_advanced_and_are_kept_in_history() {
+        let mut companion = Companion::default();
+        companion.say("First line.");
+        companion.say("Second line.");
+        assert_eq!(companion.history, ["First line.", "Second line."]);
+        assert!(companion.advance_line());
+        assert_eq!(companion.lines.len(), 1);
+        assert_eq!(companion.lines[0].text, "Second line.");
+        assert!(companion.advance_line());
+        assert!(companion.lines.is_empty());
+        assert!(!companion.advance_line());
+        // Consecutive duplicates are not logged twice, and history is capped.
+        companion.say("Second line.");
+        assert_eq!(companion.history.len(), 2);
+        for i in 0..50 {
+            companion.say(format!("Line {i}."));
+        }
+        assert_eq!(companion.history.len(), MAX_HISTORY);
+        assert_eq!(companion.history.last().unwrap(), "Line 49.");
     }
 }

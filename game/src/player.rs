@@ -1,11 +1,15 @@
 //! The avatar and the camera that follows it.
 
 use crate::island::Sites;
+use crate::ruler::Ruler;
 use crate::state::{Game, Mode, Ui};
 use crate::voxel::VoxelWorld;
+use crate::waking::Waking;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
+use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use bevy_egui::input::EguiWantsInput;
+use std::sync::OnceLock;
 
 /// Half-width and height of the avatar's collision box. Its transform is at its feet.
 const HALF_WIDTH: f32 = 0.3;
@@ -16,11 +20,21 @@ pub(crate) const WALK_SPEED: f32 = 5.0;
 pub(crate) const RUN_SPEED: f32 = 9.0;
 /// Take-off speed of a jump. The height reached depends on the planet: v^2 / (2 g).
 pub(crate) const JUMP_SPEED: f32 = 6.0;
+/// Grace period after stepping off a ledge during which jumping still works.
+const COYOTE_SECONDS: f32 = 0.12;
+/// Window before landing during which a Space press is remembered and fires on touchdown.
+const JUMP_BUFFER_SECONDS: f32 = 0.12;
 
 #[derive(Component, Default)]
 pub struct Player {
     pub velocity: Vec3,
     pub grounded: bool,
+    /// Seconds left of coyote time after walking off an edge.
+    coyote: f32,
+    /// Seconds left of a buffered jump press.
+    jump_buffer: f32,
+    /// Negative vertical offset after a 1-block step-up, decayed smoothly so the camera glides up.
+    pub step_offset: f32,
 }
 
 #[derive(Resource)]
@@ -41,12 +55,44 @@ pub struct OrbitCamera {
     /// The camera is on a side view (a test, or a station's puzzle), which may stand further back
     /// than the player zooms out.
     side_view: bool,
+    /// Whether the cursor is locked for button-free mouse look while exploring.
+    pub free_look: bool,
+    /// Whether the player explicitly freed the cursor (with Esc) while exploring.
+    pub cursor_released: bool,
+    /// Previous frame's `free_look`, to skip the cursor-recenter spike on the transition frame.
+    was_free_look: bool,
 }
 
 impl Default for OrbitCamera {
     fn default() -> Self {
-        OrbitCamera { yaw: -0.6, pitch: 0.45, distance: 14.0, watch: None, focus: Vec3::ZERO, saved: None, returning: None, turning: None, side_view: false }
+        OrbitCamera {
+            yaw: -0.6,
+            pitch: 0.45,
+            distance: 14.0,
+            watch: None,
+            focus: Vec3::ZERO,
+            saved: None,
+            returning: None,
+            turning: None,
+            side_view: false,
+            free_look: false,
+            cursor_released: false,
+            was_free_look: false,
+        }
     }
+}
+
+/// Whether button-free mouse look may engage: focused window, exploring with no panel, ruler, or
+/// waking scene active.
+pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, waking: bool) -> bool {
+    window_focused && !at_console && !panel_open && !ruler_in_use && !waking
+}
+
+/// Automated screenshot/test scripts drive the camera themselves and should not lock the OS cursor.
+/// `prefill` is played by hand and behaves like a normal game.
+fn scripted_run() -> bool {
+    static SCRIPTED: OnceLock<bool> = OnceLock::new();
+    *SCRIPTED.get_or_init(|| std::env::var("GAME_SCRIPT").is_ok_and(|s| s != "prefill"))
 }
 
 /// The camera's nearest and furthest distance from what it looks at.
@@ -268,8 +314,28 @@ pub(crate) fn move_player(
     if !keys.pressed(KeyCode::Space) {
         *jump_armed = true;
     }
-    if player.grounded && !still && *jump_armed && keys.pressed(KeyCode::Space) {
+    if player.grounded {
+        player.coyote = COYOTE_SECONDS;
+    } else {
+        player.coyote = (player.coyote - dt).max(0.0);
+    }
+    if !still && *jump_armed && keys.just_pressed(KeyCode::Space) {
+        player.jump_buffer = JUMP_BUFFER_SECONDS;
+    } else {
+        player.jump_buffer = (player.jump_buffer - dt).max(0.0);
+    }
+    let can_jump = player.grounded || player.coyote > 0.0;
+    let wants_jump = player.jump_buffer > 0.0 || (player.grounded && keys.pressed(KeyCode::Space));
+    if can_jump && wants_jump && !still && *jump_armed {
         player.velocity.y = JUMP_SPEED;
+        player.grounded = false;
+        player.coyote = 0.0;
+        player.jump_buffer = 0.0;
+    }
+
+    player.step_offset *= (-14.0 * dt).exp();
+    if player.step_offset.abs() < 1e-4 {
+        player.step_offset = 0.0;
     }
 
     let mut feet = transform.translation;
@@ -287,6 +353,7 @@ pub(crate) fn move_player(
         let mut stepped = next;
         stepped.y = (feet.y + 1e-3).floor() + 1.0;
         if player.grounded && !collides(&world, stepped) && !collides(&world, feet.with_y(stepped.y)) {
+            player.step_offset = (player.step_offset - (stepped.y - feet.y)).clamp(-1.5, 0.0);
             feet = stepped;
         }
     }
@@ -322,11 +389,17 @@ pub(crate) fn move_player(
         shore.splash = Some(feet);
         feet = shore.dry;
         player.velocity = Vec3::ZERO;
+        player.step_offset = 0.0;
+        player.coyote = 0.0;
+        player.jump_buffer = 0.0;
     }
     // Out of the world, or walled in: back to the start.
     if feet.y < 1.0 || collides(&world, feet) {
         feet = sites.spawn;
         player.velocity = Vec3::ZERO;
+        player.step_offset = 0.0;
+        player.coyote = 0.0;
+        player.jump_buffer = 0.0;
     }
     if player.grounded && !over_deep_water(&world, feet) {
         shore.dry = feet;
@@ -343,11 +416,42 @@ fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     wants: Res<EguiWantsInput>,
     world: Res<VoxelWorld>,
+    ui: Res<Ui>,
+    ruler: Res<Ruler>,
+    waking: Res<Waking>,
     mut orbit: ResMut<OrbitCamera>,
-    player: Single<&Transform, (With<Player>, Without<Camera3d>)>,
+    mut window: Single<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
+    player: Single<(&Player, &Transform), Without<Camera3d>>,
     mut camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let dt = time.delta_secs();
+    let (win, cursor) = &mut *window;
+    let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open;
+    let may_lock = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), waking.playing());
+    if !may_lock {
+        if win.focused && !waking.playing() {
+            // Opening a panel or station releases the cursor; closing it resumes free-look.
+            orbit.cursor_released = false;
+        }
+        orbit.free_look = false;
+    } else {
+        if orbit.cursor_released && !wants.wants_any_pointer_input() && buttons.just_pressed(MouseButton::Left) {
+            orbit.cursor_released = false;
+        }
+        let holding_alt = keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
+        orbit.free_look = !orbit.cursor_released && !holding_alt;
+    }
+    let want_grab = if orbit.free_look { CursorGrabMode::Locked } else { CursorGrabMode::None };
+    let want_visible = !orbit.free_look;
+    if cursor.grab_mode != want_grab {
+        cursor.grab_mode = want_grab;
+    }
+    if cursor.visible != want_visible {
+        cursor.visible = want_visible;
+    }
+    let just_locked = orbit.free_look && !orbit.was_free_look;
+    orbit.was_free_look = orbit.free_look;
+
     let blend = (dt * 6.0).min(1.0);
     // Back to the player's view, or round to show something or a station's puzzle: slower, so the
     // eye can follow.
@@ -364,13 +468,20 @@ fn orbit_camera(
             orbit.turning = None;
         }
     }
-    if !wants.wants_any_pointer_input() {
-        if buttons.pressed(MouseButton::Right) || buttons.pressed(MouseButton::Middle) {
+    // A side view may stand further back than the player zooms out, to fit its whole test.
+    let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
+    if orbit.free_look {
+        if !just_locked {
+            orbit.yaw -= motion.delta.x * 0.0035;
+            orbit.pitch += motion.delta.y * 0.0035;
+        }
+        orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
+    } else if !wants.wants_any_pointer_input() {
+        let left_orbit = !ruler.active && !orbit.cursor_released && buttons.pressed(MouseButton::Left);
+        if left_orbit || buttons.pressed(MouseButton::Right) || buttons.pressed(MouseButton::Middle) {
             orbit.yaw -= motion.delta.x * 0.005;
             orbit.pitch += motion.delta.y * 0.005;
         }
-        // A side view may stand further back than the player zooms out, to fit its whole test.
-        let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
         orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
     }
     if !wants.wants_any_keyboard_input() {
@@ -381,7 +492,8 @@ fn orbit_camera(
     }
     orbit.pitch = orbit.pitch.clamp(-0.3, 1.45);
 
-    let target = orbit.watch.unwrap_or(player.translation + Vec3::Y * 1.5);
+    let (player_state, player_transform) = *player;
+    let target = orbit.watch.unwrap_or(player_transform.translation + Vec3::Y * (1.5 + player_state.step_offset));
     orbit.focus = orbit.focus.lerp(target, blend);
 
     // A focus that is itself inside terrain (a fixed test view can be) is left alone.
@@ -462,5 +574,15 @@ mod tests {
         orbit.ease_home();
         assert_eq!(orbit.returning, Some(own));
         assert_eq!(orbit.turning, None);
+    }
+
+    #[test]
+    fn free_look_engages_only_when_exploring_with_focus() {
+        assert!(can_free_look(true, false, false, false, false));
+        assert!(!can_free_look(false, false, false, false, false), "unfocused window releases cursor");
+        assert!(!can_free_look(true, true, false, false, false), "open station releases cursor");
+        assert!(!can_free_look(true, false, true, false, false), "open dock panel releases cursor");
+        assert!(!can_free_look(true, false, false, true, false), "ruler in use releases cursor");
+        assert!(!can_free_look(true, false, false, false, true), "waking scene releases cursor");
     }
 }

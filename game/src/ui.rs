@@ -7,8 +7,9 @@
 //! (Lumen: its eye); their key, or a click on the header, expands and reduces them. The handbook has
 //! its own place beside the dock's column, where it opens downward to read at full height.
 
-use crate::carry::Carry;
+use crate::carry::{Carry, Item};
 use crate::companion::Landmarks;
+use crate::player::OrbitCamera;
 use crate::ruler::Ruler;
 use crate::sim::{CRAWLER_TIME, Request, Sim};
 use crate::state::{Game, InputTarget, Mode, Ui};
@@ -60,7 +61,14 @@ const HANDBOOK_WIDTH: f32 = 540.0;
 const HANDBOOK_LEFT: f32 = 10.0 + DOCK_WIDTH + 2.0 * (6.0 + 1.0) + 10.0;
 const HANDBOOK_BOTTOM_RESERVE: f32 = 80.0;
 
-fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: ResMut<Ui>, mut ruler: ResMut<Ruler>) {
+fn hotkeys(
+    keys: Res<ButtonInput<KeyCode>>,
+    wants: Res<EguiWantsInput>,
+    waking: Res<Waking>,
+    mut ui: ResMut<Ui>,
+    mut ruler: ResMut<Ruler>,
+    mut orbit: ResMut<OrbitCamera>,
+) {
     if wants.wants_any_keyboard_input() {
         return;
     }
@@ -81,13 +89,19 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, mut ui: 
         // R starts a measurement, or cancels one half taken. A finished reading is replaced.
         if ruler.active { ruler.put_away() } else { ruler.start() }
     }
-    if keys.just_pressed(KeyCode::Escape) {
-        // One thing at a time: the ruler first, then the station.
+    if keys.just_pressed(KeyCode::Escape) && !waking.playing() {
+        // One thing at a time: the ruler, the station, any open panel, or cursor free-look.
         if ruler.in_use() {
             ruler.put_away();
-        } else {
+        } else if ui.at_console() {
             ui.station = None;
             ui.beam_open = false;
+        } else if ui.notebook_open || ui.handbook_open || ui.tutor_open {
+            ui.notebook_open = false;
+            ui.handbook_open = false;
+            ui.tutor_open = false;
+        } else {
+            orbit.cursor_released = !orbit.cursor_released;
         }
     }
 }
@@ -110,6 +124,7 @@ pub fn draw(
     mut ruler: ResMut<Ruler>,
     carry: Res<Carry>,
     waking: Res<Waking>,
+    orbit: Res<OrbitCamera>,
     mut handbook_was_open: Local<bool>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
@@ -117,7 +132,7 @@ pub fn draw(
     let (game, ui_state, sim, ruler) = (&mut *game, &mut *ui_state, &mut *sim, &mut *ruler);
 
     dock(&ctx, game, ui_state, ruler);
-    hints(&ctx, game, &waking, ui_state, ruler, &carry);
+    hints(&ctx, game, &waking, ui_state, ruler, &carry, &orbit);
     if let Some(puzzle) = ui_state.station {
         station_panel(&ctx, game, ui_state, sim, puzzle);
     }
@@ -126,6 +141,12 @@ pub fn draw(
     }
     if ruler.active {
         ruler_hover_label(&ctx, ruler);
+    }
+    if orbit.free_look && carry.holding == Some(Item::Gate) {
+        let centre = ctx.content_rect().center();
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("aim-dot")));
+        painter.circle_filled(centre, 3.0, Color32::from_rgba_unmultiplied(255, 220, 120, 220));
+        painter.circle_stroke(centre, 5.5, egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(15, 20, 28, 190)));
     }
     if ui_state.handbook_open {
         *handbook_was_open = true;
@@ -242,7 +263,7 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
     response.on_hover_text(format!("{verb} ({key})")).clicked()
 }
 
-fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler: &Ruler, carry: &Carry) {
+fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler: &Ruler, carry: &Carry, orbit: &OrbitCamera) {
     let prompt = if ruler.active {
         Some("Left-click two points to measure between them. R or Esc cancels.".to_string())
     } else if let Some(line) = crate::carry::hint(carry).filter(|_| !ui_state.at_console()) {
@@ -260,6 +281,9 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler
                 let needs: Vec<&str> =
                     game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| crate::stations::machine_name(p.kind)).collect();
                 Some(format!("This station is still asleep. Finish the job at {} first.", needs.join(" and ")))
+            }
+            _ if orbit.cursor_released && !ui_state.notebook_open && !ui_state.handbook_open && !ui_state.tutor_open && !waking.playing() => {
+                Some("Cursor free. Click the world or press Esc to look around.".to_string())
             }
             _ => None,
         }
@@ -280,7 +304,7 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler
                 ui.vertical_centered(|ui| ui.label(RichText::new(line).strong().color(GOOD)));
             }
             ui.label(
-                RichText::new("WASD move · Shift run · Space jump · right-drag or arrows look · scroll zoom · E station · F carry · R measure · N notebook · H handbook · T or click Lumen")
+                RichText::new("WASD move · Shift run · Space jump · mouse or arrows look · scroll zoom · Alt/Esc cursor · E station · F carry · R measure · N notebook · H handbook · T Lumen")
                     .small()
                     .color(DIM),
             );
@@ -1013,17 +1037,49 @@ fn valid_name(name: &str) -> bool {
 }
 
 /// The conversation with Lumen: drawn by the companion inside the panel that grows out of its eye.
-pub fn tutor_body(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, lumen: &mut Lumen, landmarks: &Landmarks, room: f32) {
+pub fn tutor_body(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, lumen: &mut Lumen, landmarks: &Landmarks, history: &[String], room: f32) {
     let puzzle = ui_state.focus(game);
     ui.set_width(430.0);
     if !lumen.tutor.is_online() {
-        ui.colored_label(WARN, "Lumen is offline.");
-        ui.label(lumen.tutor.status());
-        ui.label(RichText::new("To talk with Lumen, connect a language model by adding a [tutor] section to settings.toml (see docs/tutor.md). The handbook (H) works without one.").color(DIM));
+        ui.label(RichText::new("Recent lines").strong());
+        if history.is_empty() {
+            ui.label(RichText::new("Lumen hasn't said anything yet this session.").small().color(DIM));
+        } else {
+            let log_room = (room - 70.0).max(60.0);
+            egui::ScrollArea::vertical().id_salt("lumen-history-offline").max_height(log_room).stick_to_bottom(true).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for line in history {
+                    ui.label(RichText::new(line).color(LUMEN));
+                    ui.add_space(4.0);
+                }
+            });
+        }
+        ui.separator();
+        ui.colored_label(WARN, "Lumen's chat is offline.");
+        ui.label(RichText::new(lumen.tutor.status()).small().color(DIM));
+        ui.label(
+            RichText::new("To ask questions in chat, add a [tutor] section to settings.toml (see docs/tutor.md). The handbook (H) works without one.")
+                .small()
+                .color(DIM),
+        );
         return;
     }
     ui.label(RichText::new(format!("Looking at: {} · {}", game.def(puzzle).title, lumen.tutor.status())).small().color(DIM));
     ui.label(RichText::new("Lumen can see this puzzle and explain it, but it can't do anything in the world.").small().color(DIM));
+    if !history.is_empty() {
+        egui::CollapsingHeader::new(RichText::new(format!("Recent lines ({})", history.len())).small().color(DIM)).id_salt("lumen-history-online").show(
+            ui,
+            |ui| {
+                egui::ScrollArea::vertical().id_salt("lumen-history-scroll").max_height(110.0).stick_to_bottom(true).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    for line in history {
+                        ui.label(RichText::new(line).small().color(LUMEN));
+                        ui.add_space(2.0);
+                    }
+                });
+            },
+        );
+    }
     let conversation = &lumen.conversations[puzzle];
     let (mut send, mut stop) = (false, false);
     egui::ScrollArea::vertical().id_salt("lumen-conversation").max_height(room).stick_to_bottom(true).show(ui, |ui| {

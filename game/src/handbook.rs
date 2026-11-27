@@ -272,6 +272,36 @@ fn scene_time(scene: Scene, anim: &Anim, now: f64) -> f64 {
     (wall.rem_euclid(lap) / timing.slow).min(timing.duration)
 }
 
+/// Pause `anim` at an exact scene time `target_t` (clamped to the scene's duration).
+fn seek_paused(scene: Scene, anim: &mut Anim, now: f64, target_t: f64) {
+    let timing = timing(scene);
+    let clamped = target_t.clamp(0.0, timing.duration);
+    anim.paused_at = Some(now);
+    anim.start = now - clamped * timing.slow;
+}
+
+/// Scene time of the previous strobe flash (or an eighth of the scene for unstrobed scenes).
+fn step_back(scene: Scene, t: f64) -> f64 {
+    let timing = timing(scene);
+    let step = if timing.strobe.is_finite() { timing.strobe } else { timing.duration / 8.0 };
+    if step <= 0.0 || t <= 1e-4 {
+        return 0.0;
+    }
+    let prev = ((t - 1e-4) / step).floor().max(0.0) * step;
+    prev.clamp(0.0, timing.duration)
+}
+
+/// Scene time of the next strobe flash (or an eighth of the scene for unstrobed scenes).
+fn step_forward(scene: Scene, t: f64) -> f64 {
+    let timing = timing(scene);
+    let step = if timing.strobe.is_finite() { timing.strobe } else { timing.duration / 8.0 };
+    if step <= 0.0 || t >= timing.duration - 1e-4 {
+        return timing.duration;
+    }
+    let next = ((t + 1e-4) / step).ceil() * step;
+    next.clamp(0.0, timing.duration)
+}
+
 fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now: f64) {
     let scene = illustration.scene;
     let t = scene_time(scene, anim, now);
@@ -326,6 +356,19 @@ fn picture(ui: &mut egui::Ui, illustration: &Illustration, anim: &mut Anim, now:
         if ui.small_button("⟲").on_hover_text("Play from the start").clicked() {
             anim.start = now;
             anim.paused_at = anim.paused_at.map(|_| now);
+        }
+        let strobed = timing.strobe.is_finite();
+        if ui.small_button("«").on_hover_text(if strobed { "Previous flash" } else { "Step back" }).clicked() {
+            seek_paused(scene, anim, now, step_back(scene, t));
+        }
+        if ui.small_button("»").on_hover_text(if strobed { "Next flash" } else { "Step forward" }).clicked() {
+            seek_paused(scene, anim, now, step_forward(scene, t));
+        }
+        let mut scrubbed = t;
+        let slider_width = (width - 110.0).max(80.0);
+        ui.spacing_mut().slider_width = slider_width;
+        if ui.add(egui::Slider::new(&mut scrubbed, 0.0..=timing.duration).show_value(false)).changed() {
+            seek_paused(scene, anim, now, scrubbed);
         }
     });
     // Under the buttons, so it wraps to the page's width instead of stretching it.
@@ -956,6 +999,33 @@ mod tests {
         assert!(scene_time(scene, &anim, 10.0 + timing.duration + HOLD + 1.0) < 1.0 + 1e-9, "then plays again");
         let paused = Anim { start: 10.0, paused_at: Some(11.0) };
         assert_eq!(scene_time(scene, &paused, 50.0), 1.0, "a paused picture stays where it stopped");
+    }
+
+    #[test]
+    fn scrubbing_and_strobe_stepping_land_on_exact_flashes() {
+        let scene = Scene::AppleDrop;
+        let timing = timing(scene);
+        let mut anim = Anim { start: 0.0, paused_at: None };
+        let t1 = step_forward(scene, 0.0);
+        assert!((t1 - timing.strobe).abs() < 1e-9);
+        let t2 = step_forward(scene, t1);
+        assert!((t2 - 2.0 * timing.strobe).abs() < 1e-9);
+        assert!((step_back(scene, t2) - t1).abs() < 1e-9);
+        assert_eq!(step_back(scene, 0.0), 0.0);
+        assert_eq!(step_forward(scene, timing.duration), timing.duration);
+
+        seek_paused(scene, &mut anim, 100.0, t2);
+        assert!(anim.paused_at.is_some());
+        assert!((scene_time(scene, &anim, 250.0) - t2).abs() < 1e-9);
+
+        // Unstrobed scenes still step smoothly between 0 and duration.
+        let tape = Scene::Tape;
+        let d = timing_tape_step(tape);
+        assert!(d > 0.0 && d < super::timing(tape).duration);
+    }
+
+    fn timing_tape_step(scene: Scene) -> f64 {
+        step_forward(scene, 0.0)
     }
 
     #[test]

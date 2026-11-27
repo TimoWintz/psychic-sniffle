@@ -530,19 +530,26 @@ pub fn aim_on_tower(sites: &Sites, origin: Vec3, direction: Vec3) -> Option<f32>
     ((near.with_y(0.0) - line).length() < AIM_REACH && (low - 0.5..=sites.tower_release.y + 0.5).contains(&near.y)).then_some(near.y)
 }
 
-/// Follow the pointer onto the drop tower while the light gate is carried.
+/// Follow the pointer onto the drop tower while the light gate is carried. In free-look mode, aim
+/// from the centre of the screen so the player can pick a notch by looking up and down the tower.
 fn point(
     mut carry: ResMut<Carry>,
     sites: Res<Sites>,
+    orbit: Res<crate::player::OrbitCamera>,
     wants: Res<EguiWantsInput>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) {
-    let aim = (carry.holding == Some(Item::Gate) && !wants.wants_any_pointer_input())
-        .then(|| window.cursor_position())
-        .flatten()
-        .and_then(|cursor| camera.0.viewport_to_world(camera.1, cursor).ok())
-        .and_then(|ray| aim_on_tower(&sites, ray.origin, *ray.direction));
+    let pointer = if carry.holding != Some(Item::Gate) {
+        None
+    } else if orbit.free_look {
+        Some(window.size() / 2.0)
+    } else if !wants.wants_any_pointer_input() {
+        window.cursor_position()
+    } else {
+        None
+    };
+    let aim = pointer.and_then(|cursor| camera.0.viewport_to_world(camera.1, cursor).ok()).and_then(|ray| aim_on_tower(&sites, ray.origin, *ray.direction));
     if carry.aim != aim {
         carry.aim = aim;
     }

@@ -469,6 +469,12 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 ui.add_space(4.0);
                 pages_row(ui, game, ui_state, &def);
 
+                if matches!(def.kind, PuzzleKind::Chase | PuzzleKind::Gravity) {
+                    ui.add_space(6.0);
+                    ui.separator();
+                    measure_section(ui, game, sim, puzzle);
+                }
+
                 ui.add_space(6.0);
                 ui.separator();
                 ui.label(RichText::new("Blueprint").strong());
@@ -622,13 +628,12 @@ pub fn write_plate(game: &mut Game) {
     game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, source::PLATE);
 }
 
-/// The station's free experiment: a guess first, then the world shows what happens.
+/// The station's free conceptual demonstration: a guess first, then the world shows the principle.
+/// Measurements live in [`measure_section`] below, separate from this.
 fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &mut Sim, puzzle: usize, demo: &DemoDef) {
     let id = &game.def(puzzle).id;
     let watched = game.save.demo_watched(id);
     let running = sim.demo() == Some(puzzle);
-    // What has to stand in the world before the experiment runs (the light gate on the drop tower).
-    let unready = game.instance(puzzle).experiment_unready(game.placed(puzzle));
     ui.label(&demo.question);
     let first_guess = game.save.first_guess(id);
     for (i, choice) in demo.choices.iter().enumerate() {
@@ -649,15 +654,13 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         }
     }
     ui.horizontal(|ui| {
-        let ready = !sim.busy() && unready.is_none() && (watched || ui_state.guess[puzzle].is_some());
+        let ready = !sim.busy() && (watched || ui_state.guess[puzzle].is_some());
         let label = if watched { "Run it again" } else { "Run the experiment" };
         if ui.add_enabled(ready, egui::Button::new(label)).clicked() {
             sim.request = Some(Request::Demo(puzzle));
         }
         if running {
             ui.label(RichText::new("Watch…").italics());
-        } else if unready.is_some() {
-            ui.label(RichText::new("It needs the light gate first.").small().color(WARN));
         } else if !watched && ui_state.guess[puzzle].is_none() {
             ui.label(RichText::new("Make a guess first. It costs nothing.").small().color(DIM));
         } else {
@@ -667,39 +670,81 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
     if watched && !running {
         ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
     }
-    if game.def(puzzle).kind == PuzzleKind::Gravity {
-        // Where the light gate is, and its last reading.
-        let gate = game.placed(puzzle);
-        if gate > 0 {
-            let built = game.instance(puzzle).built(gate).unwrap_or_default();
-            ui.label(format!("{}.", capitalise(&built)));
-        } else {
+}
+
+/// The station's built-in measuring instrument (stopwatch at the haul track, light gate at the drop
+/// tower): free, repeatable, and separate from the conceptual "Try it first" demonstration.
+fn measure_section(ui: &mut egui::Ui, game: &Game, sim: &mut Sim, puzzle: usize) {
+    let kind = game.def(puzzle).kind;
+    let measuring = sim.measuring() == Some(puzzle);
+    match kind {
+        PuzzleKind::Chase => {
+            ui.label(RichText::new("Measure · Stopwatch").strong());
             ui.horizontal(|ui| {
-                ui.label("Light gate:");
-                ui.label(RichText::new("not fitted").strong().color(WARN));
+                if ui.add_enabled(!sim.busy(), egui::Button::new(RichText::new("Time the crawler").strong())).clicked() {
+                    sim.request = Some(Request::Measure(puzzle));
+                }
+                if measuring {
+                    ui.label(RichText::new("Timing…").italics());
+                } else {
+                    ui.label(RichText::new("Free. Times the crawler between the two posts.").small().color(DIM));
+                }
             });
-            if let Some(how) = &unready {
-                ui.label(RichText::new(format!("    {how}")).small().color(DIM));
+            match game.save.notebook.entries.iter().rev().find(|e| e.label == CRAWLER_TIME) {
+                Some(time) => ui.label(RichText::new(format!("Post A to post B: {} = {}", time.name, time.quantity.display())).color(GOOD)),
+                None => ui.label(RichText::new("No reading yet.").small().color(DIM)),
+            };
+        }
+        PuzzleKind::Gravity => {
+            ui.label(RichText::new("Measure · Light gate").strong());
+            let gate = game.placed(puzzle);
+            let unready = game.instance(puzzle).measure_unready(gate);
+            if gate > 0 {
+                let built = game.instance(puzzle).built(gate).unwrap_or_default();
+                ui.label(RichText::new(format!("{}.", capitalise(&built))).color(GOOD));
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label("Light gate:");
+                    ui.label(RichText::new("not fitted").strong().color(WARN));
+                });
+                if let Some(how) = &unready {
+                    ui.label(RichText::new(format!("    {how}")).small().color(DIM));
+                }
+            }
+            ui.horizontal(|ui| {
+                let ready = !sim.busy() && unready.is_none();
+                if ui.add_enabled(ready, egui::Button::new(RichText::new("Drop and time").strong())).clicked() {
+                    sim.request = Some(Request::Measure(puzzle));
+                }
+                if measuring {
+                    ui.label(RichText::new("Dropping…").italics());
+                } else if unready.is_some() {
+                    ui.label(RichText::new("Clamp the light gate first.").small().color(WARN));
+                } else {
+                    ui.label(RichText::new("Free. Move the gate to another notch for another pair.").small().color(DIM));
+                }
+            });
+            let pairs: Vec<String> = game
+                .save
+                .notebook
+                .entries
+                .iter()
+                .filter(|e| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::TIME)
+                .map(|time| {
+                    let number = time.name.trim_start_matches('t');
+                    let drop = game.save.notebook.get(&format!("h{number}")).map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
+                    format!("{drop}{} = {}", time.name, time.quantity.display())
+                })
+                .collect();
+            if pairs.is_empty() {
+                ui.label(RichText::new("No readings yet.").small().color(DIM));
+            } else {
+                for line in pairs {
+                    ui.label(RichText::new(line).color(GOOD));
+                }
             }
         }
-        let entries = &game.save.notebook.entries;
-        let last = entries.iter().rev().find(|e| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::TIME);
-        match last {
-            Some(time) => {
-                let number = time.name.trim_start_matches('t');
-                let drop = game.save.notebook.get(&format!("h{number}"));
-                let drop = drop.map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
-                ui.label(format!("Light gate: {drop}{} = {}", time.name, time.quantity.display()))
-            }
-            None => ui.label(RichText::new("Light gate: no reading yet").color(DIM)),
-        };
-    }
-    if game.def(puzzle).kind == PuzzleKind::Chase {
-        // The last time the stopwatch took of the crawler between the posts.
-        match game.save.notebook.entries.iter().rev().find(|e| e.label == CRAWLER_TIME) {
-            Some(time) => ui.label(format!("Stopwatch, post A to post B: {} = {}", time.name, time.quantity.display())),
-            None => ui.label(RichText::new("Stopwatch: no reading yet. Each run of the experiment times the crawler between the posts.").color(DIM)),
-        };
+        _ => {}
     }
 }
 

@@ -458,19 +458,16 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     if f.station_open
         && let Some(kind) = unsolved
     {
-        // The drop tower's experiment waits for the light gate, so the gate comes before it.
-        if kind == PuzzleKind::Gravity && f.slot_empty && (f.demo_pending || f.gate_pending) {
-            return Some(LIGHT_GATE.into());
-        }
         if f.demo_pending
             && let Some(place) = guide(kind).demo
         {
             return Some(place.into());
         }
         match kind {
+            PuzzleKind::Gravity if f.slot_empty && f.gate_pending => return Some(LIGHT_GATE.into()),
             PuzzleKind::Channel if f.slot_empty => return Some(LEDGE_BLOCKS.into()),
             PuzzleKind::Rail if f.slot_empty => return Some(CART_BLOCK.into()),
-            // A gate on the tower and nothing timed with it yet: run the experiment.
+            // A gate on the tower and nothing timed with it yet: drop and time it.
             PuzzleKind::Gravity if f.gate_pending => return guide(kind).demo.map(Into::into),
             _ => {}
         }
@@ -679,17 +676,14 @@ fn direct(
                 if !why.is_empty() && companion.nudged.insert((p, Nudge::Why)) {
                     companion.say(why.clone());
                 }
-                // The drop tower's experiment times nothing without the light gate, so the gate comes first.
-                let gate_first = kind == PuzzleKind::Gravity && gate_pending(&game, p) && carry.gate_on_stand();
-                let nudge = if gate_first {
-                    Some((
-                        Nudge::Build,
-                        "The tower won't time anything without its light gate. See it on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one.",
-                    ))
-                } else if game.def(p).demo.is_some() && !now.watched[p] {
+                let nudge = if game.def(p).demo.is_some() && !now.watched[p] {
                     Some((Nudge::Experiment, "Try the experiment before any numbers. Make a guess first. It doesn't cost anything."))
                 } else {
                     match kind {
+                        PuzzleKind::Gravity if gate_pending(&game, p) && carry.gate_on_stand() => Some((
+                            Nudge::Build,
+                            "The tower won't time a fall without its light gate. See it on the stand? Clamp it to any notch on the tower, then use the light gate control to drop and time it. I'd try a short drop and a long one.",
+                        )),
                         PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => Some((
                             Nudge::Build,
                             "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart.",
@@ -758,7 +752,7 @@ fn direct(
     // A remark about where the player is, if nothing else is going on.
     let calm = Quiet {
         station_open: ui.at_console(),
-        running: testing.is_some() || sim.demo().is_some(),
+        running: testing.is_some() || sim.demo().is_some() || sim.measuring().is_some(),
         ruler: ruler.active || ruler.in_use(),
         conversation_open: ui.tutor_open,
         carrying: carry.holding.is_some(),
@@ -790,7 +784,7 @@ fn direct(
         next,
         next_station: next.map(|n| station_name(&game, n)),
         testing,
-        demo_running: sim.demo().map(|p| game.def(p).kind),
+        demo_running: sim.demo().or(sim.measuring()).map(|p| game.def(p).kind),
         demo_pending: focus_def.demo.is_some() && !game.save.demo_watched(&focus_def.id) && !game.solved(focus),
         ruler_active: ruler.active,
         ruler_first: ruler.first.as_ref().filter(|_| ruler.second.is_none()).map(|p| p.label.clone()),
@@ -1433,13 +1427,12 @@ mod tests {
     }
 
     #[test]
-    fn at_the_drop_tower_the_beam_shows_the_light_gate_first() {
+    fn at_the_drop_tower_the_beam_shows_the_experiment_then_the_light_gate() {
         let open = Facts { focus_kind: Some(PuzzleKind::Gravity), station_open: true, slot_empty: true, beckon: false, ..walking_to(1) };
-        // The experiment needs the gate: first the gate on its stand, then, once it is on the tower,
-        // the experiment.
+        // Before the conceptual experiment is watched, Lumen points at the drop tower first.
         let fresh = Facts { demo_pending: true, gate_pending: true, ..open.clone() };
-        assert_eq!(choose_gaze(&fresh).as_deref(), Some(LIGHT_GATE));
-        assert_eq!(choose_gaze(&Facts { slot_empty: false, ..fresh }).as_deref(), Some("Drop tower: release point"));
+        assert_eq!(choose_gaze(&fresh).as_deref(), Some("Drop tower: release point"));
+        // Once watched, if nothing has been timed yet and the gate is still on its stand, Lumen points to the gate.
         let pending = Facts { gate_pending: true, ..open.clone() };
         assert_eq!(choose_gaze(&pending).as_deref(), Some(LIGHT_GATE));
         let carrying = Facts { station_open: false, carrying: Some(Item::Gate), ..pending.clone() };

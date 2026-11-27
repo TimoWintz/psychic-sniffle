@@ -642,12 +642,12 @@ impl Instance {
         }
     }
 
-    /// Why the station will not run its experiment with what is placed in the world: the drop tower
-    /// times nothing until the light gate is clamped on it. Refused for free; nothing is noted.
-    pub fn experiment_unready(&self, placed: u32) -> Option<String> {
+    /// Why the station's built-in measuring instrument cannot run yet: the drop tower's light gate
+    /// must be clamped on a notch first. Refused for free; nothing is noted.
+    pub fn measure_unready(&self, placed: u32) -> Option<String> {
         match self.kind {
             PuzzleKind::Gravity if placed == 0 => Some(
-                "The experiment needs the light gate on the tower. Leave the console, pick the gate up from its stand (F), then point at a notch on the tower and press F."
+                "Clamp the light gate to the tower first. Leave the console, pick the gate up from its stand (F), then point at a notch on the tower and press F."
                     .into(),
             ),
             _ => None,
@@ -997,7 +997,7 @@ impl Instance {
                     answers: vec![answer("g", "Gravitational acceleration", Quantity::acceleration(l.g), "m/s^2")],
                     note: format!(
                         "The true value is {} m/s^2. The stopwatch reads to 0.01 s, so the player's result differs \
-                         slightly; anything within {}% passes. The experiment only runs with the light gate clamped \
+                         slightly; anything within {}% passes. The light gate times a drop once it is clamped \
                          at a notch, and the same relation holds for the drop h to the gate and the time t to it. Short drops are worth \
                          less: the rounding is a bigger share of a short time, so a reading of a second or more \
                          gives g to 1%, and fitting several notches shows that doubling the drop does not double \
@@ -1355,11 +1355,11 @@ mod tests {
         }
         assert_eq!(rail.built(1).as_deref(), Some("the block is on the cart"));
         let gravity = Instance::new(PuzzleKind::Gravity, &layout);
-        let reason = gravity.experiment_unready(0).expect("the tower times nothing without the gate");
-        assert!(reason.starts_with("The experiment needs the light gate"), "{reason}");
-        assert_eq!(gravity.experiment_unready(3), None);
+        let reason = gravity.measure_unready(0).expect("the tower times nothing without the gate");
+        assert!(reason.starts_with("Clamp the light gate"), "{reason}");
+        assert_eq!(gravity.measure_unready(3), None);
         for kind in [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Channel, PuzzleKind::Ridge] {
-            assert_eq!(Instance::new(kind, &layout).experiment_unready(0), None, "{kind:?}");
+            assert_eq!(Instance::new(kind, &layout).measure_unready(0), None, "{kind:?}");
         }
         assert_eq!(Instance::new(PuzzleKind::Gravity, &layout).built(7).as_deref(), Some("the light gate is clamped 7 m below the release point"));
         assert_eq!(Instance::new(PuzzleKind::Channel, &layout).built(1).as_deref(), Some("1 block in the jack frame"));

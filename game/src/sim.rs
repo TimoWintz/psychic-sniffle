@@ -24,9 +24,13 @@ use physics_core::units::Quantity;
 /// Something the interface asks the simulation to do.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Request {
-    /// Run a station's demonstration (free, repeatable). At the drop tower it also times the fall to
-    /// the light gate, which must be clamped on the tower first.
+    /// Run a station's conceptual "Try it first" demonstration (free, repeatable, writes handbook
+    /// pages; does not record instrument readings).
     Demo(usize),
+    /// Run a station's built-in measuring instrument (free, repeatable): timing the crawler past the
+    /// posts at the haul track, or dropping the test mass through the clamped light gate at the
+    /// drop tower.
+    Measure(usize),
     /// Commit the blueprint of a puzzle and run the test.
     Commit(usize),
 }
@@ -39,14 +43,20 @@ const PAIR_COLOURS: [[f32; 3]; 2] = [[0.35, 0.85, 1.0], [1.0, 0.4, 0.75]];
 const TRAIL: [f32; 3] = [1.0, 0.85, 0.2];
 
 enum Running {
-    /// The test mass falls from the drop tower; a flash marks it at each of `flashes`. The light
-    /// gate is clamped `gate` metres below the release, and the stopwatch stops there.
+    /// The conceptual strobe demonstration at the drop tower: a flash marks the test mass at each
+    /// of `flashes`.
     Strobe {
         puzzle: usize,
         t: f32,
         flashes: Vec<f64>,
         shown: usize,
         guess: Option<usize>,
+    },
+    /// Measuring gravity with the clamped light gate: drops the test mass from the drop tower,
+    /// trips the beam at `gate` metres below release, and notes the `(h, t)` pair.
+    GateDrop {
+        puzzle: usize,
+        t: f32,
         gate: u32,
     },
     /// Two demonstration bodies fly their exact paths from a launch site.
@@ -84,14 +94,20 @@ enum Running {
         duration: f32,
         verdict: Verdict,
     },
-    /// The haul cart and the crawler set off from their marks at steady speeds; a flash marks both at
-    /// each of `flashes`. Positions are along the track (the cart's front coupler, the crawler's rear).
+    /// The conceptual demonstration at the haul track: cart and crawler set off at steady speeds
+    /// with strobe afterimages.
     Pace {
         puzzle: usize,
         t: f32,
         flashes: Vec<f64>,
         shown: usize,
         guess: Option<usize>,
+        run: Run,
+    },
+    /// Timing the crawler solo past both timing posts with the station's stopwatch.
+    TimeCrawler {
+        puzzle: usize,
+        t: f32,
         run: Run,
     },
     /// The haul cart sent after the crawler, until it reaches it or the crawler reaches the buffer.
@@ -160,13 +176,13 @@ impl Sim {
         self.watch_left > 0.0
     }
 
-    /// The puzzle whose test is running, if one is (a demonstration is not a test).
+    /// The puzzle whose test is running, if one is (a demonstration or measurement is not a test).
     pub fn testing(&self) -> Option<usize> {
         match &self.running {
             Some(Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. } | Running::Chase { puzzle, .. }) => {
                 Some(*puzzle)
             }
-            Some(Running::Strobe { .. } | Running::Pair { .. } | Running::Pace { .. }) | None => None,
+            Some(Running::Strobe { .. } | Running::GateDrop { .. } | Running::Pair { .. } | Running::Pace { .. } | Running::TimeCrawler { .. }) | None => None,
         }
     }
 
@@ -175,10 +191,18 @@ impl Sim {
         self.running.as_ref().and(self.action)
     }
 
-    /// The puzzle whose demonstration is running, if one is.
+    /// The puzzle whose conceptual demonstration is running, if one is.
     pub fn demo(&self) -> Option<usize> {
         match &self.running {
             Some(Running::Strobe { puzzle, .. } | Running::Pair { puzzle, .. } | Running::Pace { puzzle, .. }) => Some(*puzzle),
+            _ => None,
+        }
+    }
+
+    /// The puzzle whose built-in measuring instrument is running, if one is.
+    pub fn measuring(&self) -> Option<usize> {
+        match &self.running {
+            Some(Running::GateDrop { puzzle, .. } | Running::TimeCrawler { puzzle, .. }) => Some(*puzzle),
             _ => None,
         }
     }
@@ -629,13 +653,15 @@ pub fn read_blueprint(game: &Game, ui: &Ui, puzzle: usize) -> Result<(Inputs, Ve
 /// A request the station has accepted: what the world is to show.
 enum Accepted {
     Demo { puzzle: usize, playback: DemoPlayback, guess: Option<usize> },
+    Measure { puzzle: usize, kind: PuzzleKind },
     Commit { puzzle: usize, outcome: Outcome },
 }
 
-/// Whether a request runs: an experiment needs its station awake and what it reads in place; a commit
-/// is judged, and may be refused for free. Nothing in the world changes for a request that does not
-/// run, so the last test's result stays where it can be looked at. A commit that runs has used its
-/// charge from this moment (see [`Game::begin_test`]).
+/// Whether a request runs: a demonstration needs its station awake; a measurement needs any
+/// required instrument in place (the light gate); a commit is judged, and may be refused for free.
+/// Nothing in the world changes for a request that does not run, so the last test's result stays
+/// where it can be looked at. A commit that runs has used its charge from this moment (see
+/// [`Game::begin_test`]).
 fn accept(game: &mut Game, ui: &mut Ui, request: Request) -> Option<Accepted> {
     match request {
         Request::Demo(puzzle) => {
@@ -643,14 +669,23 @@ fn accept(game: &mut Game, ui: &mut Ui, request: Request) -> Option<Accepted> {
                 return None;
             }
             let instance = game.instance(puzzle);
-            // The drop tower's experiment waits for the light gate (the panel says so).
-            if instance.experiment_unready(game.placed(puzzle)).is_some() {
-                return None;
-            }
             let playback = instance.demo_raised(game.placed(puzzle))?;
             // The guess counts only before the first run.
             let guess = if game.save.demo_watched(&game.def(puzzle).id) { None } else { ui.guess[puzzle] };
             Some(Accepted::Demo { puzzle, playback, guess })
+        }
+        Request::Measure(puzzle) => {
+            if !game.unlocked(puzzle) {
+                return None;
+            }
+            let kind = game.def(puzzle).kind;
+            if !matches!(kind, PuzzleKind::Chase | PuzzleKind::Gravity) {
+                return None;
+            }
+            if game.instance(puzzle).measure_unready(game.placed(puzzle)).is_some() {
+                return None;
+            }
+            Some(Accepted::Measure { puzzle, kind })
         }
         Request::Commit(puzzle) => {
             let (outcome, values) = judge_commit(game, ui, puzzle)?;
@@ -706,7 +741,7 @@ fn handle_requests(
                 sim.start_demo_trails(Vec::new());
                 sim.gate_tripped = false;
                 orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
-                Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess, gate: game.placed(puzzle) }
+                Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess }
             }
             DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } => {
                 for mark in &marks {
@@ -733,6 +768,35 @@ fn handle_requests(
                 let mesh = meshes.add(Cuboid::from_length(0.3));
                 start_pair(&mut commands, &mut sim, &assets, puzzle, mesh, [flat, steep], site, 0.3, guess)
             }
+        },
+        Accepted::Measure { puzzle, kind } => match kind {
+            PuzzleKind::Gravity => {
+                for mark in &marks {
+                    commands.entity(mark).despawn();
+                }
+                sim.strobe.clear();
+                sim.start_demo_trails(Vec::new());
+                sim.gate_tripped = false;
+                orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
+                Running::GateDrop { puzzle, t: 0.0, gate: game.placed(puzzle) }
+            }
+            PuzzleKind::Chase => {
+                for mark in &marks {
+                    commands.entity(mark).despawn();
+                }
+                sim.strobe.clear();
+                let l = &game.layout;
+                let (_, post_b) = l.posts();
+                let head_start = l.head_start as f32;
+                let crawler_speed = l.crawler_speed as f32;
+                let end = (post_b as f32 + physics_core::demo::PACE_OVERRUN as f32 - head_start) / crawler_speed;
+                let run = Run { cart_speed: 0.0, crawler_speed, head_start, end };
+                let (_, crawler_end) = run.at(run.end);
+                frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
+                sim.start_demo_trails(vec![(Vec::new(), PAIR_COLOURS[1])]);
+                Running::TimeCrawler { puzzle, t: 0.0, run }
+            }
+            _ => unreachable!("only Chase and Gravity accept Request::Measure"),
         },
         Accepted::Commit { puzzle, outcome } => {
             let instance = game.instance(puzzle);
@@ -955,13 +1019,10 @@ fn advance(
     let mut finished: Option<(usize, Verdict)> = None;
 
     match &mut running {
-        Running::Strobe { puzzle, t, flashes, shown, guess, gate } => {
+        Running::Strobe { puzzle, t, flashes, shown, guess } => {
             *t += dt;
             let height = game.layout.tower_h as f32;
             let fall_time = (2.0 * height / g).sqrt();
-            if *gate > 0 && fallen(g, *t, height) >= *gate as f32 {
-                sim.gate_tripped = true;
-            }
             // Each flash leaves an afterimage of the mass and a tick beside its path.
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
@@ -990,11 +1051,44 @@ fn advance(
                 }
             }
             if *t >= fall_time {
-                note_reading(&mut game, *gate);
                 let (puzzle, guess) = (*puzzle, *guess);
                 finish_demo(&mut game, &mut ui, puzzle, guess);
                 sim.running = None;
                 sim.watch_left = 2.5;
+                return;
+            }
+        }
+        Running::GateDrop { t, gate, .. } => {
+            *t += dt;
+            let height = game.layout.tower_h as f32;
+            let fall_time = (2.0 * height / g).sqrt();
+            if *gate > 0 && fallen(g, *t, height) >= *gate as f32 {
+                sim.gate_tripped = true;
+            }
+            for (prop, mut transform, mut visibility, material) in &mut props {
+                if *prop != Prop::TowerMass {
+                    continue;
+                }
+                transform.translation = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * fallen(g, *t, height);
+                sim.action = Some(transform.translation);
+                if *t >= fall_time {
+                    *visibility = Visibility::Hidden;
+                    hand_over(
+                        &mut commands,
+                        assets.mass.clone(),
+                        MASS_SIZE,
+                        transform.translation,
+                        Vec3::NEG_Y * g * fall_time,
+                        material.0.clone(),
+                        AfterSettling::Restore(Prop::TowerMass),
+                    );
+                }
+            }
+            if *t >= fall_time {
+                note_reading(&mut game, *gate);
+                game.persist();
+                sim.running = None;
+                sim.watch_left = 2.0;
                 return;
             }
         }
@@ -1020,11 +1114,31 @@ fn advance(
             }
             sim.action = Some(place_haul(&sites, run, *t, &mut props));
             if *t >= run.end {
-                note_crawler(&mut game);
                 let (puzzle, guess) = (*puzzle, *guess);
                 finish_demo(&mut game, &mut ui, puzzle, guess);
                 sim.running = None;
                 sim.watch_left = 2.5;
+                return;
+            }
+        }
+        Running::TimeCrawler { t, run, .. } => {
+            *t += dt;
+            let (_, crawler) = run.at(*t);
+            if let Some((trail, _)) = sim.trails.first_mut() {
+                trail.push(sites.haul_at(crawler as f64) + Vec3::Y * 0.05);
+            }
+            let pos = crawler_centre(&sites, crawler);
+            for (prop, mut transform, _, _) in props.iter_mut() {
+                if *prop == Prop::Crawler {
+                    transform.translation = pos;
+                }
+            }
+            sim.action = Some(pos);
+            if *t >= run.end {
+                note_crawler(&mut game);
+                game.persist();
+                sim.running = None;
+                sim.watch_left = 2.0;
                 return;
             }
         }
@@ -1544,12 +1658,13 @@ mod tests {
         assert!(ui.refusal.is_some());
         assert!(game.pending.is_none());
         assert_eq!(game.charges_left(0), 3);
-        // The drop tower's experiment waits for the light gate.
+        // At the drop tower, the conceptual demo runs without the light gate; measuring waits for it.
         let gravity = game.chapter.puzzles.iter().position(|p| p.kind == PuzzleKind::Gravity).unwrap();
         solve(&mut game, PuzzleKind::Chase);
-        assert!(accept(&mut game, &mut ui, Request::Demo(gravity)).is_none());
-        game.save.placed.insert(game.def(gravity).id.clone(), 5);
         assert!(matches!(accept(&mut game, &mut ui, Request::Demo(gravity)), Some(Accepted::Demo { .. })));
+        assert!(accept(&mut game, &mut ui, Request::Measure(gravity)).is_none());
+        game.save.placed.insert(game.def(gravity).id.clone(), 5);
+        assert!(matches!(accept(&mut game, &mut ui, Request::Measure(gravity)), Some(Accepted::Measure { .. })));
         let _ = std::fs::remove_file(&game.save_path);
     }
 

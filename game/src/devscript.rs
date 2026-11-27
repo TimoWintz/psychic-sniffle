@@ -73,6 +73,8 @@ enum Step {
     Guess(usize, usize),
     /// Press the experiment's run button.
     RunDemo(usize),
+    /// Press the station's built-in measuring instrument button (stopwatch or light gate).
+    RunMeasure(usize),
     /// Wait until a handbook page has been written; fail if it has not happened in time.
     ExpectFound {
         page: &'static str,
@@ -434,8 +436,12 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("06e3_page_relative_velocity"),
         closed_step(),
         Look { yaw: HAUL_YAW, pitch: 0.5, distance: 34.0 },
-        Wait(3.0),
-        // Head start, the marker, and the posts: d2, d3, d4. The stopwatch noted t1.
+        Wait(1.0),
+        // Time the crawler with the station's stopwatch, which notes t1.
+        RunMeasure(1),
+        WaitIdle,
+        Wait(2.0),
+        // Head start, the marker, and the posts: d2, d3, d4.
         RulerOn,
         RulerPin(HAUL_PINS),
         RulerPin(HAUL_PINS + 1),
@@ -492,29 +498,10 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
         Wait(1.0),
         Station(Some(2)),
-        // The experiment needs the light gate: Lumen points at it on its stand.
-        expect_gaze("Light gate on its stand"),
+        // First, the conceptual strobe experiment (no light gate required).
+        expect_gaze("Drop tower: release point"),
         Wait(1.2),
         Shot("07a_try_it_first"),
-        RulerPin(0),
-        RulerPin(1),
-        Wait(0.3),
-        Shot("07_ruler_on_tower"),
-        RulerNote(1),
-        RulerOff,
-        // The gate first, at a short drop.
-        Station(None),
-        carry_at(at_stand, Vec3::X, Expect::TakeGate),
-        expect_gaze("Notches on the drop tower"),
-        clamp(short),
-        Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
-        Wait(0.8),
-        Shot("08c_gate_clamped"),
-        GoToStation(2),
-        Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
-        Station(Some(2)),
-        // With the gate on, Lumen points at the experiment until it has been watched.
-        expect_gaze("Drop tower: release point"),
         Guess(2, 1),
         RunDemo(2),
         Wait(1.6),
@@ -542,13 +529,33 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.6),
         Shot("08h_quiz_done"),
         closed_step(),
-        // Then a long drop: the gate moves down the tower, and the experiment runs again.
+        // Now measure: ruler on the tower, then clamp the light gate at a short drop and a long one.
+        expect_gaze("Light gate on its stand"),
+        RulerPin(0),
+        RulerPin(1),
+        Wait(0.3),
+        Shot("07_ruler_on_tower"),
+        RulerNote(1),
+        RulerOff,
+        Station(None),
+        carry_at(at_stand, Vec3::X, Expect::TakeGate),
+        expect_gaze("Notches on the drop tower"),
+        clamp(short),
+        Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
+        Wait(0.8),
+        Shot("08c_gate_clamped"),
+        GoToStation(2),
+        Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
+        Station(Some(2)),
+        RunMeasure(2),
+        WaitIdle,
+        // Then a long drop: the gate moves down the tower, and the light gate times it again.
         Station(None),
         carry_at(at_tower, Vec3::NEG_Z, Expect::TakeOut(Slot::Tower)),
         clamp(long),
         GoToStation(2),
         Station(Some(2)),
-        RunDemo(2),
+        RunMeasure(2),
         Wait(1.4),
         Shot("08d_gate_tripped"),
         WaitIdle,
@@ -1220,6 +1227,7 @@ fn run(
             assert!(game.save.demo_watched(&game.def(puzzle).id) || ui.guess[puzzle].is_some(), "the experiment wants a guess before its first run");
             sim.request = Some(Request::Demo(puzzle));
         }
+        Step::RunMeasure(puzzle) => sim.request = Some(Request::Measure(puzzle)),
         Step::ExpectFound { page, within } => {
             if !game.save.found.contains(page) {
                 let left = within - time.delta_secs().min(1.0 / 20.0);

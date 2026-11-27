@@ -73,6 +73,11 @@ pub struct Swinging {
 }
 
 impl Beam {
+    /// Whether the beam is actively swinging before settling on its result.
+    pub fn animating(&self) -> bool {
+        self.swinging.is_some_and(|s| s.t < SETTLE)
+    }
+
     /// The load on the beam now: the one a release is playing against, or the one set next.
     pub fn load(&self, game: &Game) -> Load {
         self.swinging.map_or_else(|| current(&self.cases, held(game)), |s| s.load)
@@ -393,8 +398,16 @@ fn light_looks(game: Res<Game>, looks: Res<Looks>, mut materials: ResMut<Assets<
 }
 
 /// The console's panel.
-fn panel(mut contexts: EguiContexts, game: Res<Game>, mut ui: ResMut<Ui>, mut beam: ResMut<Beam>, mut carry: ResMut<Carry>) -> Result {
-    if !ui.beam_open {
+fn panel(
+    mut contexts: EguiContexts,
+    game: Res<Game>,
+    sim: Res<crate::sim::Sim>,
+    waking: Res<crate::waking::Waking>,
+    mut ui: ResMut<Ui>,
+    mut beam: ResMut<Beam>,
+    mut carry: ResMut<Carry>,
+) -> Result {
+    if !ui.beam_open || waking.playing() || sim.busy() || beam.animating() {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?.clone();

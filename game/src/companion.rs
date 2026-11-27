@@ -1123,6 +1123,8 @@ fn draw(
     mut companion: ResMut<Companion>,
     mut ui_state: ResMut<Ui>,
     ruler: Res<Ruler>,
+    sim: Res<Sim>,
+    beam: Res<crate::beam::Beam>,
     waking: Res<crate::waking::Waking>,
     orbit: Res<crate::player::OrbitCamera>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
@@ -1168,10 +1170,12 @@ fn draw(
     a.lift += (lift - a.lift) * (dt * 6.0).min(1.0);
     // The bars come in fast: the eye keeps up with them, so it is never under one.
     a.lift = a.lift.max(lift_for(bar, false));
+    let hud_hidden = waking.playing() || sim.busy() || beam.animating();
+    let show_chat = ui_state.tutor_open && !hud_hidden;
     // Forward to the bottom centre while there is something to say, back to the corner after.
-    let speaking = !ui_state.tutor_open && !companion.lines.is_empty();
+    let speaking = !show_chat && !companion.lines.is_empty();
     a.linger = if speaking { FORWARD_LINGER } else { (a.linger - dt).max(0.0) };
-    let toward = if speaking || (a.linger > 0.0 && !ui_state.tutor_open) { 1.0 } else { 0.0 };
+    let toward = if speaking || (a.linger > 0.0 && !show_chat) { 1.0 } else { 0.0 };
     a.forward += (toward - a.forward).clamp(-dt / FORWARD_SECONDS, dt / FORWARD_SECONDS);
     let forward = crate::voxel::smoothstep(0.0, 1.0, a.forward);
     let right_edge = if ui_state.at_console() { screen.right() - STATION_PANEL } else { screen.right() };
@@ -1249,19 +1253,20 @@ fn draw(
         }
     }
 
-    // The eye itself, which can be clicked to talk when the cursor is visible.
+    // The eye itself, which can be clicked to talk when the cursor is visible and HUD is shown.
+    let interactive = !orbit.free_look && !hud_hidden;
     let reach = EYE + 16.0;
     let area = egui::Area::new(egui::Id::new("lumen-eye")).order(egui::Order::Foreground).fixed_pos(centre - vec2(reach, reach)).show(&ctx, |ui| {
-        let sense = if orbit.free_look { egui::Sense::empty() } else { egui::Sense::click() };
+        let sense = if interactive { egui::Sense::click() } else { egui::Sense::empty() };
         let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, sense);
-        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, !orbit.free_look && response.hovered());
-        if !orbit.free_look { response.on_hover_text("Lumen. Click here or press T to talk to me.") } else { response }
+        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, interactive && response.hovered());
+        if interactive { response.on_hover_text("Lumen. Click here or press T to talk to me.") } else { response }
     });
-    if !orbit.free_look && area.inner.clicked() {
+    if interactive && area.inner.clicked() {
         ui_state.tutor_open = !ui_state.tutor_open;
     }
 
-    if ui_state.tutor_open {
+    if show_chat {
         // The conversation, in a panel that grows out of the eye where its lines appear. It moves
         // with the eye and cannot be dragged away from it.
         let anchor = bubble_anchor(rest);

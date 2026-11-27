@@ -124,6 +124,7 @@ pub fn draw(
     mut ruler: ResMut<Ruler>,
     carry: Res<Carry>,
     waking: Res<Waking>,
+    beam: Res<crate::beam::Beam>,
     orbit: Res<OrbitCamera>,
     mut handbook_was_open: Local<bool>,
 ) -> Result {
@@ -132,8 +133,9 @@ pub fn draw(
     let (game, ui_state, sim, ruler) = (&mut *game, &mut *ui_state, &mut *sim, &mut *ruler);
     ui_state.occupied.clear();
 
-    // While a wake plays behind letterbox bars, hide the HUD panels so nothing clips under the bars.
-    if waking.playing() {
+    // While a wake plays behind letterbox bars, or while a station run (experiment, measurement,
+    // committed test, or beam release) plays out, hide the HUD panels for a clear view.
+    if waking.playing() || sim.busy() || beam.animating() {
         return Ok(());
     }
 

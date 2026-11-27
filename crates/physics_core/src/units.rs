@@ -236,6 +236,11 @@ pub fn sig(value: f64, digits: usize) -> String {
     format!("{rounded:.decimals$}")
 }
 
+/// Whether `symbol` is a mathematical constant (such as `pi`) rather than a physical unit.
+pub fn is_constant(symbol: &str) -> bool {
+    matches!(symbol, "pi" | "π")
+}
+
 /// A unit or constant by symbol. The value is the factor to SI ("km" is 1000 with [`Dim::LENGTH`]).
 ///
 /// The gram is spelled `gram`, not `g`: `g` is reserved for gravitational acceleration in the notebook.

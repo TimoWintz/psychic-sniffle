@@ -41,7 +41,7 @@ pub struct Ruler {
     pub first: Option<Picked>,
     pub second: Option<Picked>,
     pub hover: Option<Picked>,
-    /// Viewport position (physical pixels) of `hover`, for a floating label beside the cursor.
+    /// Viewport position (logical viewport pixels) of `hover`, for a floating label beside the cursor.
     pub hover_screen: Option<Vec2>,
     /// Notebook names each component (`[horizontal, vertical, direct]`) of the finished reading was
     /// saved under, to confirm the save and guard against duplicate clicks.
@@ -149,10 +149,14 @@ pub fn pick_at(world: &VoxelWorld, sites: &Sites, camera: &Camera, camera_transf
     Some(Picked { point: face_centre, label: format!("{name} block, {face} face"), snapped: false })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn aim(
     mut ruler: ResMut<Ruler>,
     world: Res<VoxelWorld>,
     sites: Res<Sites>,
+    sim: Res<crate::sim::Sim>,
+    beam: Res<crate::beam::Beam>,
+    waking: Res<crate::waking::Waking>,
     wants: Res<EguiWantsInput>,
     buttons: Res<ButtonInput<MouseButton>>,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -163,7 +167,7 @@ fn aim(
     }
     ruler.hover = None;
     ruler.hover_screen = None;
-    if wants.wants_any_pointer_input() {
+    if wants.wants_any_pointer_input() || crate::ui::hud_hidden(&waking, &sim, &beam) {
         return;
     }
     let Some(cursor) = window.cursor_position() else { return };

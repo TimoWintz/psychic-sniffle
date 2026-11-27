@@ -232,10 +232,13 @@ pub fn near_console(site: &BeamSite, feet: Vec3) -> bool {
 }
 
 /// E at the console opens its panel and closes it again; walking away closes it.
+#[allow(clippy::too_many_arguments)]
 fn proximity(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     sites: Res<Sites>,
+    sim: Res<crate::sim::Sim>,
+    beam: Res<Beam>,
     waking: Res<crate::waking::Waking>,
     mut ui: ResMut<Ui>,
     player: Single<&Transform, With<Player>>,
@@ -247,7 +250,7 @@ fn proximity(
     if ui.beam_open && !near {
         ui.beam_open = false;
     }
-    if near && !wants.wants_any_keyboard_input() && !waking.playing() && keys.just_pressed(KeyCode::KeyE) {
+    if near && !wants.wants_any_keyboard_input() && !crate::ui::hud_hidden(&waking, &sim, &beam) && keys.just_pressed(KeyCode::KeyE) {
         ui.beam_open = !ui.beam_open;
     }
 }
@@ -398,7 +401,7 @@ fn light_looks(game: Res<Game>, looks: Res<Looks>, mut materials: ResMut<Assets<
 }
 
 /// The console's panel.
-fn panel(
+pub(crate) fn panel(
     mut contexts: EguiContexts,
     game: Res<Game>,
     sim: Res<crate::sim::Sim>,
@@ -407,7 +410,7 @@ fn panel(
     mut beam: ResMut<Beam>,
     mut carry: ResMut<Carry>,
 ) -> Result {
-    if !ui.beam_open || waking.playing() || sim.busy() || beam.animating() {
+    if !ui.beam_open || crate::ui::hud_hidden(&waking, &sim, &beam) {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?.clone();
@@ -452,14 +455,8 @@ fn panel(
             if carry.holding.is_some() {
                 panel.label(RichText::new("Put down what you're carrying first.").small().color(WARN));
             }
-            match (beam.swinging, beam.last) {
-                (Some(s), _) if s.t < SETTLE => {
-                    panel.label(RichText::new("Released…").italics());
-                }
-                (_, Some(swing)) => {
-                    panel.colored_label(if swing.holds() { GOOD } else { WARN }, swing.line());
-                }
-                _ => {}
+            if let Some(swing) = beam.last {
+                panel.colored_label(if swing.holds() { GOOD } else { WARN }, swing.line());
             }
             if woken(&game)
                 && let Some(page) = game.chapter.concepts.iter().find(|c| c.found == Found::Side(BEAM_ID.to_string()))

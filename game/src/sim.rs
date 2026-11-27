@@ -152,7 +152,9 @@ pub struct Sim {
     running: Option<Running>,
     /// Paths of the last test or demonstration with their colours, drawn until the next one.
     pub trails: Vec<(Vec<Vec3>, [f32; 3])>,
-    /// Which puzzle `trails` and `past_trails` belong to (cleared on demos or switching stations).
+    /// Whether `trails` currently holds a committed test trail (eligible to be archived as a ghost arc).
+    trails_from_test: bool,
+    /// Which puzzle `past_trails` (and `trails` when `trails_from_test`) belong to.
     trail_puzzle: Option<usize>,
     /// Faint ghost trails from earlier tests at the same station, oldest first.
     past_trails: Vec<Vec<Vec3>>,
@@ -207,30 +209,53 @@ impl Sim {
         }
     }
 
+    fn archive_current_test_trails(&mut self) {
+        if !self.trails_from_test {
+            return;
+        }
+        for (trail, _) in self.trails.drain(..) {
+            if trail.len() >= 2 {
+                self.past_trails.push(trail);
+            }
+        }
+        if self.past_trails.len() > MAX_PAST_TRAILS {
+            let drop = self.past_trails.len() - MAX_PAST_TRAILS;
+            self.past_trails.drain(..drop);
+        }
+        self.trails_from_test = false;
+    }
+
     /// Begin a new test trail at `puzzle`, archiving any previous test trail at the same station as
     /// a faint ghost arc so successive attempts can be compared in 3D.
     fn start_test_trail(&mut self, puzzle: usize, colour: [f32; 3]) {
         if self.trail_puzzle == Some(puzzle) {
-            for (trail, _) in self.trails.drain(..) {
-                if trail.len() >= 2 {
-                    self.past_trails.push(trail);
-                }
-            }
-            if self.past_trails.len() > MAX_PAST_TRAILS {
-                let drop = self.past_trails.len() - MAX_PAST_TRAILS;
-                self.past_trails.drain(..drop);
-            }
+            self.archive_current_test_trails();
         } else {
             self.past_trails.clear();
             self.trail_puzzle = Some(puzzle);
         }
         self.trails = vec![(Vec::new(), colour)];
+        self.trails_from_test = true;
+    }
+
+    /// Begin measuring-instrument trails at `puzzle`, preserving any archived test ghost arcs from
+    /// the same station without archiving the measurement trail itself.
+    fn start_measure_trails(&mut self, puzzle: usize, trails: Vec<(Vec<Vec3>, [f32; 3])>) {
+        if self.trail_puzzle == Some(puzzle) {
+            self.archive_current_test_trails();
+        } else {
+            self.past_trails.clear();
+            self.trail_puzzle = Some(puzzle);
+        }
+        self.trails = trails;
+        self.trails_from_test = false;
     }
 
     /// Begin demonstration trails, clearing any archived test ghost arcs.
     fn start_demo_trails(&mut self, trails: Vec<(Vec<Vec3>, [f32; 3])>) {
         self.past_trails.clear();
         self.trail_puzzle = None;
+        self.trails_from_test = false;
         self.trails = trails;
     }
 }
@@ -775,7 +800,7 @@ fn handle_requests(
                     commands.entity(mark).despawn();
                 }
                 sim.strobe.clear();
-                sim.start_demo_trails(Vec::new());
+                sim.start_measure_trails(puzzle, Vec::new());
                 sim.gate_tripped = false;
                 orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
                 Running::GateDrop { puzzle, t: 0.0, gate: game.placed(puzzle) }
@@ -793,7 +818,7 @@ fn handle_requests(
                 let run = Run { cart_speed: 0.0, crawler_speed, head_start, end };
                 let (_, crawler_end) = run.at(run.end);
                 frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
-                sim.start_demo_trails(vec![(Vec::new(), PAIR_COLOURS[1])]);
+                sim.start_measure_trails(puzzle, vec![(Vec::new(), PAIR_COLOURS[1])]);
                 Running::TimeCrawler { puzzle, t: 0.0, run }
             }
             _ => unreachable!("only Chase and Gravity accept Request::Measure"),
@@ -1023,6 +1048,10 @@ fn advance(
             *t += dt;
             let height = game.layout.tower_h as f32;
             let fall_time = (2.0 * height / g).sqrt();
+            let gate = game.placed(*puzzle);
+            if gate > 0 && fallen(g, *t, height) >= gate as f32 {
+                sim.gate_tripped = true;
+            }
             // Each flash leaves an afterimage of the mass and a tick beside its path.
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
@@ -1526,6 +1555,37 @@ fn recharge(time: Res<Time>, mut game: ResMut<Game>, mut ui: ResMut<Ui>, sim: Re
     }
 }
 
+/// Split a polyline into world-space dashed segments of length `dash` separated by `gap` metres, so
+/// ghost trails look consistent at any frame rate.
+fn dashed_segments(trail: &[Vec3], dash: f32, gap: f32) -> Vec<(Vec3, Vec3)> {
+    let mut out = Vec::new();
+    let period = dash + gap;
+    if trail.len() < 2 || dash <= 0.0 || period <= 0.0 {
+        return out;
+    }
+    let mut dist = 0.0;
+    for pair in trail.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let seg_len = a.distance(b);
+        if seg_len < 1e-5 {
+            continue;
+        }
+        let mut s = 0.0;
+        while s < seg_len {
+            let phase = (dist + s).rem_euclid(period);
+            if phase < dash {
+                let take = (dash - phase).min(seg_len - s);
+                out.push((a.lerp(b, s / seg_len), a.lerp(b, (s + take) / seg_len)));
+                s += take;
+            } else {
+                s += (period - phase).min(seg_len - s);
+            }
+        }
+        dist += seg_len;
+    }
+    out
+}
+
 fn draw_trail(sim: Res<Sim>, sites: Res<Sites>, mut gizmos: Gizmos) {
     // The light gate's beam across the fall line, bright once the mass has passed it.
     let gate = &sites.pins[sites.gate_pin];
@@ -1547,8 +1607,8 @@ fn draw_trail(sim: Res<Sim>, sites: Res<Sites>, mut gizmos: Gizmos) {
         let recency = (idx + 1) as f32 / past_count as f32;
         let alpha = 0.22 + 0.28 * recency;
         let colour = Color::srgba(0.78, 0.72, 0.58, alpha);
-        for pair in trail.chunks_exact(2) {
-            gizmos.line(pair[0], pair[1], colour);
+        for (a, b) in dashed_segments(trail, 0.45, 0.30) {
+            gizmos.line(a, b, colour);
         }
     }
     for (trail, c) in &sim.trails {
@@ -1708,11 +1768,26 @@ mod tests {
         // Switching stations clears the archived trails.
         sim.start_test_trail(4, TRAIL);
         assert!(sim.past_trails.is_empty());
-        // Running a demo also clears them.
+        // Running a measurement at the same station preserves prior test trails and does not
+        // archive the measurement's own trail.
         sim.trails[0].0.extend([Vec3::ZERO, Vec3::X]);
-        sim.start_test_trail(4, TRAIL);
+        sim.start_measure_trails(4, vec![(vec![Vec3::Y, Vec3::Y + Vec3::X], PAIR_COLOURS[1])]);
         assert_eq!(sim.past_trails.len(), 1);
+        sim.start_test_trail(4, TRAIL);
+        assert_eq!(sim.past_trails.len(), 1, "measurement trail is not archived as a test ghost");
+        // Running a demo clears archived test trails.
         sim.start_demo_trails(Vec::new());
         assert!(sim.past_trails.is_empty());
+    }
+
+    #[test]
+    fn dashed_segments_use_world_space_length_independent_of_sample_density() {
+        let coarse = vec![Vec3::ZERO, Vec3::X * 3.0];
+        let dense: Vec<Vec3> = (0..=60).map(|i| Vec3::X * (3.0 * i as f32 / 60.0)).collect();
+        let total_len = |segs: &[(Vec3, Vec3)]| segs.iter().map(|(a, b)| a.distance(*b)).sum::<f32>();
+        let l_coarse = total_len(&dashed_segments(&coarse, 0.45, 0.30));
+        let l_dense = total_len(&dashed_segments(&dense, 0.45, 0.30));
+        assert!((l_coarse - l_dense).abs() < 1e-3, "coarse={l_coarse}, dense={l_dense}");
+        assert!((l_coarse - 1.8).abs() < 1e-3, "4 dashes of 0.45 m across 3.0 m = 1.8 m, got {l_coarse}");
     }
 }

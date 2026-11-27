@@ -4,7 +4,7 @@
 //! binds tighter than `*` and `/`, so `3 m / 2 s` reads as `(3 m) / (2 s)`. Other juxtaposition
 //! (`1/2 g t^2` with notebook variables) multiplies left to right at the same precedence as `*`.
 
-use crate::units::{Dim, Quantity, lookup_unit};
+use crate::units::{Dim, Quantity, is_constant, lookup_unit};
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq)]
@@ -255,9 +255,9 @@ impl Parser<'_> {
         }
     }
 
-    /// Whether `name` resolves to a unit or constant rather than a notebook variable or function.
+    /// Whether `name` resolves to a unit rather than a constant (`pi`), notebook variable, or function.
     fn is_unit(&self, name: &str) -> bool {
-        self.env.var(name).is_none() && !is_function(name) && lookup_unit(name).is_some()
+        self.env.var(name).is_none() && !is_function(name) && !is_constant(name) && lookup_unit(name).is_some()
     }
 
     /// A value together with any units written right after it (`1.5 s`, `5 kg m`, `2.5 s^2`),
@@ -428,6 +428,10 @@ mod tests {
     fn functions_and_angles() {
         assert!(close(eval("sin(30 deg)").unwrap().value, 0.5));
         assert!(close(eval("sin(30°)").unwrap().value, 0.5));
+        assert!(close(eval("1/2 pi").unwrap().value, std::f64::consts::FRAC_PI_2));
+        assert!(close(eval("sin(1/2 pi)").unwrap().value, 1.0));
+        assert!(close(eval("3/4 pi").unwrap().value, 0.75 * std::f64::consts::PI));
+        assert!(close(eval("2 pi").unwrap().value, std::f64::consts::TAU));
         assert!(close(eval("atan(1)/deg").unwrap().value, 45.0));
         let t = eval("sqrt(2 * 20 m / (10 m/s^2))").unwrap();
         assert_eq!(t.dim, Dim::TIME);

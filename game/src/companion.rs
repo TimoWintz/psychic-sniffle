@@ -63,7 +63,7 @@ impl Landmarks {
         places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
         places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
-        places.push(("The skiff on the slipway".into(), sites.slipway + Vec3::Y * 1.0));
+        places.push(("The boat on the slipway".into(), sites.slipway + Vec3::Y * 1.0));
         places.push((MAIN_HULL.into(), crate::intro::Mainland::wreck() + Vec3::Y * 6.0));
         places.push((SHORE.into(), sites.shore + Vec3::Y * 1.0));
         // The way: its gates and the ramp, and the light that runs along it while a machine wakes.
@@ -481,7 +481,7 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     }
     match &f.next_station {
         Some(station) => Some(station.clone()),
-        None if f.next.is_none() => Some("The skiff on the slipway".into()),
+        None if f.next.is_none() => Some("The boat on the slipway".into()),
         None => None,
     }
 }
@@ -516,7 +516,7 @@ impl Plugin for CompanionPlugin {
             .init_resource::<Companion>()
             // The greeting comes with the first frame of the game, after Start.
             .add_systems(Update, (follow_sites, advance_speech.run_if(in_state(Mode::Playing)), direct.run_if(in_state(Mode::Playing))).chain())
-            .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
+            .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).after(crate::beam::panel).run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -1170,7 +1170,7 @@ fn draw(
     a.lift += (lift - a.lift) * (dt * 6.0).min(1.0);
     // The bars come in fast: the eye keeps up with them, so it is never under one.
     a.lift = a.lift.max(lift_for(bar, false));
-    let hud_hidden = waking.playing() || sim.busy() || beam.animating();
+    let hud_hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
     let show_chat = ui_state.tutor_open && !hud_hidden;
     // Forward to the bottom centre while there is something to say, back to the corner after.
     let speaking = !show_chat && !companion.lines.is_empty();
@@ -1295,11 +1295,14 @@ fn draw(
             painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
         }
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
-        let hint_text = match (orbit.free_look, more) {
-            (true, true) => "Press Enter for next",
-            (true, false) => "Press Enter to dismiss",
-            (false, true) => "Click or press Enter for next",
-            (false, false) => "Click or press Enter to dismiss",
+        let enter_advances = !ui_state.at_console() && !waking.playing();
+        let hint_text = match (orbit.free_look, enter_advances, more) {
+            (true, _, true) => "Press Enter for next",
+            (true, _, false) => "Press Enter to dismiss",
+            (false, true, true) => "Click or press Enter for next",
+            (false, true, false) => "Click or press Enter to dismiss",
+            (false, false, true) => "Click for next",
+            (false, false, false) => "Click to dismiss",
         };
         let hint_galley = painter.layout_no_wrap(hint_text.into(), egui::FontId::proportional(11.0), tint([160.0, 180.0, 200.0], alpha * 0.85));
         let width = galley.size().x.max(hint_galley.size().x);
@@ -1570,7 +1573,7 @@ mod tests {
     fn walking_looks_at_the_next_station_and_the_end_at_the_skiff() {
         assert_eq!(choose_gaze(&walking_to(2)).as_deref(), Some("Station 2"));
         let done = Facts { next: None, next_station: None, beckon: true, ..Facts::default() };
-        assert_eq!(choose_gaze(&done).as_deref(), Some("The skiff on the slipway"));
+        assert_eq!(choose_gaze(&done).as_deref(), Some("The boat on the slipway"));
     }
 
     #[test]

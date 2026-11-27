@@ -107,11 +107,14 @@ pub fn machine_name(kind: PuzzleKind) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn proximity(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     sites: Res<Sites>,
     game: Res<Game>,
+    sim: Res<Sim>,
+    beam: Res<crate::beam::Beam>,
     waking: Res<Waking>,
     mut ui: ResMut<Ui>,
     player: Single<&Transform, With<Player>>,
@@ -122,8 +125,8 @@ fn proximity(
     if ui.station.is_some() && ui.station != ui.near_station {
         ui.station = None;
     }
-    // While the way wakes, E skips the wake (see `waking`) rather than opening a station.
-    if wants.wants_any_keyboard_input() || waking.playing() {
+    // While the HUD is hidden (wake, station run, or beam swing), E cannot open or close a station.
+    if wants.wants_any_keyboard_input() || crate::ui::hud_hidden(&waking, &sim, &beam) {
         return;
     }
     if keys.just_pressed(KeyCode::KeyE)

@@ -61,12 +61,30 @@ const HANDBOOK_WIDTH: f32 = 540.0;
 const HANDBOOK_LEFT: f32 = 10.0 + DOCK_WIDTH + 2.0 * (6.0 + 1.0) + 10.0;
 const HANDBOOK_BOTTOM_RESERVE: f32 = 80.0;
 
-fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, waking: Res<Waking>, mut ui: ResMut<Ui>, mut ruler: ResMut<Ruler>) {
-    if wants.wants_any_keyboard_input() {
+/// Whether HUD panels and their hotkeys are suppressed for an unobstructed view of a wake, station
+/// run, or beam swing.
+pub fn hud_hidden(waking: &Waking, sim: &Sim, beam: &crate::beam::Beam) -> bool {
+    waking.playing() || sim.busy() || beam.animating()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn hotkeys(
+    keys: Res<ButtonInput<KeyCode>>,
+    wants: Res<EguiWantsInput>,
+    waking: Res<Waking>,
+    sim: Res<Sim>,
+    beam: Res<crate::beam::Beam>,
+    mut ui: ResMut<Ui>,
+    mut ruler: ResMut<Ruler>,
+) {
+    if wants.wants_any_keyboard_input() || hud_hidden(&waking, &sim, &beam) {
         return;
     }
     if keys.just_pressed(KeyCode::KeyN) {
         ui.notebook_open = !ui.notebook_open;
+        if !ui.notebook_open {
+            clear_rename(&mut ui);
+        }
     }
     if keys.just_pressed(KeyCode::KeyH) {
         ui.handbook_open = !ui.handbook_open;
@@ -85,8 +103,8 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, waking: 
     if keys.just_pressed(KeyCode::F1) {
         ui.controls_open = !ui.controls_open;
     }
-    if keys.just_pressed(KeyCode::Escape) && !waking.playing() {
-        // One thing at a time: the ruler, the station, or any open panel.
+    if keys.just_pressed(KeyCode::Escape) {
+        // One thing at a time: the ruler, the station, open panels, or cursor unlock while exploring.
         if ruler.in_use() {
             ruler.put_away();
         } else if ui.at_console() {
@@ -97,8 +115,17 @@ fn hotkeys(keys: Res<ButtonInput<KeyCode>>, wants: Res<EguiWantsInput>, waking: 
             ui.handbook_open = false;
             ui.tutor_open = false;
             ui.controls_open = false;
+            clear_rename(&mut ui);
+        } else {
+            ui.cursor_free = !ui.cursor_free;
         }
     }
+}
+
+fn clear_rename(ui: &mut Ui) {
+    ui.renaming_entry = None;
+    ui.focus_rename = false;
+    ui.rename_submit_error = None;
 }
 
 /// Record a HUD panel's screen rectangle so Lumen's world-space labels stay clear of it.
@@ -135,8 +162,12 @@ pub fn draw(
 
     // While a wake plays behind letterbox bars, or while a station run (experiment, measurement,
     // committed test, or beam release) plays out, hide the HUD panels for a clear view.
-    if waking.playing() || sim.busy() || beam.animating() {
+    if hud_hidden(&waking, sim, &beam) {
         return Ok(());
+    }
+
+    if !ui_state.notebook_open && ui_state.renaming_entry.is_some() {
+        clear_rename(ui_state);
     }
 
     dock(&ctx, game, ui_state, ruler);
@@ -171,7 +202,7 @@ pub fn draw(
 }
 
 /// The column at the top left: where the chapter stands, then the notebook. Its place is fixed.
-fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) {
+fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &mut Ruler) {
     let screen = ctx.content_rect();
     let reserve = DOCK_BOTTOM_RESERVE + if ruler.in_use() { DOCK_RULER_RESERVE } else { 0.0 } + if ui_state.tutor_open { DOCK_LUMEN_RESERVE } else { 0.0 };
     let floor = screen.bottom() - reserve;
@@ -208,12 +239,15 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
             ui.set_width(if ui_state.notebook_open { DOCK_WIDTH } else { DOCK_HEADER_WIDTH });
             if dock_header(ui, "Notebook and calculator", "N", ui_state.notebook_open, None) {
                 ui_state.notebook_open = !ui_state.notebook_open;
+                if !ui_state.notebook_open {
+                    clear_rename(ui_state);
+                }
             }
             if ui_state.notebook_open {
                 ui.separator();
                 let room = (floor - ui.cursor().top() - 20.0).max(70.0);
                 // An area's contents are capped at its size the frame before; give the body its room.
-                ui.allocate_ui(egui::vec2(ui.available_width(), room), |ui| notebook_body(ui, game, ui_state, room));
+                ui.allocate_ui(egui::vec2(ui.available_width(), room), |ui| notebook_body(ui, game, ui_state, ruler, room));
             }
         });
     });
@@ -296,6 +330,7 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, r
                     game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| crate::stations::machine_name(p.kind)).collect();
                 Some(format!("This console is dark. Finish at {} first.", needs.join(" and ")))
             }
+            _ if ui_state.cursor_free => Some("Cursor unlocked. Click the world or press Esc to look around.".to_string()),
             _ => None,
         }
     };
@@ -351,6 +386,7 @@ fn controls_help(ctx: &egui::Context, ui_state: &mut Ui) {
                     ("H", "Handbook"),
                     ("T", "Lumen"),
                     ("Enter", "Next Lumen line"),
+                    ("Esc", "Close panel or unlock cursor"),
                     ("F1", "Show or hide controls"),
                 ] {
                     ui.label(RichText::new(keys).strong().monospace());
@@ -545,9 +581,6 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if let Some(refusal) = &ui_state.refusal {
                     ui.colored_label(WARN, format!("Not launched, and no charge was used. {refusal}"));
                 }
-                if sim.testing() == Some(puzzle) {
-                    ui.label(RichText::new("Test running…").italics());
-                }
 
                 if let Some(outcome) = &ui_state.results[puzzle] {
                     ui.separator();
@@ -642,9 +675,7 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
         if ui.add_enabled(ready, egui::Button::new(label)).clicked() {
             sim.request = Some(Request::Demo(puzzle));
         }
-        if running {
-            ui.label(RichText::new("Watch…").italics());
-        } else if !watched && ui_state.guess[puzzle].is_none() {
+        if !watched && ui_state.guess[puzzle].is_none() {
             ui.label(RichText::new("Make a guess first. It costs nothing.").small().color(DIM));
         } else {
             ui.label(RichText::new("It's free, so run it as often as you like.").small().color(DIM));
@@ -655,11 +686,33 @@ fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &m
     }
 }
 
+/// Format light-gate `(drop, time)` pairs from the notebook, matching each time entry with the
+/// adjacent drop entry written alongside it so renaming either entry preserves the pair.
+fn light_gate_pairs(entries: &[physics_core::notebook::Entry]) -> Vec<String> {
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::TIME)
+        .map(|(i, time)| {
+            let adjacent = i
+                .checked_sub(1)
+                .and_then(|prev| entries.get(prev))
+                .filter(|e| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::LENGTH);
+            let by_name = || {
+                let number = time.name.trim_start_matches('t');
+                let want = format!("h{number}");
+                entries.iter().find(|e| e.name == want && e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::LENGTH)
+            };
+            let drop = adjacent.or_else(by_name).map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
+            format!("{drop}{} = {}", time.name, time.quantity.display())
+        })
+        .collect()
+}
+
 /// The station's built-in measuring instrument (stopwatch at the haul track, light gate at the drop
 /// tower): free, repeatable, and separate from the conceptual "Try it first" demonstration.
 fn measure_section(ui: &mut egui::Ui, game: &Game, sim: &mut Sim, puzzle: usize) {
     let kind = game.def(puzzle).kind;
-    let measuring = sim.measuring() == Some(puzzle);
     match kind {
         PuzzleKind::Chase => {
             ui.label(RichText::new("Measure · Stopwatch").strong());
@@ -667,11 +720,7 @@ fn measure_section(ui: &mut egui::Ui, game: &Game, sim: &mut Sim, puzzle: usize)
                 if ui.add_enabled(!sim.busy(), egui::Button::new(RichText::new("Time the crawler").strong())).clicked() {
                     sim.request = Some(Request::Measure(puzzle));
                 }
-                if measuring {
-                    ui.label(RichText::new("Timing…").italics());
-                } else {
-                    ui.label(RichText::new("Free. Times the crawler between the two posts.").small().color(DIM));
-                }
+                ui.label(RichText::new("Free. Times the crawler between the two posts.").small().color(DIM));
             });
             match game.save.notebook.entries.iter().rev().find(|e| e.label == CRAWLER_TIME) {
                 Some(time) => ui.label(RichText::new(format!("Post A to post B: {} = {}", time.name, time.quantity.display())).color(GOOD)),
@@ -699,26 +748,13 @@ fn measure_section(ui: &mut egui::Ui, game: &Game, sim: &mut Sim, puzzle: usize)
                 if ui.add_enabled(ready, egui::Button::new(RichText::new("Drop and time").strong())).clicked() {
                     sim.request = Some(Request::Measure(puzzle));
                 }
-                if measuring {
-                    ui.label(RichText::new("Dropping…").italics());
-                } else if unready.is_some() {
+                if unready.is_some() {
                     ui.label(RichText::new("Clamp the light gate first.").small().color(WARN));
                 } else {
                     ui.label(RichText::new("Free. Move the gate to another notch for another pair.").small().color(DIM));
                 }
             });
-            let pairs: Vec<String> = game
-                .save
-                .notebook
-                .entries
-                .iter()
-                .filter(|e| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::TIME)
-                .map(|time| {
-                    let number = time.name.trim_start_matches('t');
-                    let drop = game.save.notebook.get(&format!("h{number}")).map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
-                    format!("{drop}{} = {}", time.name, time.quantity.display())
-                })
-                .collect();
+            let pairs = light_gate_pairs(&game.save.notebook.entries);
             if pairs.is_empty() {
                 ui.label(RichText::new("No readings yet.").small().color(DIM));
             } else {
@@ -980,7 +1016,7 @@ fn insert_into_target(ui_state: &mut Ui, name: &str) {
     target.push_str(name);
 }
 
-fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f32) {
+fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, ruler: &mut Ruler, room: f32) {
     if game.save.notebook.entries.is_empty() {
         ui.label(RichText::new("Nothing measured yet. Readings from the ruler and the stopwatch will show up here.").color(DIM));
     }
@@ -999,6 +1035,12 @@ fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f3
                 if editing {
                     let (orig, draft) = ui_state.renaming_entry.as_mut().expect("checked above");
                     let edit = ui.add(egui::TextEdit::singleline(draft).desired_width(64.0));
+                    if std::mem::take(&mut ui_state.focus_rename) {
+                        edit.request_focus();
+                    }
+                    if edit.changed() {
+                        ui_state.rename_submit_error = None;
+                    }
                     let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let esc = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
                     ui.label(entry.quantity.display());
@@ -1043,27 +1085,44 @@ fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f3
             }
         });
     });
-    if let Some(err) = rename_error {
+    if let Some(err) = rename_error.or_else(|| ui_state.rename_submit_error.clone()) {
         ui.colored_label(WARN, err);
     }
     if cancel_rename {
-        ui_state.renaming_entry = None;
+        clear_rename(ui_state);
     } else if let Some((orig, new_name)) = commit_rename {
-        if new_name == orig {
-            ui_state.renaming_entry = None;
-        } else if valid_name(&new_name) && game.save.notebook.rename(&orig, &new_name) {
+        if new_name.is_empty() {
+            ui_state.rename_submit_error = Some("Enter a notebook name, or cancel.".into());
+            ui_state.focus_rename = true;
+        } else if new_name == orig {
+            clear_rename(ui_state);
+        } else if !valid_name(&new_name) {
+            ui_state.rename_submit_error =
+                Some(format!("'{new_name}' cannot be a notebook name: use letters and digits, starting with a letter, and not a unit."));
+            ui_state.focus_rename = true;
+        } else if game.save.notebook.get(&new_name).is_some() {
+            ui_state.rename_submit_error = Some(format!("'{new_name}' is already in the notebook."));
+            ui_state.focus_rename = true;
+        } else if game.save.notebook.rename(&orig, &new_name) {
+            for slot in &mut ruler.noted {
+                if slot.as_deref() == Some(orig.as_str()) {
+                    *slot = Some(new_name.clone());
+                }
+            }
             game.persist();
-            ui_state.renaming_entry = None;
+            clear_rename(ui_state);
         }
     } else if let Some(name) = start_rename {
         ui_state.renaming_entry = Some((name.clone(), name));
+        ui_state.focus_rename = true;
+        ui_state.rename_submit_error = None;
     }
     if let Some(name) = insert {
         insert_into_target(ui_state, &name);
     }
     if let Some(name) = remove {
         if ui_state.renaming_entry.as_ref().is_some_and(|(orig, _)| orig == &name) {
-            ui_state.renaming_entry = None;
+            clear_rename(ui_state);
         }
         game.save.notebook.remove(&name);
         game.persist();
@@ -1071,36 +1130,51 @@ fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, room: f3
 
     ui.separator();
     ui.label(RichText::new("Calculator").strong());
-    let calc_field = ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2").desired_width(360.0));
+    let calc_id = ui.make_persistent_id("notebook-calculator");
+    if ui.ctx().memory(|m| m.has_focus(calc_id)) && !ui_state.calc_history.is_empty() {
+        let mut recalled = false;
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp)) {
+            let next = match ui_state.calc_history_idx {
+                None => {
+                    ui_state.calc_draft_saved = ui_state.calculator.clone();
+                    ui_state.calc_history.len() - 1
+                }
+                Some(idx) => idx.saturating_sub(1),
+            };
+            ui_state.calc_history_idx = Some(next);
+            ui_state.calculator = ui_state.calc_history[next].clone();
+            recalled = true;
+        } else if ui_state.calc_history_idx.is_some()
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown))
+            && let Some(idx) = ui_state.calc_history_idx
+        {
+            if idx + 1 < ui_state.calc_history.len() {
+                let next = idx + 1;
+                ui_state.calc_history_idx = Some(next);
+                ui_state.calculator = ui_state.calc_history[next].clone();
+            } else {
+                ui_state.calc_history_idx = None;
+                ui_state.calculator = std::mem::take(&mut ui_state.calc_draft_saved);
+            }
+            recalled = true;
+        }
+        if recalled && let Some(mut state) = egui::text_edit::TextEditState::load(ui.ctx(), calc_id) {
+            let end = egui::text::CCursor::new(ui_state.calculator.chars().count());
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+            state.store(ui.ctx(), calc_id);
+        }
+    }
+    let calc_field = ui.add(
+        egui::TextEdit::singleline(&mut ui_state.calculator)
+            .id(calc_id)
+            .hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2")
+            .desired_width(360.0),
+    );
     if calc_field.changed() {
         ui_state.calc_history_idx = None;
     }
     if calc_field.has_focus() {
         ui_state.last_input = Some(InputTarget::Calculator);
-        if !ui_state.calc_history.is_empty() {
-            if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                let next = match ui_state.calc_history_idx {
-                    None => {
-                        ui_state.calc_draft_saved = ui_state.calculator.clone();
-                        ui_state.calc_history.len() - 1
-                    }
-                    Some(idx) => idx.saturating_sub(1),
-                };
-                ui_state.calc_history_idx = Some(next);
-                ui_state.calculator = ui_state.calc_history[next].clone();
-            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown))
-                && let Some(idx) = ui_state.calc_history_idx
-            {
-                if idx + 1 < ui_state.calc_history.len() {
-                    let next = idx + 1;
-                    ui_state.calc_history_idx = Some(next);
-                    ui_state.calculator = ui_state.calc_history[next].clone();
-                } else {
-                    ui_state.calc_history_idx = None;
-                    ui_state.calculator = std::mem::take(&mut ui_state.calc_draft_saved);
-                }
-            }
-        }
     }
     let submitted = calc_field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let text = ui_state.calculator.trim().to_string();
@@ -1277,5 +1351,17 @@ mod tests {
         }
         assert_eq!(history.len(), MAX_CALC_HISTORY);
         assert_eq!(history.last().unwrap(), "x = 39 m");
+    }
+
+    #[test]
+    fn light_gate_pairs_survive_renaming_entries() {
+        let mut nb = physics_core::notebook::Notebook::default();
+        nb.add_pair(("h", "drop", Quantity::metres(5.0)), ("t", "time", Quantity::seconds(1.0)), source::LIGHT_GATE);
+        assert!(nb.rename("h1", "short_drop"));
+        assert!(nb.rename("t1", "short_time"));
+        let pairs = light_gate_pairs(&nb.entries);
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs[0].contains("short_drop = 5.000 m"), "{}", pairs[0]);
+        assert!(pairs[0].contains("short_time = 1.000 s"), "{}", pairs[0]);
     }
 }

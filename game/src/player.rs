@@ -62,6 +62,8 @@ pub struct OrbitCamera {
     pub free_look: bool,
     /// Frames left to ignore mouse motion after entering `free_look` (avoids OS grab spikes).
     lock_settle: u8,
+    /// Accumulated mouse movement in pixels while resisting micro-jitter during a story camera pan.
+    turn_cancel_drag: f32,
 }
 
 impl Default for OrbitCamera {
@@ -79,14 +81,18 @@ impl Default for OrbitCamera {
             side_view: false,
             free_look: false,
             lock_settle: 0,
+            turn_cancel_drag: 0.0,
         }
     }
 }
 
-/// Whether button-free mouse look may engage: focused window, exploring with no panel, ruler, or
-/// waking scene active.
-pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, waking: bool) -> bool {
-    window_focused && !at_console && !panel_open && !ruler_in_use && !waking
+/// Mouse movement (pixels) needed in free-look before manual input cancels an automatic story pan.
+const STORY_PAN_CANCEL_PX: f32 = 18.0;
+
+/// Whether button-free mouse look may engage: focused window, exploring with no panel, ruler,
+/// hidden HUD (wake/test/swing), or explicit cursor unlock active.
+pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, hud_hidden: bool, cursor_free: bool) -> bool {
+    window_focused && !at_console && !panel_open && !ruler_in_use && !hud_hidden && !cursor_free
 }
 
 /// Automated screenshot/test scripts drive the camera themselves and should not lock the OS cursor.
@@ -162,6 +168,7 @@ impl OrbitCamera {
         }
         self.returning_distance = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
     }
 
     /// Set the yaw, pitch and distance outright, cancelling any glide (the scripts' `Look`).
@@ -170,6 +177,7 @@ impl OrbitCamera {
         self.returning = None;
         self.returning_distance = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
     }
 
     pub fn release_view(&mut self) {
@@ -177,6 +185,7 @@ impl OrbitCamera {
         self.returning = None;
         self.returning_distance = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
         self.side_view = false;
         if let Some((yaw, pitch, distance)) = self.saved.take() {
             (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
@@ -188,9 +197,22 @@ impl OrbitCamera {
     pub fn ease_home(&mut self) {
         self.watch = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
         self.returning_distance = None;
         self.side_view = false;
         self.returning = self.saved.take();
+    }
+
+    /// Filter raw free-look mouse motion: during an automatic story pan (`turning.is_some()` while
+    /// exploring), ignore tiny sensor/desk jitter until the player deliberately moves the mouse.
+    fn free_look_delta(&mut self, delta: Vec2) -> Option<Vec2> {
+        if self.turning.is_some() && self.watch.is_none() {
+            self.turn_cancel_drag += delta.length();
+            if self.turn_cancel_drag < STORY_PAN_CANCEL_PX {
+                return None;
+            }
+        }
+        Some(delta)
     }
 
     /// The player rotated the camera manually: stop any yaw/pitch glide so the camera never fights
@@ -202,6 +224,7 @@ impl OrbitCamera {
             self.returning_distance = Some(distance);
         }
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
         if self.watch.is_none() {
             self.saved = None;
         }
@@ -447,7 +470,9 @@ fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     wants: Res<EguiWantsInput>,
     world: Res<VoxelWorld>,
-    ui: Res<Ui>,
+    mut ui: ResMut<Ui>,
+    sim: Res<crate::sim::Sim>,
+    beam: Res<crate::beam::Beam>,
     ruler: Res<Ruler>,
     waking: Res<Waking>,
     mut orbit: ResMut<OrbitCamera>,
@@ -459,8 +484,18 @@ fn orbit_camera(
     #[allow(unused_mut)]
     let (mut win, mut cursor) = window.into_inner();
     let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open;
-    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), waking.playing());
-    if want_free_look && !orbit.free_look {
+    let hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
+    if ui.at_console()
+        || panel_open
+        || ruler.in_use()
+        || hidden
+        || (ui.cursor_free && !wants.wants_any_pointer_input() && buttons.just_pressed(MouseButton::Left))
+    {
+        ui.cursor_free = false;
+    }
+    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), hidden, ui.cursor_free);
+    let entering = want_free_look && !orbit.free_look;
+    if entering {
         orbit.lock_settle = 2;
     } else if !want_free_look {
         orbit.lock_settle = 0;
@@ -481,11 +516,12 @@ fn orbit_camera(
         orbit.lock_settle -= 1;
     }
     #[cfg(target_os = "windows")]
-    if orbit.free_look && !settling {
+    if orbit.free_look {
         // On Windows, `winit` confines rather than locks the cursor; pin the hidden pointer to the
-        // window centre so it never drifts onto HUD widgets and starts centered when a panel opens.
+        // window centre immediately on entry (inside `lock_settle`) and whenever it drifts, so it
+        // never hovers HUD widgets and starts centered when a panel opens.
         let center = win.size() / 2.0;
-        if win.cursor_position().is_none_or(|p| (p - center).length_squared() > 16.0) {
+        if entering || win.cursor_position().is_none_or(|p| (p - center).length_squared() > 16.0) {
             win.set_cursor_position(Some(center));
         }
     }
@@ -494,10 +530,16 @@ fn orbit_camera(
     let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
     let mut rotated = false;
     let mut zoomed = false;
+    if orbit.turning.is_none() {
+        orbit.turn_cancel_drag = 0.0;
+    }
     if orbit.free_look {
-        if !settling && motion.delta != Vec2::ZERO {
-            orbit.yaw -= motion.delta.x * 0.0035;
-            orbit.pitch += motion.delta.y * 0.0035;
+        if !settling
+            && motion.delta != Vec2::ZERO
+            && let Some(delta) = orbit.free_look_delta(motion.delta)
+        {
+            orbit.yaw -= delta.x * 0.0035;
+            orbit.pitch += delta.y * 0.0035;
             rotated = true;
         }
         if scroll.delta.y != 0.0 {
@@ -642,12 +684,25 @@ mod tests {
 
     #[test]
     fn free_look_engages_only_when_exploring_with_focus() {
-        assert!(can_free_look(true, false, false, false, false));
-        assert!(!can_free_look(false, false, false, false, false), "unfocused window releases cursor");
-        assert!(!can_free_look(true, true, false, false, false), "open station releases cursor");
-        assert!(!can_free_look(true, false, true, false, false), "open dock panel releases cursor");
-        assert!(!can_free_look(true, false, false, true, false), "ruler in use releases cursor");
-        assert!(!can_free_look(true, false, false, false, true), "waking scene releases cursor");
+        assert!(can_free_look(true, false, false, false, false, false));
+        assert!(!can_free_look(false, false, false, false, false, false), "unfocused window releases cursor");
+        assert!(!can_free_look(true, true, false, false, false, false), "open station releases cursor");
+        assert!(!can_free_look(true, false, true, false, false, false), "open dock panel releases cursor");
+        assert!(!can_free_look(true, false, false, true, false, false), "ruler in use releases cursor");
+        assert!(!can_free_look(true, false, false, false, true, false), "hidden HUD (wake/run/swing) releases cursor");
+        assert!(!can_free_look(true, false, false, false, false, true), "Esc cursor unlock releases cursor");
+    }
+
+    #[test]
+    fn story_pan_ignores_tiny_jitter_but_yields_to_deliberate_mouse_movement() {
+        let mut orbit = OrbitCamera::default();
+        orbit.face(Vec3::ZERO, Vec3::new(20.0, 0.0, 0.0), 0.12, 9.0);
+        // Tiny 1-2 px jitter does not cancel the story pan.
+        assert_eq!(orbit.free_look_delta(Vec2::new(1.0, 0.0)), None);
+        assert_eq!(orbit.free_look_delta(Vec2::new(0.0, 2.0)), None);
+        assert!(orbit.turning.is_some());
+        // Deliberate movement breaks through and yields control.
+        assert!(orbit.free_look_delta(Vec2::new(20.0, 0.0)).is_some());
     }
 
     #[test]

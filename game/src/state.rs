@@ -313,6 +313,8 @@ pub struct Ui {
     pub tutor_open: bool,
     /// Whether the compact controls reference card (F1 or `?`) is open.
     pub controls_open: bool,
+    /// Whether the player explicitly unlocked the cursor with Esc while exploring.
+    pub cursor_free: bool,
     /// Screen rectangles (`[min_x, min_y, max_x, max_y]`, interface points) covered by HUD panels
     /// this frame, so Lumen's floating target labels stay clear of them.
     pub occupied: Vec<[f32; 4]>,
@@ -330,6 +332,10 @@ pub struct Ui {
     pub last_input: Option<InputTarget>,
     /// Notebook entry currently being renamed inline: `(original_name, draft_name)`.
     pub renaming_entry: Option<(String, String)>,
+    /// Whether the inline rename text box should take keyboard focus on the next frame.
+    pub focus_rename: bool,
+    /// Validation message shown when the player tries to save an empty or invalid notebook rename.
+    pub rename_submit_error: Option<String>,
     pub chat: String,
     /// The choice picked in a station's demonstration before its first run.
     pub guess: [Option<usize>; PUZZLES],

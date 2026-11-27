@@ -567,7 +567,14 @@ fn direct(
                     for line in &game.chapter.opening {
                         companion.say_spoken(line, true);
                     }
-                    let first = Spoken { text: format!("{} Follow my beam, and I'll show you the station.", game.def(n).task), look: None };
+                    let first = Spoken {
+                        text: if game.def(n).kind == PuzzleKind::Rail {
+                            "There's one stone pedestal still glowing by that cart in the groove. Follow my beam, and let's see what it does.".into()
+                        } else {
+                            format!("{} Follow my beam, and I'll show you the station.", game.def(n).task)
+                        },
+                        look: None,
+                    };
                     companion.say_spoken(&first, true);
                 }
                 Some(n) => companion.say(format!("You're back! Next we need to {}", lowercase_first(&game.def(n).task))),
@@ -592,7 +599,7 @@ fn direct(
             }
             if now.refusal.is_some() && now.refusal != before.refusal {
                 companion.feel(Mood::Concerned, 4.0);
-                companion.say("The station refused that before launching, so you haven't lost a charge. The reason's under the button.");
+                companion.say("The console rejected that before anything moved, so it didn't spend a charge. The reason's under the button.");
             }
             for puzzle in 0..PUZZLES {
                 if now.watched[puzzle] && !before.watched[puzzle] {
@@ -649,11 +656,11 @@ fn direct(
                     match kind {
                         PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => Some((
                             Nudge::Build,
-                            "The cart won't run empty. There's a block of theirs beside the rail. Press F to pick it up, and F again to put it on the cart.",
+                            "Looks like the cart won't budge empty. Try that loose stone block beside the rail. Press F to pick it up, and F again to set it on the bed.",
                         )),
                         PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => Some((
                             Nudge::Build,
-                            "The dial only turns so far. If you put the blocks from the ledge into the frame at its edge, they'll raise the launcher.",
+                            "That dial only turns inside a narrow band. See those sockets under the launcher? The stone blocks on the ledge look the exact size to lift it.",
                         )),
                         _ => None,
                     }
@@ -667,7 +674,7 @@ fn direct(
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;
                 match now.next {
-                    Some(n) => companion.say(format!("Next we need to {} Follow my beam.", lowercase_first(&game.def(n).task))),
+                    Some(_) => companion.say("That woke another console further along the road. Follow my beam, let's see what it wants."),
                     None => {
                         for line in &game.chapter.closing {
                             companion.say_spoken(line, false);

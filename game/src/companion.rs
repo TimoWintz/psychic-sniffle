@@ -1056,6 +1056,62 @@ fn edge_point(rect: egui::Rect, d: EVec2) -> Pos2 {
     rect.center() + d * sx.min(sy)
 }
 
+/// Clamp `rect` inside `bounds` by translating it without changing its size.
+fn clamp_inside(rect: egui::Rect, bounds: egui::Rect) -> egui::Rect {
+    rect.translate(vec2(
+        (bounds.left() - rect.left()).max(0.0) - (rect.right() - bounds.right()).max(0.0),
+        (bounds.top() - rect.top()).max(0.0) - (rect.bottom() - bounds.bottom()).max(0.0),
+    ))
+}
+
+/// Total area of `rect` overlapping any of `occupied` (padded by a small margin).
+fn overlap_area(rect: egui::Rect, occupied: &[egui::Rect]) -> f32 {
+    occupied
+        .iter()
+        .map(|panel| {
+            let inter = rect.intersect(panel.expand(4.0));
+            if inter.is_positive() { inter.width() * inter.height() } else { 0.0 }
+        })
+        .sum()
+}
+
+/// Place a floating landmark label near `end`, keeping it on screen and clear of open UI panels.
+fn place_label(screen: egui::Rect, end: Pos2, size: EVec2, edge: Option<EVec2>, occupied: &[egui::Rect]) -> egui::Rect {
+    let bounds = screen.shrink(4.0);
+    let mut candidates = Vec::new();
+    match edge {
+        Some(d) => {
+            let side = vec2(-d.y, d.x);
+            candidates.push(clamp_inside(egui::Rect::from_center_size(end - d * 34.0, size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_center_size(end - d * 28.0 + side * (size.x / 2.0 + 14.0), size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_center_size(end - d * 28.0 - side * (size.x / 2.0 + 14.0), size), bounds));
+        }
+        None => {
+            for offset in [
+                vec2(0.0, -26.0),
+                vec2(0.0, 26.0),
+                vec2(size.x / 2.0 + 18.0, 0.0),
+                vec2(-(size.x / 2.0 + 18.0), 0.0),
+                vec2(size.x / 2.0 + 18.0, -26.0),
+                vec2(size.x / 2.0 + 18.0, 26.0),
+            ] {
+                candidates.push(clamp_inside(egui::Rect::from_center_size(end + offset, size), bounds));
+            }
+        }
+    }
+    let first = candidates[0];
+    // If the preferred position hits a panel (such as the top-left dock), also consider sliding
+    // just below or beside that panel.
+    for panel in occupied {
+        if first.intersects(panel.expand(4.0)) {
+            candidates.push(clamp_inside(egui::Rect::from_min_size(pos2(first.left(), panel.bottom() + 8.0), size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_min_size(pos2(panel.right() + 8.0, first.top()), size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_min_size(pos2(panel.left() - 8.0 - size.x, first.top()), size), bounds));
+        }
+    }
+    candidates.into_iter().min_by(|a, b| overlap_area(*a, occupied).total_cmp(&overlap_area(*b, occupied))).unwrap_or(first)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw(
     mut contexts: EguiContexts,
@@ -1183,12 +1239,8 @@ fn draw(
         if let Some((place, _, d)) = aim {
             let galley = painter.layout_no_wrap(place.to_string(), egui::FontId::proportional(12.0), tint([235.0, 245.0, 255.0], a.beam));
             let size = galley.size() + vec2(12.0, 6.0);
-            let toward_middle = d.map_or(vec2(0.0, -26.0), |d| -d * 34.0);
-            let mut rect = egui::Rect::from_center_size(end + toward_middle, size);
-            rect = rect.translate(vec2(
-                (screen.left() + 4.0 - rect.left()).max(0.0) - (rect.right() - screen.right() + 4.0).max(0.0),
-                (screen.top() + 4.0 - rect.top()).max(0.0) - (rect.bottom() - screen.bottom() + 4.0).max(0.0),
-            ));
+            let occupied: Vec<egui::Rect> = ui_state.occupied.iter().map(|r| egui::Rect::from_min_max(pos2(r[0], r[1]), pos2(r[2], r[3]))).collect();
+            let rect = place_label(screen, end, size, d, &occupied);
             painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(12, 22, 34, (200.0 * a.beam) as u8));
             painter.rect_stroke(rect, 4.0, Stroke::new(1.0, tint(colour, 0.6 * a.beam)), egui::StrokeKind::Inside);
             painter.galley(rect.min + vec2(6.0, 3.0), galley, Color32::WHITE);
@@ -1654,5 +1706,14 @@ mod tests {
         }
         assert_eq!(companion.history.len(), MAX_HISTORY);
         assert_eq!(companion.history.last().unwrap(), "Line 49.");
+    }
+
+    #[test]
+    fn landmark_labels_move_clear_of_open_panels() {
+        let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
+        let dock = egui::Rect::from_min_max(pos2(10.0, 10.0), pos2(270.0, 150.0));
+        let placed = place_label(screen, pos2(180.0, 155.0), vec2(140.0, 22.0), None, &[dock]);
+        assert!(!placed.intersects(dock), "label {placed:?} should not overlap dock {dock:?}");
+        assert!(screen.contains_rect(placed));
     }
 }

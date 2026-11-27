@@ -311,6 +311,11 @@ pub struct Ui {
     pub notebook_open: bool,
     pub handbook_open: bool,
     pub tutor_open: bool,
+    /// Whether the compact controls reference card (F1 or `?`) is open.
+    pub controls_open: bool,
+    /// Screen rectangles (`[min_x, min_y, max_x, max_y]`, interface points) covered by HUD panels
+    /// this frame, so Lumen's floating target labels stay clear of them.
+    pub occupied: Vec<[f32; 4]>,
     /// Bottom edge of the dock at the top left, in interface points, so Lumen's panel can stay
     /// clear of it.
     pub dock_bottom: f32,

@@ -696,13 +696,26 @@ fn play(
     }
 }
 
-/// The letterbox while a wake plays.
+/// The letterbox while a wake plays, with a quiet skip cue on the lower bar.
 fn letterbox(mut contexts: EguiContexts, waking: Res<Waking>) -> Result {
     let Some(play) = waking.play else { return Ok(()) };
     let ctx = contexts.ctx_mut()?.clone();
     let screen = ctx.content_rect();
+    let bars = play.timeline.bars(play.t);
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("waking")));
-    crate::cinematic::paint_letterbox(&painter, screen, play.timeline.bars(play.t), None, None, 0.0);
+    crate::cinematic::paint_letterbox(&painter, screen, bars, None, None, 0.0);
+    if bars > 0.3 {
+        let bar_h = crate::cinematic::letterbox_height(screen, bars);
+        let alpha = (((bars - 0.3) / 0.7).clamp(0.0, 1.0) * 185.0) as u8;
+        let colour = egui::Color32::from_rgba_unmultiplied(190, 200, 215, alpha);
+        painter.text(
+            egui::pos2(screen.right() - 18.0, screen.bottom() - bar_h / 2.0),
+            egui::Align2::RIGHT_CENTER,
+            "Press E or Esc to skip",
+            egui::FontId::proportional(13.0),
+            colour,
+        );
+    }
     Ok(())
 }
 

@@ -426,7 +426,7 @@ fn orbit_camera(
 ) {
     let dt = time.delta_secs();
     let (win, cursor) = &mut *window;
-    let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open;
+    let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open;
     let may_lock = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), waking.playing());
     if !may_lock {
         if win.focused && !waking.playing() {

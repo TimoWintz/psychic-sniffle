@@ -401,7 +401,7 @@ fn panel(mut contexts: EguiContexts, game: Res<Game>, mut ui: ResMut<Ui>, mut be
     let Some(def) = game.chapter.side(BEAM_ID).cloned() else { return Ok(()) };
     use crate::ui::{DIM, GOOD, LUMEN, WARN};
     use egui::RichText;
-    egui::Window::new(format!("Console: {}", def.title))
+    if let Some(resp) = egui::Window::new(format!("Console: {}", def.title))
         .id(egui::Id::new("beam console"))
         .collapsible(false)
         .resizable(false)
@@ -456,7 +456,11 @@ fn panel(mut contexts: EguiContexts, game: Res<Game>, mut ui: ResMut<Ui>, mut be
                     ui.open_page(&page.id);
                 }
             }
-        });
+        })
+    {
+        let r = resp.response.rect;
+        ui.occupied.push([r.min.x, r.min.y, r.max.x, r.max.y]);
+    }
     Ok(())
 }
 

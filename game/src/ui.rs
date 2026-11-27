@@ -89,6 +89,9 @@ fn hotkeys(
         // R starts a measurement, or cancels one half taken. A finished reading is replaced.
         if ruler.active { ruler.put_away() } else { ruler.start() }
     }
+    if keys.just_pressed(KeyCode::F1) {
+        ui.controls_open = !ui.controls_open;
+    }
     if keys.just_pressed(KeyCode::Escape) && !waking.playing() {
         // One thing at a time: the ruler, the station, any open panel, or cursor free-look.
         if ruler.in_use() {
@@ -96,14 +99,20 @@ fn hotkeys(
         } else if ui.at_console() {
             ui.station = None;
             ui.beam_open = false;
-        } else if ui.notebook_open || ui.handbook_open || ui.tutor_open {
+        } else if ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open {
             ui.notebook_open = false;
             ui.handbook_open = false;
             ui.tutor_open = false;
+            ui.controls_open = false;
         } else {
             orbit.cursor_released = !orbit.cursor_released;
         }
     }
+}
+
+/// Record a HUD panel's screen rectangle so Lumen's world-space labels stay clear of it.
+fn record_rect(ui_state: &mut Ui, rect: egui::Rect) {
+    ui_state.occupied.push([rect.min.x, rect.min.y, rect.max.x, rect.max.y]);
 }
 
 /// The interface's scale, set once for the menu and the game alike.
@@ -130,17 +139,27 @@ pub fn draw(
     let ctx = contexts.ctx_mut()?.clone();
     // Reborrow once so the panels can borrow fields separately.
     let (game, ui_state, sim, ruler) = (&mut *game, &mut *ui_state, &mut *sim, &mut *ruler);
+    ui_state.occupied.clear();
+
+    // While a wake plays behind letterbox bars, hide the HUD panels so nothing clips under the bars.
+    if waking.playing() {
+        return Ok(());
+    }
 
     dock(&ctx, game, ui_state, ruler);
     hints(&ctx, game, &waking, ui_state, ruler, &carry, &orbit);
+    controls_help(&ctx, ui_state);
     if let Some(puzzle) = ui_state.station {
         station_panel(&ctx, game, ui_state, sim, puzzle);
     }
     if ruler.in_use() {
-        ruler_panel(&ctx, game, ruler);
+        ruler_panel(&ctx, game, ui_state, ruler);
     }
     if ruler.active {
         ruler_hover_label(&ctx, ruler);
+    }
+    if !ui_state.at_console() {
+        carry_badge(&ctx, &carry);
     }
     if orbit.free_look && carry.holding == Some(Item::Gate) {
         let centre = ctx.content_rect().center();
@@ -206,6 +225,7 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
         });
     });
     ui_state.dock_bottom = area.response.rect.bottom();
+    record_rect(ui_state, area.response.rect);
     handbook_panel(ctx, game, ui_state);
 }
 
@@ -214,7 +234,7 @@ fn dock(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &Ruler) 
 fn handbook_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui) {
     let screen = ctx.content_rect();
     let left = HANDBOOK_LEFT;
-    egui::Area::new(egui::Id::new("handbook")).anchor(Align2::LEFT_TOP, [left, 10.0]).movable(false).show(ctx, |ui| {
+    let area = egui::Area::new(egui::Id::new("handbook")).anchor(Align2::LEFT_TOP, [left, 10.0]).movable(false).show(ctx, |ui| {
         egui::Frame::window(ui.style()).show(ui, |ui| {
             ui.set_width(if ui_state.handbook_open { HANDBOOK_WIDTH } else { DOCK_HEADER_WIDTH });
             let unread = ui_state.unread_pages.len();
@@ -234,6 +254,7 @@ fn handbook_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui) {
             }
         });
     });
+    record_rect(ui_state, area.response.rect);
 }
 
 /// A dock panel's header: an arrow, the title, an optional badge, and the key that toggles it. The
@@ -263,7 +284,7 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
     response.on_hover_text(format!("{verb} ({key})")).clicked()
 }
 
-fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler: &Ruler, carry: &Carry, orbit: &OrbitCamera) {
+fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, ruler: &Ruler, carry: &Carry, orbit: &OrbitCamera) {
     let prompt = if ruler.active {
         Some("Left-click two points to measure between them. R or Esc cancels.".to_string())
     } else if let Some(line) = crate::carry::hint(carry).filter(|_| !ui_state.at_console()) {
@@ -282,33 +303,106 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &Ui, ruler
                     game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| crate::stations::machine_name(p.kind)).collect();
                 Some(format!("This station is still asleep. Finish the job at {} first.", needs.join(" and ")))
             }
-            _ if orbit.cursor_released && !ui_state.notebook_open && !ui_state.handbook_open && !ui_state.tutor_open && !waking.playing() => {
+            _ if orbit.cursor_released
+                && !ui_state.notebook_open
+                && !ui_state.handbook_open
+                && !ui_state.tutor_open
+                && !ui_state.controls_open
+                && !waking.playing() =>
+            {
                 Some("Cursor free. Click the world or press Esc to look around.".to_string())
             }
             _ => None,
         }
     };
-    egui::Window::new("hints")
-        .title_bar(false)
-        .resizable(false)
-        .anchor(Align2::CENTER_BOTTOM, [0.0, -10.0])
-        .show(ctx, |ui| {
-            if let Some(prompt) = prompt {
-                ui.vertical_centered(|ui| ui.label(RichText::new(prompt).strong().color(WARN)));
+    let unread = (!ui_state.unread_pages.is_empty() && !ui_state.handbook_open).then(|| match ui_state.unread_pages.as_slice() {
+        [one] => format!("New handbook page: {}. Press H to read it.", game.chapter.concept(one).map_or(one.as_str(), |c| c.title.as_str())),
+        many => format!("{} new handbook pages. Press H to read them.", many.len()),
+    });
+    if prompt.is_none() && unread.is_none() {
+        return;
+    }
+    if let Some(resp) = egui::Window::new("hints").title_bar(false).resizable(false).anchor(Align2::CENTER_BOTTOM, [0.0, -10.0]).show(ctx, |ui| {
+        if let Some(prompt) = prompt {
+            ui.vertical_centered(|ui| ui.label(RichText::new(prompt).strong().color(WARN)));
+        }
+        if let Some(line) = unread {
+            ui.vertical_centered(|ui| ui.label(RichText::new(line).strong().color(GOOD)));
+        }
+    }) {
+        record_rect(ui_state, resp.response.rect);
+    }
+}
+
+/// Compact `?` toggle in the lower right (and `F1`) that opens a reference card of all controls.
+fn controls_help(ctx: &egui::Context, ui_state: &mut Ui) {
+    let x_offset = if ui_state.at_console() { -424.0 } else { -10.0 };
+    let area = egui::Area::new(egui::Id::new("controls-toggle")).anchor(Align2::RIGHT_BOTTOM, [x_offset, -10.0]).movable(false).show(ctx, |ui| {
+        egui::Frame::window(ui.style()).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+            let label = if ui_state.controls_open { "Controls (F1) ×" } else { "?  F1" };
+            if ui.add(egui::Button::new(RichText::new(label).small().color(DIM)).frame(false)).on_hover_text("Show or hide controls (F1)").clicked() {
+                ui_state.controls_open = !ui_state.controls_open;
             }
-            if !ui_state.unread_pages.is_empty() && !ui_state.handbook_open {
-                let line = match ui_state.unread_pages.as_slice() {
-                    [one] => format!("New handbook page: {}. Press H to read it.", game.chapter.concept(one).map_or(one.as_str(), |c| c.title.as_str())),
-                    many => format!("{} new handbook pages. Press H to read them.", many.len()),
-                };
-                ui.vertical_centered(|ui| ui.label(RichText::new(line).strong().color(GOOD)));
-            }
-            ui.label(
-                RichText::new("WASD move · Shift run · Space jump · mouse or arrows look · scroll zoom · Alt/Esc cursor · E station · F carry · R measure · N notebook · H handbook · T Lumen")
-                    .small()
-                    .color(DIM),
-            );
         });
+    });
+    record_rect(ui_state, area.response.rect);
+
+    if !ui_state.controls_open {
+        return;
+    }
+    let mut open = true;
+    if let Some(resp) =
+        egui::Window::new("Controls").open(&mut open).collapsible(false).resizable(false).anchor(Align2::RIGHT_BOTTOM, [x_offset, -44.0]).show(ctx, |ui| {
+            egui::Grid::new("controls-grid").num_columns(2).spacing([14.0, 4.0]).striped(true).show(ui, |ui| {
+                for (keys, action) in [
+                    ("WASD", "Move"),
+                    ("Shift", "Run"),
+                    ("Space", "Jump"),
+                    ("Mouse / Arrows", "Look around"),
+                    ("Scroll", "Zoom"),
+                    ("Alt (hold) / Esc", "Free cursor"),
+                    ("E", "Use or leave a station"),
+                    ("F", "Pick up, put down or clamp"),
+                    ("R", "Measure with the ruler"),
+                    ("N", "Notebook and calculator"),
+                    ("H", "Handbook"),
+                    ("T", "Lumen"),
+                    ("Enter", "Next Lumen line"),
+                    ("F1", "Show or hide controls"),
+                ] {
+                    ui.label(RichText::new(keys).strong().monospace());
+                    ui.label(RichText::new(action).color(DIM));
+                    ui.end_row();
+                }
+            });
+        })
+    {
+        record_rect(ui_state, resp.response.rect);
+    }
+    if !open {
+        ui_state.controls_open = false;
+    }
+}
+
+/// Floating world-space badge beside a carry placement ghost (drop tower notch, jack frame height,
+/// or beam seat).
+fn carry_badge(ctx: &egui::Context, carry: &Carry) {
+    let Some((screen_px, text, is_put)) = &carry.badge else { return };
+    let zoom = ctx.zoom_factor();
+    let screen = ctx.content_rect();
+    let pos = egui::pos2(screen_px.x / zoom, screen_px.y / zoom);
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("carry-badge")));
+    let accent = if *is_put { Color32::from_rgb(100, 230, 255) } else { WARN };
+    let galley = painter.layout_no_wrap(text.clone(), egui::FontId::proportional(13.0), Color32::from_rgb(240, 246, 255));
+    let size = galley.size() + egui::vec2(14.0, 8.0);
+    let mut rect = egui::Rect::from_center_size(pos + egui::vec2(0.0, -size.y / 2.0 - 8.0), size);
+    rect = rect.translate(egui::vec2(
+        (screen.left() + 8.0 - rect.left()).max(0.0) - (rect.right() - screen.right() + 8.0).max(0.0),
+        (screen.top() + 8.0 - rect.top()).max(0.0) - (rect.bottom() - screen.bottom() + 8.0).max(0.0),
+    ));
+    painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(12, 20, 32, 220));
+    painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.2, accent), egui::StrokeKind::Inside);
+    painter.galley(rect.min + egui::vec2(7.0, 4.0), galley, Color32::WHITE);
 }
 
 fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &mut Sim, puzzle: usize) {
@@ -317,7 +411,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
     let specs = instance.inputs();
     ui_state.drafts[puzzle].resize(specs.len(), String::new());
 
-    egui::Window::new(format!("Station: {}", def.title))
+    if let Some(resp) = egui::Window::new(format!("Station: {}", def.title))
         .id(egui::Id::new("station"))
         .collapsible(false)
         .resizable(false)
@@ -496,7 +590,10 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     });
                 }
             });
-        });
+        })
+    {
+        record_rect(ui_state, resp.response.rect);
+    }
 }
 
 /// The ledge launcher's rating plate: the band its damaged dial turns through, which can be noted
@@ -758,62 +855,66 @@ fn ruler_hover_label(ctx: &egui::Context, ruler: &Ruler) {
     }
 }
 
-fn ruler_panel(ctx: &egui::Context, game: &mut Game, ruler: &mut Ruler) {
+fn ruler_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &mut Ruler) {
     let mut open = true;
-    egui::Window::new("Ruler").open(&mut open).collapsible(false).resizable(false).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).show(ctx, |ui| {
-        let hover = ruler.hover.as_ref().map(|h| h.label.as_str());
-        match (&ruler.first, &ruler.second) {
-            (None, _) => {
-                ui.label("Click the first point.");
-                ui.label(RichText::new(hover.unwrap_or("Yellow pins mark surveyed points.")).color(DIM));
-            }
-            (Some(first), None) => {
-                ui.label(format!("From: {}", first.label));
-                ui.label(RichText::new(format!("To: {}", hover.unwrap_or("click the second point"))).color(DIM));
-                if let Some(m) = ruler.preview() {
-                    ui.separator();
-                    egui::Grid::new("ruler-preview").num_columns(2).show(ui, |ui| {
-                        for (word, value) in [("Horizontal", m.horizontal), ("Vertical", m.vertical), ("Direct", m.direct)] {
-                            ui.label(RichText::new(word).color(DIM));
-                            ui.label(RichText::new(Quantity::metres(value as f64).display()).color(Color32::from_rgb(180, 235, 250)));
-                            ui.end_row();
-                        }
-                    });
-                    ui.label(RichText::new("Click to lock this reading.").small().color(DIM));
+    if let Some(resp) =
+        egui::Window::new("Ruler").open(&mut open).collapsible(false).resizable(false).anchor(Align2::LEFT_BOTTOM, [10.0, -10.0]).show(ctx, |ui| {
+            let hover = ruler.hover.as_ref().map(|h| h.label.as_str());
+            match (&ruler.first, &ruler.second) {
+                (None, _) => {
+                    ui.label("Click the first point.");
+                    ui.label(RichText::new(hover.unwrap_or("Yellow pins mark surveyed points.")).color(DIM));
+                }
+                (Some(first), None) => {
+                    ui.label(format!("From: {}", first.label));
+                    ui.label(RichText::new(format!("To: {}", hover.unwrap_or("click the second point"))).color(DIM));
+                    if let Some(m) = ruler.preview() {
+                        ui.separator();
+                        egui::Grid::new("ruler-preview").num_columns(2).show(ui, |ui| {
+                            for (word, value) in [("Horizontal", m.horizontal), ("Vertical", m.vertical), ("Direct", m.direct)] {
+                                ui.label(RichText::new(word).color(DIM));
+                                ui.label(RichText::new(Quantity::metres(value as f64).display()).color(Color32::from_rgb(180, 235, 250)));
+                                ui.end_row();
+                            }
+                        });
+                        ui.label(RichText::new("Click to lock this reading.").small().color(DIM));
+                    }
+                }
+                (Some(first), Some(second)) => {
+                    ui.label(format!("From: {}", first.label));
+                    ui.label(format!("To: {}", second.label));
                 }
             }
-            (Some(first), Some(second)) => {
-                ui.label(format!("From: {}", first.label));
-                ui.label(format!("To: {}", second.label));
-            }
-        }
-        let (Some(m), Some(first), Some(second)) = (ruler.measurement(), ruler.first.clone(), ruler.second.clone()) else { return };
-        ui.separator();
-        let between = format!("{} to {}", first.label, second.label);
-        let mut saved = None;
-        egui::Grid::new("ruler").num_columns(3).show(ui, |ui| {
-            for (idx, (word, prefix, value)) in
-                [("Horizontal", "d", m.horizontal), ("Vertical", "h", m.vertical), ("Direct", "s", m.direct)].into_iter().enumerate()
-            {
-                ui.label(word);
-                ui.label(RichText::new(Quantity::metres(value as f64).display()).strong());
-                let existing = ruler.noted[idx].as_deref().filter(|name| game.save.notebook.get(name).is_some());
-                if let Some(name) = existing {
-                    ui.colored_label(GOOD, format!("Noted as {name}"));
-                } else if ui.button(format!("Note as {prefix}…")).clicked() {
-                    saved = Some((idx, prefix, word, value));
+            let (Some(m), Some(first), Some(second)) = (ruler.measurement(), ruler.first.clone(), ruler.second.clone()) else { return };
+            ui.separator();
+            let between = format!("{} to {}", first.label, second.label);
+            let mut saved = None;
+            egui::Grid::new("ruler").num_columns(3).show(ui, |ui| {
+                for (idx, (word, prefix, value)) in
+                    [("Horizontal", "d", m.horizontal), ("Vertical", "h", m.vertical), ("Direct", "s", m.direct)].into_iter().enumerate()
+                {
+                    ui.label(word);
+                    ui.label(RichText::new(Quantity::metres(value as f64).display()).strong());
+                    let existing = ruler.noted[idx].as_deref().filter(|name| game.save.notebook.get(name).is_some());
+                    if let Some(name) = existing {
+                        ui.colored_label(GOOD, format!("Noted as {name}"));
+                    } else if ui.button(format!("Note as {prefix}…")).clicked() {
+                        saved = Some((idx, prefix, word, value));
+                    }
+                    ui.end_row();
                 }
-                ui.end_row();
+            });
+            if let Some((idx, prefix, word, value)) = saved {
+                let label = format!("{} distance, {between}", word.to_lowercase());
+                let name = game.save.notebook.add_numbered(prefix, &label, Quantity::metres(value as f64), source::RULER);
+                ruler.noted[idx] = Some(name);
+                game.persist();
             }
-        });
-        if let Some((idx, prefix, word, value)) = saved {
-            let label = format!("{} distance, {between}", word.to_lowercase());
-            let name = game.save.notebook.add_numbered(prefix, &label, Quantity::metres(value as f64), source::RULER);
-            ruler.noted[idx] = Some(name);
-            game.persist();
-        }
-        ui.label(RichText::new("R measures again · Esc puts the ruler away").small().color(DIM));
-    });
+            ui.label(RichText::new("R measures again · Esc puts the ruler away").small().color(DIM));
+        })
+    {
+        record_rect(ui_state, resp.response.rect);
+    }
     if !open {
         ruler.put_away();
     }

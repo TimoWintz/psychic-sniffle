@@ -297,11 +297,11 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, r
         match (ui_state.near_station, ui_state.station) {
             (_, Some(_)) => Some("You're at the station. Press E or Esc to leave.".to_string()),
             (Some(near), None) if crate::stations::ready(game, waking, near) => Some(format!("Press E to use the station: {}", game.def(near).title)),
-            (Some(near), None) if game.unlocked(near) => Some("This station is waking up.".to_string()),
+            (Some(near), None) if game.unlocked(near) => Some("This console is lighting up.".to_string()),
             (Some(near), None) => {
                 let needs: Vec<&str> =
                     game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| crate::stations::machine_name(p.kind)).collect();
-                Some(format!("This station is still asleep. Finish the job at {} first.", needs.join(" and ")))
+                Some(format!("This console is dark. Finish at {} first.", needs.join(" and ")))
             }
             _ if orbit.cursor_released
                 && !ui_state.notebook_open

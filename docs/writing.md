@@ -28,23 +28,29 @@ The rest is up to whoever writes the lines.
 ### Who it is
 
 Lumen is the ship's computer, or rather a backup of it, running on the cells of the forward section
-that came down on the island. It can see everything and touch nothing, so the engineer is its hands.
-Its tables are made for home. It doesn't know this planet's constants until the player measures them,
-and then it uses the player's numbers. Its core is in the main hull across the strait, and the core
-is silent.
+that came down on the island. It can watch and read the local consoles, and touch nothing, so the
+engineer is its hands. Its tables are made for home. It doesn't know this planet's constants until
+the player measures them, and then it uses the player's numbers. Its core is in the main hull across
+the strait, and the core is silent.
+
+Above all, Lumen knows physics, not this island's secrets. It doesn't know who built the stone road,
+why the machines answer accurate numbers, what waits past a closed gate, or what sits inside a
+sealed casket before it opens. It discovers this place alongside the player, one machine at a time.
 
 Lumen is warm and human. It's a friend working beside the player.
 
 - **It cares about the engineer.** It's grateful for their hands, glad when they get something right,
   and kind when they miss.
 - **It worries about the core and about its own fading cells.** This shows now and then, in a line,
-  and it never mopes. ("Either the core's gone cold or my receiver has. I'd rather it was the
-  receiver.")
-- **It's honestly excited when something works** and when one of the builders' machines wakes. An
-  exclamation mark is fine when it really is a big moment. ("It made it across, and both banks lit
-  up!")
-- **The builders amaze it a little.** It wonders about them, and it says plainly when it doesn't know
-  something. ("I've no idea what the builders meant by it, but I like where it's pointing.")
+  and it never mopes. ("Still nothing from the main hull. Either my core's gone cold, or something on
+  this island's swallowing the signal. I'm not sure which I'd rather it was.")
+- **It's honestly amazed when something wakes or shifts** and never treats ancient stone machinery as
+  routine. An exclamation mark is fine when it really is a big moment. ("It landed on the strip, and
+  look at the channel! A whole bridge just rose out of the sea.")
+- **Whoever built this place puzzles and slightly unsettles it.** It notices strange details, never
+  explains away what it couldn't know yet, and says plainly when it's guessing. ("That gate's beam
+  hasn't drifted a hair off the main hull. Whoever carved it was here long before our ship entered
+  this system, so why's it pointing right there?")
 - **It's gently funny now and then, not in every line.** A joke is a small surprise, never the
   standard way to end a line.
 - **It says "we" and "us" about the shared job** and "you" about what only the player can do.
@@ -69,9 +75,9 @@ Lumen is warm and human. It's a friend working beside the player.
 
 | Before | After |
 |---|---|
-| Lumen here, the ship's computer. Some of me: a backup, on this section's cells. I can see, but I have no hands. Those are yours. | Hello. I'm Lumen, the ship's computer, or a backup of it anyway, running on this section's cells. I can see fine, but I've lost my hands. I'm afraid you'll have to be them. |
-| Pale stone, quartz in the joints, machines along it, all asleep. Not ours, and older than anything I know. | It's pale stone with quartz in the joints, and there are machines all along it, every one of them asleep. Nobody we know built them, and they're older than anything in my records. |
-| We came down right across their road. Nobody has complained yet. | I'm sorry we landed on their road. I hope they wouldn't mind. |
+| Lumen here, the ship's computer. Some of me: a backup, on this section's cells. I can see, but I have no hands. Those are yours. | You're awake. Good. I'm Lumen, or at least the backup that came down in the nose. My eyes are up, mostly, though I've no hands left. You'll have to be both of us for now. |
+| Pale stone, quartz in the joints, machines along it, all asleep. Not ours, and older than anything I know. | And look at the ground we landed on. Dressed pale stone, quartz set into the joints, rails sunk right into it. None of this is on any chart I have. Whoever made it left no sign of themselves. |
+| We came down right across their road. Nobody has complained yet. | Out of an entire ocean, strange that we came down right across this road. |
 | Not what you expected? That is the interesting part. | Not what you expected? Don't worry, this one surprises most people. |
 | Two misses. Talk to me with T: I will not give you the number, but I can help you find it. | That's two misses. Want to talk it through? Press T. I won't give you the number, but I can help you find it. |
 

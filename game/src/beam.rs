@@ -15,7 +15,7 @@
 use crate::carry::Carry;
 use crate::island::{BEAM_AXLE, BEAM_THICK, BeamSite, Sites};
 use crate::player::{OrbitCamera, Player};
-use crate::state::{Game, Mode, Ui};
+use crate::state::{BuildWorld, Game, Mode, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use crate::waking::{Changes, MachineTrim, light, stone};
 use bevy::prelude::*;
@@ -61,6 +61,15 @@ pub struct Beam {
     pub releases: u32,
     /// Seconds into the wake, while it plays.
     pub waking: Option<f32>,
+    frame_shown: bool,
+    blocks_shown: Option<(physics_core::beam::Placement, Load)>,
+    looks_lit: Option<(u32, bool)>,
+}
+
+impl Beam {
+    pub fn new(seed: u64) -> Self {
+        Beam { cases: cases(seed), swinging: None, last: None, releases: 0, waking: None, frame_shown: false, blocks_shown: None, looks_lit: None }
+    }
 }
 
 /// A release as it plays.
@@ -147,14 +156,21 @@ pub struct BeamPlugin;
 impl Plugin for BeamPlugin {
     fn build(&self, app: &mut App) {
         let seed = app.world().resource::<Game>().save.seed;
-        app.insert_resource(Beam { cases: cases(seed), swinging: None, last: None, releases: 0, waking: None })
-            .add_systems(Startup, spawn)
-            .add_systems(Update, ((proximity, frame).chain().run_if(in_state(Mode::Playing)), (play, pose, show_blocks, light_looks).chain()))
+        app.insert_resource(Beam::new(seed))
+            .add_systems(BuildWorld, spawn)
+            .add_systems(
+                Update,
+                (
+                    (proximity, frame).chain().run_if(in_state(Mode::Playing)).run_if(not_paused),
+                    (play.run_if(in_state(Mode::Playing)).run_if(not_paused), pose, show_blocks, light_looks).chain(),
+                ),
+            )
             .add_systems(EguiPrimaryContextPass, panel.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
     }
 }
 
 fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>, game: Res<Game>) {
+    commands.insert_resource(Beam::new(game.save.seed));
     let site = &sites.beam;
     let stone = stone(&mut materials);
     let awake = woken(&game);
@@ -170,7 +186,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let hub = meshes.add(Cylinder::new(0.22, 1.0));
     let cube = meshes.add(Cuboid::from_length(BLOCK));
     let grip = meshes.add(Cuboid::new(0.5, 0.07, 0.12));
-    commands.spawn((Body, Transform::from_translation(site.pivot), Visibility::default())).with_children(|b| {
+    commands.spawn((WorldEntity, Body, Transform::from_translation(site.pivot), Visibility::default())).with_children(|b| {
         b.spawn((Mesh3d(bar), MeshMaterial3d(stone.clone()), Transform::default()));
         b.spawn((Mesh3d(hub), MeshMaterial3d(looks.wake.clone()), Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2))));
         for arm in [Arm::Load, Arm::Far] {
@@ -194,12 +210,17 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let post = site.pivot.with_y(site.pivot.y - BEAM_AXLE);
     let cheek = meshes.add(Cuboid::new(0.7, 0.6, 0.12));
     for side in [-1.0, 1.0] {
-        commands.spawn((Mesh3d(cheek.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(site.pivot + Vec3::new(0.0, -0.05, side * 0.48))));
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(cheek.clone()),
+            MeshMaterial3d(stone.clone()),
+            Transform::from_translation(site.pivot + Vec3::new(0.0, -0.05, side * 0.48)),
+        ));
     }
     let case_stud = meshes.add(Cuboid::new(0.22, 0.16, 0.06));
     for (i, look) in looks.studs.iter().enumerate() {
         let at = post + Vec3::new(-0.3 + 0.3 * i as f32, 0.55, 0.52);
-        commands.spawn((Mesh3d(case_stud.clone()), MeshMaterial3d(look.clone()), Transform::from_translation(at)));
+        commands.spawn((WorldEntity, Mesh3d(case_stud.clone()), MeshMaterial3d(look.clone()), Transform::from_translation(at)));
     }
 
     // The console: a pillar of their stone with a sloping top and a quartz face, which answers from
@@ -208,21 +229,38 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let slope = Quat::from_rotation_x(-0.4);
     let slab = Transform::from_translation(foot + Vec3::Y * 1.05).with_rotation(slope);
     let face = materials.add(MachineTrim::look(true));
-    commands.spawn((Mesh3d(meshes.add(Cuboid::new(0.6, 1.0, 0.6))), MeshMaterial3d(stone.clone()), Transform::from_translation(foot + Vec3::Y * 0.5)));
-    commands.spawn((Mesh3d(meshes.add(Cuboid::new(0.86, 0.14, 0.7))), MeshMaterial3d(stone.clone()), slab));
     commands.spawn((
+        WorldEntity,
+        Mesh3d(meshes.add(Cuboid::new(0.6, 1.0, 0.6))),
+        MeshMaterial3d(stone.clone()),
+        Transform::from_translation(foot + Vec3::Y * 0.5),
+    ));
+    commands.spawn((WorldEntity, Mesh3d(meshes.add(Cuboid::new(0.86, 0.14, 0.7))), MeshMaterial3d(stone.clone()), slab));
+    commands.spawn((
+        WorldEntity,
         Mesh3d(meshes.add(Cuboid::new(0.62, 0.05, 0.46))),
         MeshMaterial3d(face),
         slab.with_translation(slab.translation + slab.rotation * Vec3::Y * 0.08),
     ));
     // Its lamp, dark until the beam wakes.
-    commands.spawn((Mesh3d(meshes.add(Cuboid::new(0.22, 2.3, 0.22))), MeshMaterial3d(stone.clone()), Transform::from_translation(site.lamp + Vec3::Y * 1.15)));
     commands.spawn((
+        WorldEntity,
+        Mesh3d(meshes.add(Cuboid::new(0.22, 2.3, 0.22))),
+        MeshMaterial3d(stone.clone()),
+        Transform::from_translation(site.lamp + Vec3::Y * 1.15),
+    ));
+    commands.spawn((
+        WorldEntity,
         Mesh3d(meshes.add(Cuboid::new(0.3, 0.38, 0.3))),
         MeshMaterial3d(looks.wake.clone()),
         Transform::from_translation(site.lamp + Vec3::Y * 2.49),
     ));
-    commands.spawn((Mesh3d(meshes.add(Cuboid::new(0.46, 0.1, 0.46))), MeshMaterial3d(stone), Transform::from_translation(site.lamp + Vec3::Y * 2.73)));
+    commands.spawn((
+        WorldEntity,
+        Mesh3d(meshes.add(Cuboid::new(0.46, 0.1, 0.46))),
+        MeshMaterial3d(stone),
+        Transform::from_translation(site.lamp + Vec3::Y * 2.73),
+    ));
     commands.insert_resource(looks);
 }
 
@@ -257,11 +295,11 @@ fn proximity(
 
 /// While the console is open the camera shows the beam from the north, where the ground is open and
 /// nothing stands between, and glides back after.
-fn frame(ui: Res<Ui>, sites: Res<Sites>, mut orbit: ResMut<OrbitCamera>, mut shown: Local<bool>) {
-    if ui.beam_open == *shown {
+fn frame(ui: Res<Ui>, sites: Res<Sites>, mut orbit: ResMut<OrbitCamera>, mut beam: ResMut<Beam>) {
+    if ui.beam_open == beam.frame_shown {
         return;
     }
-    *shown = ui.beam_open;
+    beam.frame_shown = ui.beam_open;
     if ui.beam_open {
         let (min, max) = view(&sites.beam);
         orbit.frame_side_view(min, max, Vec3::NEG_X, true);
@@ -355,19 +393,18 @@ fn pose(beam: Res<Beam>, mut body: Single<&mut Transform, With<Body>>) {
 
 /// Show the blocks on each seat, and the machine's load on its seat.
 fn show_blocks(
-    beam: Res<Beam>,
+    mut beam: ResMut<Beam>,
     game: Res<Game>,
     carry: Res<Carry>,
     sites: Res<Sites>,
     mut seats: Query<(&OnSeat, &mut Transform, &mut Visibility), Without<LoadBlock>>,
     mut loads: Query<(&LoadBlock, &mut Transform, &mut Visibility), Without<OnSeat>>,
-    mut shown: Local<Option<(physics_core::beam::Placement, Load)>>,
 ) {
     let load = beam.load(&game);
-    if *shown == Some((carry.beam, load)) {
+    if beam.blocks_shown == Some((carry.beam, load)) {
         return;
     }
-    *shown = Some((carry.beam, load));
+    beam.blocks_shown = Some((carry.beam, load));
     let site = &sites.beam;
     let on = |arm: Arm, seat: u32, level: u32| site.seat(arm, seat) - site.pivot + Vec3::Y * (BLOCK * (level as f32 + 0.5));
     for (block, mut transform, mut visibility) in &mut seats {
@@ -384,9 +421,9 @@ fn show_blocks(
 }
 
 /// Light a stud for each case that has held, and the beam's quartz and lamp once it has woken.
-fn light_looks(game: Res<Game>, looks: Res<Looks>, mut materials: ResMut<Assets<StandardMaterial>>, mut lit: Local<Option<(u32, bool)>>) {
+fn light_looks(game: Res<Game>, mut beam: ResMut<Beam>, looks: Res<Looks>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let now = (held(&game), woken(&game));
-    if *lit == Some(now) {
+    if beam.looks_lit == Some(now) {
         return;
     }
     if let Some(mut m) = materials.get_mut(&looks.wake) {
@@ -397,7 +434,7 @@ fn light_looks(game: Res<Game>, looks: Res<Looks>, mut materials: ResMut<Assets<
             *m = MachineTrim::look((i as u32) < now.0);
         }
     }
-    *lit = Some(now);
+    beam.looks_lit = Some(now);
 }
 
 /// The console's panel.
@@ -410,7 +447,7 @@ pub(crate) fn panel(
     mut beam: ResMut<Beam>,
     mut carry: ResMut<Carry>,
 ) -> Result {
-    if !ui.beam_open || crate::ui::hud_hidden(&waking, &sim, &beam) {
+    if !ui.beam_open || ui.paused || crate::ui::hud_hidden(&waking, &sim, &beam) {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?.clone();

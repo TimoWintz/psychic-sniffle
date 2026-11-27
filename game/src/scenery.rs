@@ -4,7 +4,7 @@
 
 use crate::carry::DirtyCells;
 use crate::island::{GROUND, SEA_LEVEL, Sites};
-use crate::state::Game;
+use crate::state::{BuildWorld, Game, WorldEntity};
 use crate::voxel::{VoxelWorld, fbm, hash01, tint};
 use bevy::asset::RenderAssetUsages;
 use bevy::asset::embedded_asset;
@@ -39,6 +39,13 @@ struct SkyAnchor;
 /// awake quartz at once.
 #[derive(Resource)]
 pub struct WayGlow(pub Handle<StandardMaterial>);
+
+/// Reusable terrain and tuft materials kept across world reloads.
+#[derive(Resource)]
+pub(crate) struct TerrainMaterials {
+    blocks: Handle<crate::graphics::BlockMaterial>,
+    swaying: Handle<SwayMaterial>,
+}
 
 /// The sky's dome, which the intro hides while it shows space.
 #[derive(Component)]
@@ -99,19 +106,19 @@ impl Plugin for SceneryPlugin {
         embedded_asset!(app, "sway.wesl");
         app.add_plugins(MaterialPlugin::<SwayMaterial>::default());
         app.insert_resource(ClearColor(sky.horizon))
-            .add_systems(Startup, spawn)
+            .add_systems(Startup, spawn_permanent)
+            .add_systems(BuildWorld, spawn)
             .add_systems(Update, rebuild_chunks)
             .add_systems(PostUpdate, follow_camera.before(TransformSystems::Propagate));
     }
 }
 
-pub(crate) fn spawn(
+fn spawn_permanent(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     (mut block_materials, mut sway_materials): (ResMut<Assets<crate::graphics::BlockMaterial>>, ResMut<Assets<SwayMaterial>>),
     world: Res<VoxelWorld>,
-    sites: Res<Sites>,
     game: Res<Game>,
 ) {
     let sky = Sky::of(game.chapter.light);
@@ -119,22 +126,10 @@ pub(crate) fn spawn(
     // each face), and one unlit material serves everything that glows.
     let blocks = crate::graphics::block_material(&mut block_materials);
     let glow = materials.add(StandardMaterial { base_color: Color::WHITE, unlit: true, ..default() });
-    commands.insert_resource(WayGlow(glow.clone()));
-    for z0 in (0..world.size.z).step_by(CHUNK as usize) {
-        for x0 in (0..world.size.x).step_by(CHUNK as usize) {
-            let (x1, z1) = ((x0 + CHUNK).min(world.size.x), (z0 + CHUNK).min(world.size.z));
-            commands.spawn((TerrainChunk { x0, z0, glow: false }, Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, false))), MeshMaterial3d(blocks.clone())));
-            commands.spawn((
-                TerrainChunk { x0, z0, glow: true },
-                Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, true))),
-                MeshMaterial3d(glow.clone()),
-                NotShadowCaster,
-            ));
-        }
-    }
     let swaying = sway_materials
         .add(SwayMaterial { base: StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() }, extension: Sway { reach: 0.14 } });
-    commands.spawn((Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(swaying), NotShadowCaster));
+    commands.insert_resource(WayGlow(glow));
+    commands.insert_resource(TerrainMaterials { blocks: blocks.clone(), swaying });
 
     // Islands on the horizon, larger than life so the haze softens them.
     for (i, (centre, scale)) in
@@ -225,6 +220,40 @@ pub(crate) fn spawn(
             NotShadowCaster,
         ));
     });
+}
+
+/// Build the island's terrain chunks and swaying tufts for the currently loaded world.
+pub(crate) fn spawn(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    terrain: Res<TerrainMaterials>,
+    way_glow: Res<WayGlow>,
+    world: Res<VoxelWorld>,
+    sites: Res<Sites>,
+) {
+    if let Some(mut mat) = materials.get_mut(&way_glow.0) {
+        mat.base_color = Color::WHITE;
+    }
+    for z0 in (0..world.size.z).step_by(CHUNK as usize) {
+        for x0 in (0..world.size.x).step_by(CHUNK as usize) {
+            let (x1, z1) = ((x0 + CHUNK).min(world.size.x), (z0 + CHUNK).min(world.size.z));
+            commands.spawn((
+                WorldEntity,
+                TerrainChunk { x0, z0, glow: false },
+                Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, false))),
+                MeshMaterial3d(terrain.blocks.clone()),
+            ));
+            commands.spawn((
+                WorldEntity,
+                TerrainChunk { x0, z0, glow: true },
+                Mesh3d(meshes.add(world.mesh(x0, x1, z0, z1, true))),
+                MeshMaterial3d(way_glow.0.clone()),
+                NotShadowCaster,
+            ));
+        }
+    }
+    commands.spawn((WorldEntity, Mesh3d(meshes.add(tufts(&world, &sites))), MeshMaterial3d(terrain.swaying.clone()), NotShadowCaster));
 }
 
 /// Mesh again the chunks whose blocks have changed (blocks picked up and put down), and their

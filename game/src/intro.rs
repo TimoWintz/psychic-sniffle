@@ -10,13 +10,16 @@ use crate::cinematic::{self, Event, Frame, GLIDE, LOOP, PLANET_RADIUS, Part, Set
 use crate::island::{SEA_LEVEL, Sites};
 use crate::player::{OrbitCamera, Player};
 use crate::scenery::SkyDome;
-use crate::state::Mode;
+use crate::state::{BuildWorld, Game, Mode, SLOTS, SessionAction, SessionControl, SlotStatus, SlotSummary, delete_slot, inspect_slots, latest_slot, saves_dir};
+use crate::ui::{BAD, DIM, GOOD, WARN};
 use crate::voxel::{VoxelWorld, fbm, hash01, smoothstep};
 use avian3d::prelude::{Physics, PhysicsTime};
+use bevy::app::AppExit;
 use bevy::asset::RenderAssetUsages;
 use bevy::light::NotShadowCaster;
 use bevy::mesh::{Indices, PrimitiveTopology, VertexAttributeValues};
 use bevy::prelude::*;
+use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Align2, Color32, RichText, vec2};
@@ -198,11 +201,21 @@ pub struct Intro {
     in_space: Option<bool>,
     puff_clock: f32,
     dice: i32,
+    /// Whether the save slot management panel is open on the title menu.
+    saves_open: bool,
+    /// Save slot currently awaiting delete confirmation, if any.
+    confirm_delete: Option<usize>,
+    /// Cached read-only summary of the numbered save slots.
+    slots: [SlotSummary; SLOTS],
+    /// Error message from a failed save deletion.
+    menu_error: Option<String>,
 }
 
 impl Intro {
     /// Start the game, as the button does.
     pub fn request_start(&mut self) {
+        self.saves_open = false;
+        self.confirm_delete = None;
         self.start = true;
     }
 
@@ -225,30 +238,51 @@ pub struct IntroPlugin;
 
 impl Plugin for IntroPlugin {
     fn build(&self, app: &mut App) {
+        let intro = {
+            let world = app.world().resource::<VoxelWorld>();
+            let sites = app.world().resource::<Sites>();
+            let game = app.world().resource::<Game>();
+            let orbit = OrbitCamera::default();
+            let focus = sites.spawn + Vec3::Y * 1.5;
+            let sets = Sets::new(world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
+            let slots = inspect_slots(&game.chapter, &saves_dir());
+            Intro {
+                frame: cinematic::frame_at(&sets, 0.0),
+                sets,
+                clock: 0.0,
+                phase: Phase::Attract,
+                start: false,
+                sky: None,
+                in_space: None,
+                puff_clock: 0.0,
+                dice: 0,
+                saves_open: false,
+                confirm_delete: None,
+                slots,
+                menu_error: None,
+            }
+        };
         app.init_state::<Mode>()
-            .add_systems(Startup, setup)
+            .insert_resource(intro)
+            .add_systems(Startup, setup_permanent)
+            .add_systems(BuildWorld, refresh_sets.after(crate::player::reset))
+            .add_systems(OnEnter(Mode::Menu), enter_menu)
             .add_systems(Update, (play, pose_ship, backdrop, drift_puffs).chain().run_if(in_state(Mode::Menu)))
             .add_systems(EguiPrimaryContextPass, menu.after(crate::ui::style).run_if(in_state(Mode::Menu)))
             .add_systems(OnEnter(Mode::Playing), hand_over);
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn setup(
+fn setup_permanent(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut block_materials: ResMut<Assets<crate::graphics::BlockMaterial>>,
-    mut physics: ResMut<Time<Physics>>,
-    world: Res<VoxelWorld>,
     sites: Res<Sites>,
-    orbit: Res<OrbitCamera>,
 ) {
     let mainland = Mainland::new(sites.wreck);
-    let focus = sites.spawn + Vec3::Y * 1.5;
-    let sets = Sets::new(&world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
 
-    // The mainland, lit and coloured as the island is.
+    // The mainland, lit and coloured as the island is. Stays in the world after Start.
     commands.spawn((
         Mesh3d(meshes.add(mainland.world.mesh(0, MAINLAND_SIZE.x, 0, MAINLAND_SIZE.z, false))),
         MeshMaterial3d(crate::graphics::block_material(&mut block_materials)),
@@ -256,13 +290,47 @@ fn setup(
         NotShadowCaster,
     ));
 
+    let translucent = |colour: Color, unlit: bool| StandardMaterial { base_color: colour, alpha_mode: AlphaMode::Blend, unlit, ..default() };
+    commands.insert_resource(PuffAssets {
+        mesh: meshes.add(Cuboid::default()),
+        fire: materials.add(translucent(Color::srgba(1.0, 0.62, 0.22, 0.85), true)),
+        smoke: materials.add(translucent(Color::srgba(0.30, 0.29, 0.32, 0.55), false)),
+        dust: materials.add(translucent(Color::srgba(0.62, 0.56, 0.48, 0.6), false)),
+    });
+}
+
+/// Update the intro's island camera targets whenever a different save/world is built.
+fn refresh_sets(world: Res<VoxelWorld>, sites: Res<Sites>, orbit: Res<OrbitCamera>, mut intro: ResMut<Intro>) {
+    let focus = sites.spawn + Vec3::Y * 1.5;
+    intro.sets = Sets::new(&world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
+    intro.frame = cinematic::frame_at(&intro.sets, intro.clock);
+}
+
+/// Spawn intro-only props (planet, stars, ship) and reset the attract loop whenever entering Menu.
+#[allow(clippy::too_many_arguments)]
+fn enter_menu(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut physics: ResMut<Time<Physics>>,
+    mut intro: ResMut<Intro>,
+    mut orbit: ResMut<OrbitCamera>,
+    mut ui: ResMut<crate::state::Ui>,
+    mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
+    game: Res<Game>,
+) {
+    ui.paused = false;
+    orbit.free_look = false;
+    cursor.grab_mode = CursorGrabMode::None;
+    cursor.visible = true;
+
     // Level III's placeholder: the planet from orbit, and stars.
     let intro_only = || DespawnOnExit(Mode::Menu);
     commands.spawn((
         intro_only(),
         Mesh3d(meshes.add(planet())),
         MeshMaterial3d(materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.85, ..default() })),
-        Transform::from_translation(sets.planet()).with_rotation(Quat::from_rotation_z(0.3)),
+        Transform::from_translation(intro.sets.planet()).with_rotation(Quat::from_rotation_z(0.3)),
         NotShadowCaster,
     ));
     commands.spawn((
@@ -313,27 +381,19 @@ fn setup(
         });
     }
 
-    let translucent = |colour: Color, unlit: bool| StandardMaterial { base_color: colour, alpha_mode: AlphaMode::Blend, unlit, ..default() };
-    commands.insert_resource(PuffAssets {
-        mesh: meshes.add(Cuboid::default()),
-        fire: materials.add(translucent(Color::srgba(1.0, 0.62, 0.22, 0.85), true)),
-        smoke: materials.add(translucent(Color::srgba(0.30, 0.29, 0.32, 0.55), false)),
-        dust: materials.add(translucent(Color::srgba(0.62, 0.56, 0.48, 0.6), false)),
-    });
-
     // The loose wreckage near the island's wreck waits for the section to come down.
     physics.pause();
-    commands.insert_resource(Intro {
-        frame: cinematic::frame_at(&sets, 0.0),
-        sets,
-        clock: 0.0,
-        phase: Phase::Attract,
-        start: false,
-        sky: None,
-        in_space: None,
-        puff_clock: 0.0,
-        dice: 0,
-    });
+    intro.clock = 0.0;
+    intro.phase = Phase::Attract;
+    intro.frame = cinematic::frame_at(&intro.sets, 0.0);
+    intro.start = false;
+    intro.in_space = None;
+    intro.puff_clock = 0.0;
+    intro.dice = 0;
+    intro.saves_open = false;
+    intro.confirm_delete = None;
+    intro.menu_error = None;
+    intro.slots = inspect_slots(&game.chapter, &saves_dir());
 }
 
 /// A planet seen from orbit: sea, teal land with violet patches, ice at the poles and cloud.
@@ -427,12 +487,24 @@ fn play(
     assets: Res<PuffAssets>,
     mut physics: ResMut<Time<Physics>>,
     mut next: ResMut<NextState<Mode>>,
+    game: Res<Game>,
+    mut session: ResMut<SessionControl>,
     mut camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let dt = time.delta_secs().min(0.25);
     let intro = &mut *intro;
-    if !wants.wants_any_keyboard_input() && keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Space]) {
-        intro.start = true;
+    if !wants.wants_any_keyboard_input() && matches!(intro.phase, Phase::Attract) {
+        if intro.saves_open {
+            if keys.just_pressed(KeyCode::Escape) {
+                if intro.confirm_delete.is_some() {
+                    intro.confirm_delete = None;
+                } else {
+                    intro.saves_open = false;
+                }
+            }
+        } else if session.pending.is_none() && keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter, KeyCode::Space]) {
+            session.pending = Some(primary_action(&game, &intro.slots));
+        }
     }
 
     if let Phase::Glide { t, from, .. } = &mut intro.phase {
@@ -581,13 +653,62 @@ fn drift_puffs(time: Res<Time>, intro: Res<Intro>, mut commands: Commands, mut p
     }
 }
 
-/// Once the game has begun: the world moves again and the castaway is there.
-fn hand_over(mut physics: ResMut<Time<Physics>>, mut avatar: Single<&mut Visibility, With<Player>>) {
+/// Once the game has begun: the world moves again, the sky is restored, and the castaway is there.
+#[allow(clippy::type_complexity)]
+fn hand_over(
+    mut physics: ResMut<Time<Physics>>,
+    mut intro: ResMut<Intro>,
+    mut clear: ResMut<ClearColor>,
+    mut fog: Single<&mut DistanceFog, With<Camera3d>>,
+    mut dome: Single<&mut Visibility, (With<SkyDome>, Without<Player>)>,
+    mut avatar: Single<&mut Visibility, (With<Player>, Without<SkyDome>)>,
+) {
     physics.unpause();
+    if intro.in_space == Some(true)
+        && let Some((sky_colour, sky_fog)) = intro.sky.clone()
+    {
+        clear.0 = sky_colour;
+        **fog = sky_fog;
+        **dome = Visibility::Inherited;
+        intro.in_space = Some(false);
+    }
     **avatar = Visibility::Inherited;
 }
 
-fn menu(mut contexts: EguiContexts, mut intro: ResMut<Intro>) -> Result {
+/// The action for the title menu's primary Continue / New game button (and Enter / Space).
+fn primary_action(game: &Game, slots: &[SlotSummary; SLOTS]) -> SessionAction {
+    if game.custom_save() {
+        return SessionAction::LoadAndPlay { path: game.save_path.clone() };
+    }
+    match latest_slot(slots) {
+        Some(idx) => SessionAction::LoadAndPlay { path: slots[idx].path.clone() },
+        None => SessionAction::NewGameAndPlay { path: slots[0].path.clone() },
+    }
+}
+
+fn slot_progress_text(status: &SlotStatus, chapter_id: &str) -> String {
+    match status {
+        SlotStatus::Empty => "Empty".into(),
+        SlotStatus::Occupied { complete: true, .. } => format!("Chapter {chapter_id} complete"),
+        SlotStatus::Occupied { solved, total, .. } => format!("{solved} of {total} puzzles solved"),
+        SlotStatus::Damaged { .. } => "Unreadable save".into(),
+    }
+}
+
+fn slot_detail_text(status: &SlotStatus) -> Option<String> {
+    let SlotStatus::Occupied { readings, pages, beam_woken, .. } = status else { return None };
+    let r = if *readings == 1 { "1 reading".into() } else { format!("{readings} readings") };
+    let p = if *pages == 1 { "1 handbook page".into() } else { format!("{pages} handbook pages") };
+    if *beam_woken { Some(format!("{r} · {p} · Beam awake")) } else { Some(format!("{r} · {p}")) }
+}
+
+fn menu(
+    mut contexts: EguiContexts,
+    mut intro: ResMut<Intro>,
+    game: Res<Game>,
+    mut session: ResMut<SessionControl>,
+    mut exit: MessageWriter<AppExit>,
+) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     let screen = ctx.content_rect();
     let frame = &intro.frame;
@@ -616,18 +737,193 @@ fn menu(mut contexts: EguiContexts, mut intro: ResMut<Intro>) -> Result {
     if shown <= 0.0 {
         return Ok(());
     }
-    let mut start = false;
+
+    let attract = matches!(intro.phase, Phase::Attract);
+    let latest = latest_slot(&intro.slots);
+    let (primary_label, primary_sub) = if game.custom_save() {
+        let verb = if game.save_path.exists() { "Continue" } else { "Start" };
+        (verb, format!("{} · or press Enter", game.slot_label()))
+    } else if let Some(idx) = latest {
+        let progress = slot_progress_text(&intro.slots[idx].status, &game.chapter.id);
+        ("Continue", format!("Slot {} · {progress} · or press Enter", idx + 1))
+    } else {
+        ("New game", "Slot 1 · or press Enter".into())
+    };
+
+    let mut chosen: Option<SessionAction> = None;
+    let mut toggle_saves = false;
+    let mut quit = false;
     egui::Area::new(egui::Id::new("title")).anchor(Align2::LEFT_CENTER, [56.0, -10.0]).show(&ctx, |ui| {
         ui.set_opacity(shown);
         ui.label(RichText::new("First Principles").size(46.0).strong().color(Color32::from_rgb(240, 242, 245)));
         ui.add_space(18.0);
-        let button = egui::Button::new(RichText::new("Start").size(22.0).strong()).min_size(vec2(170.0, 42.0));
-        start = ui.add(button).clicked();
+        if ui.add(egui::Button::new(RichText::new(primary_label).size(22.0).strong()).min_size(vec2(190.0, 42.0))).clicked() && attract {
+            chosen = Some(primary_action(&game, &intro.slots));
+        }
         ui.add_space(4.0);
-        ui.label(RichText::new("or press Enter").small().color(Color32::from_rgb(200, 205, 212)));
+        ui.label(RichText::new(primary_sub).small().color(Color32::from_rgb(200, 205, 212)));
+        ui.add_space(14.0);
+        let saves_text = if intro.saves_open { "Saves  ◂" } else { "Saves" };
+        if ui.add(egui::Button::new(RichText::new(saves_text).size(17.0)).min_size(vec2(190.0, 36.0))).clicked() && attract {
+            toggle_saves = true;
+        }
+        ui.add_space(8.0);
+        if ui.add(egui::Button::new(RichText::new("Quit").size(17.0)).min_size(vec2(190.0, 36.0))).clicked() && attract {
+            quit = true;
+        }
     });
-    if start && matches!(intro.phase, Phase::Attract) {
-        intro.request_start();
+
+    if toggle_saves {
+        intro.saves_open = !intro.saves_open;
+        intro.confirm_delete = None;
+        intro.menu_error = None;
+        if intro.saves_open {
+            intro.slots = inspect_slots(&game.chapter, &saves_dir());
+        }
+    }
+
+    if intro.saves_open && attract {
+        let mut close_panel = false;
+        let mut delete_index: Option<usize> = None;
+        let chapter_id = game.chapter.id.clone();
+        let slots_snapshot = intro.slots.clone();
+        egui::Area::new(egui::Id::new("saves-panel")).anchor(Align2::RIGHT_CENTER, [-56.0, -10.0]).movable(false).show(&ctx, |ui| {
+            ui.set_opacity(shown);
+            egui::Frame::window(ui.style()).inner_margin(egui::Margin::symmetric(18, 16)).show(ui, |ui| {
+                ui.set_width(390.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Saves").size(22.0).strong().color(Color32::from_rgb(240, 242, 245)));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Close (Esc)").clicked() {
+                            close_panel = true;
+                        }
+                    });
+                });
+                if game.custom_save() {
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.colored_label(WARN, format!("Custom save: {}", game.slot_label()));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let label = if game.save_path.exists() { "Continue" } else { "Start" };
+                            if ui.button(label).clicked() {
+                                chosen = Some(SessionAction::LoadAndPlay { path: game.save_path.clone() });
+                            }
+                        });
+                    });
+                }
+                if let Some(err) = &intro.menu_error {
+                    ui.add_space(6.0);
+                    ui.colored_label(BAD, err);
+                }
+                ui.add_space(8.0);
+                for slot in &slots_snapshot {
+                    egui::Frame::group(ui.style()).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("Slot {}", slot.index + 1)).size(15.0).strong());
+                            if latest == Some(slot.index) {
+                                ui.label(RichText::new("Latest").small().color(GOOD));
+                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let status_text = slot_progress_text(&slot.status, &chapter_id);
+                                match &slot.status {
+                                    SlotStatus::Empty => {
+                                        ui.label(RichText::new(status_text).color(DIM));
+                                    }
+                                    SlotStatus::Occupied { complete: true, .. } => {
+                                        ui.label(RichText::new(status_text).color(GOOD));
+                                    }
+                                    SlotStatus::Occupied { .. } => {
+                                        ui.label(RichText::new(status_text));
+                                    }
+                                    SlotStatus::Damaged { problem, .. } => {
+                                        ui.colored_label(BAD, status_text).on_hover_text(problem);
+                                    }
+                                }
+                            });
+                        });
+                        if let Some(detail) = slot_detail_text(&slot.status) {
+                            ui.label(RichText::new(detail).small().color(DIM));
+                        }
+                        ui.add_space(6.0);
+                        if intro.confirm_delete == Some(slot.index) {
+                            ui.horizontal(|ui| {
+                                ui.colored_label(WARN, format!("Delete Slot {}?", slot.index + 1));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button("Cancel").clicked() {
+                                        intro.confirm_delete = None;
+                                    }
+                                    if ui.button(RichText::new("Delete").color(BAD).strong()).clicked() {
+                                        delete_index = Some(slot.index);
+                                    }
+                                });
+                            });
+                        } else {
+                            ui.horizontal(|ui| match &slot.status {
+                                SlotStatus::Empty => {
+                                    if ui.button("New game").clicked() {
+                                        chosen = Some(SessionAction::NewGameAndPlay { path: slot.path.clone() });
+                                    }
+                                }
+                                SlotStatus::Occupied { .. } => {
+                                    if ui.button(RichText::new("Continue").strong()).clicked() {
+                                        chosen = Some(SessionAction::LoadAndPlay { path: slot.path.clone() });
+                                    }
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.button("Delete").clicked() {
+                                            intro.confirm_delete = Some(slot.index);
+                                            intro.menu_error = None;
+                                        }
+                                    });
+                                }
+                                SlotStatus::Damaged { .. } => {
+                                    if ui.button("New game").on_hover_text("Moves the unreadable file to a backup and starts fresh").clicked() {
+                                        chosen = Some(SessionAction::NewGameAndPlay { path: slot.path.clone() });
+                                    }
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.button("Delete").clicked() {
+                                            intro.confirm_delete = Some(slot.index);
+                                            intro.menu_error = None;
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                    });
+                    ui.add_space(6.0);
+                }
+            });
+        });
+
+        if close_panel {
+            intro.saves_open = false;
+            intro.confirm_delete = None;
+            intro.menu_error = None;
+        }
+        if let Some(idx) = delete_index {
+            let path = intro.slots[idx].path.clone();
+            match delete_slot(&path) {
+                Ok(()) => {
+                    if game.save_path == path {
+                        session.world_dirty = true;
+                    }
+                    intro.confirm_delete = None;
+                    intro.menu_error = None;
+                    intro.slots = inspect_slots(&game.chapter, &saves_dir());
+                }
+                Err(e) => {
+                    intro.menu_error = Some(format!("Couldn't delete Slot {}: {e}", idx + 1));
+                    intro.confirm_delete = None;
+                }
+            }
+        }
+    }
+
+    if let Some(action) = chosen {
+        session.pending = Some(action);
+    }
+    if quit {
+        exit.write(AppExit::Success);
     }
     Ok(())
 }

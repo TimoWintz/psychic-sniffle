@@ -12,9 +12,11 @@ use crate::companion::Landmarks;
 use crate::player::OrbitCamera;
 use crate::ruler::Ruler;
 use crate::sim::{CRAWLER_TIME, Request, Sim};
-use crate::state::{Game, InputTarget, Mode, Ui};
+use crate::state::{Game, InputTarget, Mode, SessionAction, SessionControl, Ui};
 use crate::tutor_bridge::Lumen;
 use crate::waking::Waking;
+use avian3d::prelude::{Physics, PhysicsTime};
+use bevy::app::AppExit;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
@@ -40,8 +42,17 @@ pub struct UiPlugin;
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Ui>()
-            .add_systems(Update, hotkeys.run_if(in_state(Mode::Playing)))
+            .add_systems(Update, (hotkeys, sync_pause_physics).chain().run_if(in_state(Mode::Playing)))
             .add_systems(EguiPrimaryContextPass, (style, draw.after(style).run_if(in_state(Mode::Playing))));
+    }
+}
+
+/// Keep the physics clock paused while the pause menu is open.
+fn sync_pause_physics(ui: Res<Ui>, mut physics: ResMut<Time<Physics>>) {
+    if ui.paused {
+        physics.pause();
+    } else {
+        physics.unpause();
     }
 }
 
@@ -77,7 +88,20 @@ fn hotkeys(
     mut ui: ResMut<Ui>,
     mut ruler: ResMut<Ruler>,
 ) {
-    if wants.wants_any_keyboard_input() || hud_hidden(&waking, &sim, &beam) {
+    if ui.paused {
+        if keys.just_pressed(KeyCode::Escape) {
+            ui.paused = false;
+        }
+        return;
+    }
+    if wants.wants_any_keyboard_input() || waking.playing() {
+        return;
+    }
+    if keys.just_pressed(KeyCode::Escape) {
+        handle_escape(&mut ui, &mut ruler);
+        return;
+    }
+    if hud_hidden(&waking, &sim, &beam) {
         return;
     }
     if keys.just_pressed(KeyCode::KeyN) {
@@ -103,22 +127,26 @@ fn hotkeys(
     if keys.just_pressed(KeyCode::F1) {
         ui.controls_open = !ui.controls_open;
     }
-    if keys.just_pressed(KeyCode::Escape) {
-        // One thing at a time: the ruler, the station, open panels, or cursor unlock while exploring.
-        if ruler.in_use() {
-            ruler.put_away();
-        } else if ui.at_console() {
-            ui.station = None;
-            ui.beam_open = false;
-        } else if ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open {
-            ui.notebook_open = false;
-            ui.handbook_open = false;
-            ui.tutor_open = false;
-            ui.controls_open = false;
-            clear_rename(&mut ui);
-        } else {
-            ui.cursor_free = !ui.cursor_free;
-        }
+}
+
+/// Handle an Esc press while playing: dismiss one layer at a time (ruler, console, open panels),
+/// then toggle the pause menu.
+fn handle_escape(ui: &mut Ui, ruler: &mut Ruler) {
+    if ui.paused {
+        ui.paused = false;
+    } else if ruler.in_use() {
+        ruler.put_away();
+    } else if ui.at_console() {
+        ui.station = None;
+        ui.beam_open = false;
+    } else if ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open {
+        ui.notebook_open = false;
+        ui.handbook_open = false;
+        ui.tutor_open = false;
+        ui.controls_open = false;
+        clear_rename(ui);
+    } else {
+        ui.paused = true;
     }
 }
 
@@ -153,12 +181,18 @@ pub fn draw(
     waking: Res<Waking>,
     beam: Res<crate::beam::Beam>,
     orbit: Res<OrbitCamera>,
-    mut handbook_was_open: Local<bool>,
+    mut session: ResMut<SessionControl>,
+    mut exit: MessageWriter<AppExit>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     // Reborrow once so the panels can borrow fields separately.
     let (game, ui_state, sim, ruler) = (&mut *game, &mut *ui_state, &mut *sim, &mut *ruler);
     ui_state.occupied.clear();
+
+    if ui_state.paused {
+        pause_menu(&ctx, game, ui_state, &mut session, &mut exit);
+        return Ok(());
+    }
 
     // While a wake plays behind letterbox bars, or while a station run (experiment, measurement,
     // committed test, or beam release) plays out, hide the HUD panels for a clear view.
@@ -192,13 +226,61 @@ pub fn draw(
         painter.circle_stroke(centre, 5.5, egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(15, 20, 28, 190)));
     }
     if ui_state.handbook_open {
-        *handbook_was_open = true;
-    } else if *handbook_was_open {
+        ui_state.handbook_was_open = true;
+    } else if ui_state.handbook_was_open {
         // New pages count as read once the handbook has been opened and reduced again.
-        *handbook_was_open = false;
+        ui_state.handbook_was_open = false;
         ui_state.unread_pages.clear();
     }
     Ok(())
+}
+
+/// Centered pause overlay with Resume, Main menu, and Quit game actions.
+fn pause_menu(ctx: &egui::Context, game: &Game, ui_state: &mut Ui, session: &mut SessionControl, exit: &mut MessageWriter<AppExit>) {
+    let screen = ctx.content_rect();
+    egui::Area::new(egui::Id::new("pause-veil")).order(egui::Order::Middle).fixed_pos(screen.min).interactable(true).show(ctx, |ui| {
+        let (rect, _) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+        ui.painter().rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(8, 12, 20, 155));
+    });
+
+    let solved = (0..game.chapter.puzzles.len()).filter(|&i| game.solved(i)).count();
+    let total = game.chapter.puzzles.len();
+    let progress = if solved == total {
+        format!("{} · Chapter {} complete", game.slot_label(), game.chapter.id)
+    } else {
+        format!("{} · {solved} of {total} puzzles solved", game.slot_label())
+    };
+
+    egui::Area::new(egui::Id::new("pause-menu")).order(egui::Order::Foreground).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).movable(false).show(ctx, |ui| {
+        egui::Frame::window(ui.style()).inner_margin(egui::Margin::symmetric(26, 22)).show(ui, |ui| {
+            ui.set_width(260.0);
+            ui.vertical_centered(|ui| {
+                ui.label(RichText::new("Paused").size(26.0).strong().color(Color32::from_rgb(240, 242, 245)));
+                ui.add_space(4.0);
+                ui.label(RichText::new(progress).color(DIM));
+                ui.label(RichText::new("Progress saves automatically.").small().color(DIM));
+                if let Some(problem) = &game.save_problem {
+                    ui.add_space(6.0);
+                    ui.colored_label(BAD, problem);
+                }
+                ui.add_space(16.0);
+                let size = egui::vec2(230.0, 36.0);
+                if ui.add(egui::Button::new(RichText::new("Resume").size(16.0).strong()).min_size(size)).clicked() {
+                    ui_state.paused = false;
+                }
+                ui.add_space(8.0);
+                if ui.add(egui::Button::new(RichText::new("Main menu").size(16.0)).min_size(size)).clicked() {
+                    session.pending = Some(SessionAction::ReturnToMenu);
+                }
+                ui.add_space(8.0);
+                if ui.add(egui::Button::new(RichText::new("Quit game").size(16.0)).min_size(size)).clicked() {
+                    exit.write(AppExit::Success);
+                }
+                ui.add_space(10.0);
+                ui.label(RichText::new("Press Esc to resume").small().color(DIM));
+            });
+        });
+    });
 }
 
 /// The column at the top left: where the chapter stands, then the notebook. Its place is fixed.
@@ -330,7 +412,6 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, r
                     game.def(near).requires.iter().filter_map(|id| game.chapter.puzzle(id)).map(|p| crate::stations::machine_name(p.kind)).collect();
                 Some(format!("This console is dark. Finish at {} first.", needs.join(" and ")))
             }
-            _ if ui_state.cursor_free => Some("Cursor unlocked. Click the world or press Esc to look around.".to_string()),
             _ => None,
         }
     };
@@ -386,7 +467,7 @@ fn controls_help(ctx: &egui::Context, ui_state: &mut Ui) {
                     ("H", "Handbook"),
                     ("T", "Lumen"),
                     ("Enter", "Next Lumen line"),
-                    ("Esc", "Close panel or unlock cursor"),
+                    ("Esc", "Close panel or pause menu"),
                     ("F1", "Show or hide controls"),
                 ] {
                     ui.label(RichText::new(keys).strong().monospace());
@@ -1164,12 +1245,8 @@ fn notebook_body(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, ruler: &
             state.store(ui.ctx(), calc_id);
         }
     }
-    let calc_field = ui.add(
-        egui::TextEdit::singleline(&mut ui_state.calculator)
-            .id(calc_id)
-            .hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2")
-            .desired_width(360.0),
-    );
+    let calc_field =
+        ui.add(egui::TextEdit::singleline(&mut ui_state.calculator).id(calc_id).hint_text("(t1 + t2) / 2   or   tavg = (t1 + t2) / 2").desired_width(360.0));
     if calc_field.changed() {
         ui_state.calc_history_idx = None;
     }
@@ -1363,5 +1440,38 @@ mod tests {
         assert_eq!(pairs.len(), 1);
         assert!(pairs[0].contains("short_drop = 5.000 m"), "{}", pairs[0]);
         assert!(pairs[0].contains("short_time = 1.000 s"), "{}", pairs[0]);
+    }
+
+    #[test]
+    fn escape_dismisses_layers_in_order_then_toggles_pause() {
+        let mut ui = Ui { station: Some(0), notebook_open: true, handbook_open: true, renaming_entry: Some(("d1".into(), "dist".into())), ..Ui::default() };
+        let mut ruler = Ruler::default();
+        ruler.start();
+
+        // 1. Ruler first.
+        handle_escape(&mut ui, &mut ruler);
+        assert!(!ruler.in_use());
+        assert_eq!(ui.station, Some(0));
+        assert!(!ui.paused);
+
+        // 2. Open console next.
+        handle_escape(&mut ui, &mut ruler);
+        assert!(!ui.at_console());
+        assert!(ui.notebook_open);
+        assert!(!ui.paused);
+
+        // 3. Open HUD panels next (and inline rename cleared).
+        handle_escape(&mut ui, &mut ruler);
+        assert!(!ui.notebook_open && !ui.handbook_open);
+        assert!(ui.renaming_entry.is_none());
+        assert!(!ui.paused);
+
+        // 4. Pause menu opens once everything else is closed.
+        handle_escape(&mut ui, &mut ruler);
+        assert!(ui.paused);
+
+        // 5. Esc again resumes.
+        handle_escape(&mut ui, &mut ruler);
+        assert!(!ui.paused);
     }
 }

@@ -4,7 +4,7 @@
 //! comes back. Nothing the tutor returns is interpreted: it cannot change the game.
 
 use crate::companion::Landmarks;
-use crate::state::{Game, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, PUZZLES, Ui};
 use bevy::prelude::*;
 use std::path::PathBuf;
 use tutor::{Conversation, Tutor, TutorContext};
@@ -33,8 +33,17 @@ impl Plugin for TutorPlugin {
     fn build(&self, app: &mut App) {
         // `GAME_SETTINGS` overrides where the settings file is looked for.
         let path = PathBuf::from(std::env::var("GAME_SETTINGS").unwrap_or_else(|_| "settings.toml".into()));
-        app.insert_resource(Lumen { tutor: Tutor::from_settings_file(&path), conversations: Default::default() }).add_systems(Update, poll);
+        app.insert_resource(Lumen { tutor: Tutor::from_settings_file(&path), conversations: Default::default() })
+            .add_systems(BuildWorld, reset)
+            .add_systems(Update, poll);
     }
+}
+
+fn reset(mut lumen: ResMut<Lumen>) {
+    for conversation in &mut lumen.conversations {
+        conversation.cancel();
+    }
+    lumen.conversations = Default::default();
 }
 
 fn poll(mut lumen: ResMut<Lumen>) {

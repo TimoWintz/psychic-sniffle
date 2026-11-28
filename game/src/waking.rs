@@ -25,6 +25,7 @@ use crate::carry::DirtyCells;
 use crate::companion::Landmarks;
 use crate::island::{Cable, MACHINES, Sites, Stonework, Way};
 use crate::player::{OrbitCamera, back, follow_blend, reach};
+use crate::ruler::Ruler;
 use crate::sim::{Sim, TerrainReshaped};
 use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, WorldEntity, not_paused};
 use crate::vessel::{SIGHT_SIZE, Sight};
@@ -586,7 +587,19 @@ impl Plugin for WakingPlugin {
             .insert_resource(trim)
             .init_resource::<TrimFade>()
             .add_systems(BuildWorld, spawn)
-            .add_systems(Update, (play.run_if(in_state(Mode::Playing)).run_if(not_paused), pose_parts, light_trim.run_if(not_paused)).chain())
+            .add_systems(
+                Update,
+                (
+                    play.after(crate::ui::hotkeys)
+                        .after(crate::stations::frame_station)
+                        .after(crate::beam::frame)
+                        .run_if(in_state(Mode::Playing))
+                        .run_if(not_paused),
+                    pose_parts,
+                    light_trim.run_if(not_paused),
+                )
+                    .chain(),
+            )
             .add_systems(EguiPrimaryContextPass, letterbox.after(crate::ui::style).run_if(in_state(Mode::Playing)));
     }
 }
@@ -724,7 +737,7 @@ fn watch_view(world: &VoxelWorld, sites: &Sites, waking: &Waking, focus: Vec3, y
 
 /// Play the wake to the save's stage, one stage at a time, once a pass has been watched.
 #[allow(clippy::too_many_arguments)]
-fn play(
+pub(crate) fn play(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
@@ -735,7 +748,7 @@ fn play(
     mut waking: ResMut<Waking>,
     mut world: ResMut<VoxelWorld>,
     (mut dirty, mut reshaped): (ResMut<DirtyCells>, ResMut<TerrainReshaped>),
-    (mut orbit, mut ui, mut landmarks): (ResMut<OrbitCamera>, ResMut<Ui>, ResMut<Landmarks>),
+    (mut orbit, mut ui, mut ruler, mut landmarks): (ResMut<OrbitCamera>, ResMut<Ui>, ResMut<Ruler>, ResMut<Landmarks>),
 ) {
     let way = &sites.way;
     let saved = stage(&game);
@@ -764,9 +777,10 @@ fn play(
         waking.play = Some(Play { timeline, t: 0.0 });
         // The crane lifts the sight from wherever the crawler left it.
         waking.lift_from = sights.iter().find(|(sight, _)| sight.riding).map(|(_, at)| at.translation());
-        // The panel steps aside and the camera goes to watch. Nothing more this frame: the key that
-        // closed the console (E or Esc) must not also skip the wake it starts.
+        // The panel and ruler step aside and the camera goes to watch. Nothing more this frame:
+        // the key that closed the console (E or Esc) must not also skip the wake it starts.
         ui.station = None;
+        ruler.put_away();
         let (yaw, pitch) = watch_view(&world, &sites, &waking, orbit.focus(), orbit.yaw);
         orbit.borrow(yaw, pitch, WATCH_DISTANCE);
         return;

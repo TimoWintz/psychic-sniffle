@@ -3,6 +3,7 @@
 
 use crate::island::{GROUND, MACHINES, Sites};
 use crate::player::{OrbitCamera, Player};
+use crate::ruler::Ruler;
 use crate::sim::Sim;
 use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, WorldEntity, not_paused};
 use crate::waking::{MachineTrim, Waking};
@@ -29,7 +30,7 @@ impl Plugin for StationsPlugin {
 
 /// The quartz in each machine's console face and lamps: dark while it sleeps, lit once it wakes.
 #[derive(Resource)]
-struct ConsoleQuartz {
+pub(crate) struct ConsoleQuartz {
     materials: [Handle<StandardMaterial>; MACHINES],
     fade_shown: Option<[f32; MACHINES]>,
     frame_shown: Option<usize>,
@@ -126,7 +127,7 @@ pub fn machine_name(kind: PuzzleKind) -> &'static str {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn proximity(
+pub(crate) fn proximity(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     sites: Res<Sites>,
@@ -217,17 +218,22 @@ pub fn look_at_station(orbit: &mut OrbitCamera, game: &Game, sites: &Sites, puzz
 /// While a station is open the camera shows its puzzle, and it glides back to the avatar when the
 /// player leaves. A test borrows it meanwhile (`sim` hands it back), and a wake closes the station
 /// and borrows it itself.
-fn frame_station(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn frame_station(
     game: Res<Game>,
     sites: Res<Sites>,
     ui: Res<Ui>,
     sim: Res<Sim>,
     waking: Res<Waking>,
     mut orbit: ResMut<OrbitCamera>,
+    mut ruler: ResMut<Ruler>,
     mut quartz: ResMut<ConsoleQuartz>,
 ) {
     if ui.station == quartz.frame_shown {
         return;
+    }
+    if quartz.frame_shown.is_some() && ui.station.is_none() {
+        ruler.put_away();
     }
     if sim.busy() || sim.watching() {
         // The test keeps the camera; `sim` brings it back to the station, or home, when it is done.

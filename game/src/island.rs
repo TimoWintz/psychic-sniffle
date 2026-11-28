@@ -434,8 +434,10 @@ impl Route {
             line_z: rim + LINE_BACK,
             rail_x,
             haul_x: rail_x + Ch1Layout::RAIL_LENGTH as i32 + 3,
-            tower: IVec3::new(channel_x - 10, GROUND, rim + 30),
-            mast: IVec3::new(channel_x - 19, GROUND, rim + 30),
+            // East of the transfer crane's furthest position so the crane mast never blocks the
+            // drop tower or survey mast from their station view.
+            tower: IVec3::new(channel_x - 4, GROUND, rim + 30),
+            mast: IVec3::new(channel_x - 13, GROUND, rim + 30),
             channel: Frame::north(IVec2::new(channel_x, rim)),
             ridge: Frame::north(IVec2::new(RIDGE_X, ridge_first)),
         }
@@ -661,7 +663,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     world.set(IVec3::new(gate_x, GROUND + 3, row), Material::Limestone);
     let stone_gate = Vec3::new(gate_x as f32 + 0.5, ground, row as f32 + 0.5);
     let leaf = Stonework { cells: (GROUND..GROUND + 3).map(|y| (IVec3::new(gate_x, y, row), Material::Limestone)).collect(), stage: 1, ..default() };
-    world.set(IVec3::new(rail_x, GROUND - 1, row - 1), Material::Concrete);
+    world.set(IVec3::new(rail_x, GROUND - 1, row + 1), Material::Concrete);
     let marker_x = rail_x + layout.rail_target as i32;
     world.fill(IVec3::new(marker_x, GROUND - 1, row - 1), IVec3::new(marker_x, GROUND - 1, row + 1), Material::Marker);
     // The builders' own mark is two studs of quartz at the ends of the castaway's orange line: they
@@ -671,7 +673,8 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         world.set(q, Material::Quartz);
     }
     let rail_start = Vec3::new(rail_x as f32 + 0.5, ground, row as f32 + 0.5);
-    let beside = Vec3::new(0.0, 0.0, -1.0);
+    // On the south (+z) side, facing the station's camera, so the cart does not hide the pins.
+    let beside = Vec3::Z;
     let rail_start_pin = Pin { position: rail_start + beside, label: "Rail cart: starting point" };
     // The cart's block stands on the station's side of the rail, two blocks short of the start mark so
     // it never hides the pin, with room around it to be put down again.
@@ -679,9 +682,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let cargo_yard = [IVec3::new(rail_x - 3, GROUND, row - 2), IVec3::new(rail_x - 1, GROUND, row - 1)];
     let rail_marker_pin = Pin { position: rail_start + beside + Vec3::X * layout.rail_target as f32, label: "Rail marker: centre" };
     let station0 = IVec3::new(rail_x - 1, GROUND, row - 3);
-    for z in [row as f32 - 1.7, row as f32 + 2.7] {
-        stakes.push(Vec3::new(marker_x as f32 + 0.5, ground, z));
-    }
+    stakes.extend(corners(Rect::new(marker_x, row - 1, marker_x, row + 1), ground));
 
     // --- Puzzle 1: the haul track ---------------------------------------------------------------
     // The line past the stone gate, east to a buffer. The haul cart's front coupler and the crawler's
@@ -697,9 +698,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     world.set(IVec3::new(haul_block(layout.head_start), GROUND - 1, row + 1), Material::Concrete);
     let transfer_x = haul_block(layout.transfer_at);
     world.fill(IVec3::new(transfer_x, GROUND - 1, row - 1), IVec3::new(transfer_x, GROUND - 1, row + 1), Material::Marker);
-    for z in [row as f32 - 1.7, row as f32 + 2.7] {
-        stakes.push(Vec3::new(transfer_x as f32 + 0.5, ground, z));
-    }
+    stakes.extend(corners(Rect::new(transfer_x, row - 1, transfer_x, row + 1), ground));
     // The transfer crane: a stone mast beyond the far side of the marker, quartz in its cap and a
     // band. Its arm turns on the mast's top (an entity: see `waking`).
     world.fill(IVec3::new(transfer_x, GROUND, row - 2), IVec3::new(transfer_x, GROUND + 4, row - 2), Material::Limestone);
@@ -754,10 +753,13 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let mut tower_quartz = Vec::new();
     let (tower_release, tower_plate) = gantry(&mut world, tower, layout.tower_h as i32, &mut tower_quartz);
     let (mast_release, mast_plate) = gantry(&mut world, mast, layout.mast_h as i32, &mut tower_quartz);
-    pins.push(Pin { position: tower_release, label: "Drop tower: release point" });
-    pins.push(Pin { position: tower_plate, label: "Drop tower: landing plate" });
-    pins.push(Pin { position: mast_release, label: "Survey mast: release point" });
-    pins.push(Pin { position: mast_plate, label: "Survey mast: landing plate" });
+    // Sit the tower and mast pins on the near (+z) side of the fall line, clear of both the
+    // hanging test mass and the light gate's near sensor head; both pins stay vertically aligned.
+    let near_face = Vec3::Z * 0.9;
+    pins.push(Pin { position: tower_release + near_face, label: "Drop tower: release point" });
+    pins.push(Pin { position: tower_plate + near_face, label: "Drop tower: landing plate" });
+    pins.push(Pin { position: mast_release + near_face, label: "Survey mast: release point" });
+    pins.push(Pin { position: mast_plate + near_face, label: "Survey mast: landing plate" });
     let station1 = IVec3::new(tower.x + 1, GROUND, tower.z + 5);
     // The light gate rests on a stand on the station's apron until it is clamped on the tower.
     let gate_stand = Vec3::new(tower.x as f32 + 3.5, ground, tower.z as f32 + 3.5);
@@ -927,7 +929,16 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let runs = [
         road(&mut world, &[(rail_x + 2, row - 2), (hx - 1, row - 2)]),
         road(&mut world, &[(hx - 1, row - 2), (hx + haul_len - 6, row - 2), (station1.x, station1.z + 1)]),
-        road(&mut world, &[(station1.x + 1, station1.z - 1), (ramp_foot.x - 1, tower.z - 3), (ramp_foot.x, ramp_foot.y), (ledge_end.x, ledge_end.y)]),
+        road(
+            &mut world,
+            &[
+                (station1.x + 1, station1.z - 1),
+                (tower.x + 5, station1.z - 1),
+                (tower.x + 5, tower.z - 3),
+                (ramp_foot.x, ramp_foot.y),
+                (ledge_end.x, ledge_end.y),
+            ],
+        ),
         road(&mut world, &[(ledge_end.x, ledge_end.y), (ramp_foot.x, ramp_foot.y)]).then(road(
             &mut world,
             &[
@@ -956,7 +967,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     ];
     // Each machine's console, with one of the builders' lamps beside it (see `stations`).
     let stations = [station0, station_haul, station1, station2, station3];
-    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -2), IVec2::new(2, 1), IVec2::new(2, 2), IVec2::new(2, 2)];
+    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -2), IVec2::new(-2, 1), IVec2::new(2, 2), IVec2::new(2, 2)];
     for (i, console) in stations.into_iter().enumerate() {
         lanterns.push(console.as_vec3() + Vec3::new(lamps[i].x as f32 + 0.5, 0.0, lamps[i].y as f32 + 0.5));
         lantern_machine.push(i);
@@ -1404,7 +1415,9 @@ fn ridge(world: &mut VoxelWorld, frame: &Frame, along: i32, height: i32) {
                 }
             }
         }
-        if side >= 4 && crest > 4 {
+        // Buttress on the west flank only; keep the east (camera-facing) flank flush so the near
+        // foot of the ridge stays in view from the tilting launcher's station.
+        if c <= -4 && crest > 4 {
             frame.fill(world, (along - 1, c, GROUND), (along - 1, c, GROUND + crest - 5), Material::Rock);
         }
         if side >= 5 && hash01(column.with_y(93)) < 0.3 {

@@ -146,6 +146,48 @@ impl OrbitCamera {
         self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * distance);
     }
 
+    /// Like [`OrbitCamera::frame_side_view`], but turned horizontally by `yaw_offset` and tilted to
+    /// `pitch`. Projects every corner of the box so the whole span stays in the left part of the
+    /// screen, clear of the station panel.
+    pub fn frame_angled_view(&mut self, min: Vec3, max: Vec3, along: Vec3, yaw_offset: f32, pitch: f32, glide: bool) {
+        self.keep_view();
+        let (min, max) = (min.min(max), min.max(max));
+        let yaw = f32::atan2(-along.z, along.x) + yaw_offset;
+        let right = Vec3::new(yaw.cos(), 0.0, -yaw.sin());
+        let back_dir = back(yaw, pitch);
+        let up = back_dir.cross(right);
+        let half_screen_width = ASPECT * TAN_HALF_FOV;
+        let centre = (min + max) / 2.0;
+
+        // Place the box in the left part of the screen (`ndc_x` in [-0.90, +0.38]) and vertically
+        // within [-0.72, +0.72], accounting for perspective depth of every corner.
+        let shift_frac = 0.42;
+        let mut distance = 18.0_f32;
+        for x in [min.x, max.x] {
+            for y in [min.y, max.y] {
+                for z in [min.z, max.z] {
+                    let v = Vec3::new(x, y, z) - centre;
+                    let rx = v.dot(right);
+                    let ry = v.dot(up);
+                    let rz = v.dot(back_dir);
+                    let d_left = (-rx + 0.90 * half_screen_width * rz) / ((0.90 - shift_frac) * half_screen_width);
+                    let d_right = (rx + 0.38 * half_screen_width * rz) / ((0.38 + shift_frac) * half_screen_width);
+                    let d_vert = (ry.abs() + 0.72 * TAN_HALF_FOV * rz) / (0.72 * TAN_HALF_FOV);
+                    distance = distance.max(d_left).max(d_right).max(d_vert);
+                }
+            }
+        }
+        let distance = distance.clamp(18.0, SIDE_VIEW_FURTHEST);
+        let view = (yaw, pitch, distance);
+        if glide {
+            self.turning = Some(view);
+        } else {
+            (self.yaw, self.pitch, self.distance) = view;
+        }
+        self.side_view = true;
+        self.watch = Some(centre + right * shift_frac * half_screen_width * distance);
+    }
+
     /// Take the camera to watch something from this yaw, pitch and distance (set `watch` to say
     /// what), keeping the player's own view to come back with [`OrbitCamera::release_view`]. It
     /// keeps that distance while it watches: a block between it and what it watches (a post the

@@ -104,7 +104,7 @@ impl Instance {
                 })
             }
             PuzzleKind::Gravity => {
-                let height = l.tower_h as f64;
+                let height = l.cliff_drop_h();
                 let fall_time = fall_time(height, l.g);
                 Some(DemoPlayback::Strobe { height, g: l.g, interval: fall_time / STROBE_INTERVALS as f64, fall_time })
             }

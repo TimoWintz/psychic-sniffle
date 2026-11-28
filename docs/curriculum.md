@@ -113,9 +113,9 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
 - **Story.** The crawler is the builders' own, still walking its rounds, and it carries the sight on
   its back: the piece the launchers aim with. Pass: the sight is on the crane, and the launchers can
   aim once they know how hard the planet pulls.
-- **Wakes.** The transfer crane's arm, which lifts the sight off; then the light runs to the tower.
+- **Wakes.** The transfer crane's arm, which lifts the sight off; then the light runs to the sea-cliff quarry.
 - **Purpose.** Velocity and relative velocity, before any acceleration: textbooks start here, and the
-  drop tower's strobe ("evenly, or further apart?") then has a steady motion to be compared with.
+  sea-cliff quarry's strobe ("evenly, or further apart?") then has a steady motion to be compared with.
 - **Brief.** The builders' crawler walks the haul track round after round; from its mark at the end
   of a round it sets off at one steady speed, and cannot be stopped. The haul track is the rail's
   stretch past the stone gate, and the haul cart is the tutorial's cart, gone on up the line: it
@@ -155,32 +155,31 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
 - **Story.** The launchers do exactly what they are told and work nothing out, and Lumen's backup only
   knows home's gravity: Lumen would rather have the player's number than its guess. Pass: the
   player's g is in Lumen, and every later shot is worked out with it.
-- **Wakes.** The tower, to the top; the ramp onto the outcrop surfaces, and the sight is set on the
-  ledge launcher.
+- **Wakes.** The counterweight plunges cleanly through the stone water shutter into the cove, a vein
+  of quartz lights up the cliff face to the outcrop, the ramp onto the outcrop surfaces, and the
+  sight is set on the ledge launcher.
 - **Brief.** The launchers need this planet's gravitational acceleration.
-- **Investigate.** Measure the drop tower's height with the ruler. Clamp the light gate on the tower,
-  release the test mass and time the fall to the gate (free, repeatable).
-- **Place to measure: the light gate.** A gate on a stand by the station, carried (`F`) and clamped on
-  the drop tower at any whole-metre notch (painted orange by the castaway), from 1 m below the
-  release down to the plate: the notch the pointer marks on the tower, or the one at hand height. The
-  light gate measurement needs it, like the rail cart needs its block: until a gate is clamped the
-  station's Drop and time button is off and says why, and Lumen mentions the stand. Each release times the fall from the
-  release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`, `t3`, ...), so the
-  player designs their own measurement and can see that doubling the drop does not double the time.
-  The notch at the plate times the whole drop. The gate's notch is kept in the save; a ruler pin rides
-  on it. The answer stays the typed `g`.
-- **Short drops are worth less.** Readings are rounded to 0.01 s, so at 1 m (about 0.4 to 0.55 s)
-  the rounding alone is up to about 2.6 % of `g`, beyond the 2 % pass. A reading of a second or more
-  (`h ≥ g/2`, 3.3 to 6.8 m) gives `g` to 1 %. The station's text says only that the longer the drop,
-  the better the reading; players find the rest by fitting several notches. Tests hold every notch
-  that times a second or more to 1 %, and a straight line through all the pairs (`h` against `t²`) as
-  well. A plot of `h` against `t²` belongs to the grapher (tier 2), not here.
+- **Investigate.** Pick up a quarry drop-stone (`F`) from the stack beside the console, walk to either
+  orange drop lip (the 1 m low quarry step right beside the console or the deep sea-cliff rim, 9.4 to
+  11.4 m straight above the cove water), and press `F` to release it straight down from rest (free,
+  repeatable). Lumen's stopwatch times release to impact (or splash) and logs `t` only into the
+  notebook; measure the drop height `h` yourself with the ruler (`R`). The cove below is deep water,
+  so jumping off splashes the castaway cleanly back onto dry ground.
+- **Short drops are worth less.** Readings are rounded to 0.01 s, so at the 1 m low step (about 0.38
+  to 0.55 s) the rounding alone is up to about 2.6 % of `g`, rough enough to push high-g worlds past
+  the 2 % pass. The deep cliff rim (9.4 to 11.4 m straight into the cove water, always over a second)
+  gives `g` to within 1 %.
 - **Try it first.** "How will flashes at equal moments be spaced?" Evenly / further apart lower down /
-  closer together. The release is the experiment: the flashes leave afterimages and ticks whose
-  gaps grow. Writes the pages *Acceleration* and *Free fall*.
+  closer together. A quarry stone falls down the dark slate-violet cliff face into the sea with amber
+  afterimages and ticks whose gaps grow. Writes the pages *Acceleration* and *Free fall*.
 - **Predict.** Enter `g`.
-- **Test.** A second mass is released from the taller survey mast. The station shows the fall time
-  predicted from the player's `g` beside the measured one.
+- **Test.** A heavy builders' counterweight hangs from a stone davit overhanging the sheer,
+  unclimbable outcrop spur (`14.4` to `16.4 m` above the cove water). Two sliding pale-stone shutter
+  leaves set in a waterline collar frame the water directly beneath it. When `g` is committed, the
+  counterweight releases and the shutters slide open at the predicted arrival time
+  `t_pred = sqrt(2 H / g)`. Within 2 %, the counterweight plunges cleanly through the open shutter
+  into the cove; outside 2 %, it visibly strikes the closed stone shutter (before it opens if `g` is
+  too low, or after it snaps shut if `g` is too high).
 - **Pass.** Within 2 % of the true value. The player's `g` is then written to the notebook and used by
   the later puzzles — their own measurement, not the game's number.
 - **Relation.** `h = ½ g t²`.
@@ -271,7 +270,7 @@ explains itself; every question right ticks the page. Nothing in the world depen
 ### Side-machine: the beam
 
 The first side-machine (see "Side-machines" in the game design). It is off the road north of the
-railway, between the wreck and the drop tower, and can be used from the start. Its id is `1.1.s1`.
+railway, between the wreck and the sea-cliff quarry, and can be used from the start. Its id is `1.1.s1`.
 
 - **The machine.** A long beam of the builders' stone on a pivot post, running east and west at
   about waist height, with a shallow seat every metre from the pivot: five on each arm. The machine

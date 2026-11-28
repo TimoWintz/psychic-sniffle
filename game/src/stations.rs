@@ -120,7 +120,7 @@ pub fn machine_name(kind: PuzzleKind) -> &'static str {
     match kind {
         PuzzleKind::Rail => "the supply rail",
         PuzzleKind::Chase => "the haul track",
-        PuzzleKind::Gravity => "the drop tower",
+        PuzzleKind::Gravity => "the sea-cliff quarry",
         PuzzleKind::Channel => "the ledge launcher",
         PuzzleKind::Ridge => "the tilting launcher",
     }
@@ -177,7 +177,7 @@ pub fn station_view(kind: PuzzleKind, game: &Game, sites: &Sites) -> (Vec3, Vec3
             haul_view(sites, reach as f32)
         }
         PuzzleKind::Gravity => {
-            let (min, max) = span(&[sites.tower_plate, sites.tower_release, sites.mast_plate, sites.mast_release, sites.gate_stand]);
+            let (min, max) = span(&[sites.low_landing, sites.low_drop, sites.cliff_landing, sites.cliff_drop, sites.overhang_socket, sites.overhang_release]);
             (min, max, Vec3::X)
         }
         PuzzleKind::Channel => {
@@ -448,12 +448,10 @@ mod tests {
                     let (lo, hi) = aabb(cr + Vec3::Y * 0.65, Vec3::new(0.7, 0.4, 0.55));
                     boxes.push(("sight_on_crawler".into(), lo, hi));
                 }
-                let (lo, hi) = aabb(sites.tower_release + Vec3::Y * 0.4, Vec3::splat(0.8));
-                boxes.push(("tower_mass".into(), lo, hi));
-                let (lo, hi) = aabb(sites.mast_release + Vec3::Y * 0.4, Vec3::splat(0.8));
-                boxes.push(("mast_mass".into(), lo, hi));
-                let (lo, hi) = aabb(sites.gate_stand + Vec3::Y * 0.52, Vec3::new(0.5, 1.04, 0.5));
-                boxes.push(("gate_stand".into(), lo, hi));
+                let (lo, hi) = aabb(sites.overhang_release + Vec3::Y * 0.4, Vec3::splat(0.8));
+                boxes.push(("counterweight".into(), lo, hi));
+                let (lo, hi) = aabb(sites.stone_pile + Vec3::Y * 0.5, Vec3::new(1.15, 1.0, 1.15));
+                boxes.push(("stone_pile".into(), lo, hi));
 
                 // Ledge launcher rig (jack frame + gauge + fitted sight).
                 let ledge = sites.channel_launch;
@@ -569,9 +567,6 @@ mod tests {
 
                     for i in 0..screen_pts.len() {
                         for j in i + 1..screen_pts.len() {
-                            if screen_pts[i].0 == "Light gate" || screen_pts[j].0 == "Light gate" {
-                                continue;
-                            }
                             let d = screen_pts[i].1.distance(screen_pts[j].1);
                             if d < 30.0 {
                                 note(
@@ -604,29 +599,15 @@ mod tests {
                         check_view(&world, &sites, &[], &pins, &mut note);
                     }
                     PuzzleKind::Gravity => {
-                        // Test every notch 1..=tower_h on the drop tower.
-                        for notch in 1..=game.layout.tower_h {
-                            let gate_pos = crate::carry::gate_at(&sites, notch);
-                            let mut gate_boxes = Vec::new();
-                            let (lo, hi) = aabb(gate_pos + Vec3::new(-2.0, 0.0, 0.0), Vec3::new(1.2, 0.4, 1.6));
-                            gate_boxes.push(("light_gate_clamp".into(), lo, hi));
-                            for side_z in [-1.0_f32, 1.0] {
-                                let (lo, hi) = aabb(gate_pos + Vec3::new(-1.0, 0.0, side_z * 0.68), Vec3::new(2.0, 0.12, 0.12));
-                                gate_boxes.push((format!("light_gate_arm_{side_z}"), lo, hi));
-                                let (lo, hi) = aabb(gate_pos + Vec3::new(0.0, 0.0, side_z * 0.68), Vec3::new(0.24, 0.24, 0.2));
-                                gate_boxes.push((format!("light_gate_head_{side_z}"), lo, hi));
-                                let (lo, hi) = aabb(gate_pos + Vec3::new(0.0, 0.0, side_z * 0.56), Vec3::new(0.1, 0.1, 0.04));
-                                gate_boxes.push((format!("light_gate_eye_{side_z}"), lo, hi));
-                            }
-                            let pins = [
-                                ("Drop tower: release point", pin(&sites, "Drop tower: release point")),
-                                ("Drop tower: landing plate", pin(&sites, "Drop tower: landing plate")),
-                                ("Survey mast: release point", pin(&sites, "Survey mast: release point")),
-                                ("Survey mast: landing plate", pin(&sites, "Survey mast: landing plate")),
-                                ("Light gate", gate_pos),
-                            ];
-                            check_view(&world, &sites, &gate_boxes, &pins, &mut note);
-                        }
+                        let pins = [
+                            ("Low quarry step: drop lip", pin(&sites, "Low quarry step: drop lip")),
+                            ("Low quarry step: landing slab", pin(&sites, "Low quarry step: landing slab")),
+                            ("Cliff rim: drop lip", pin(&sites, "Cliff rim: drop lip")),
+                            ("Cliff rim: water surface", pin(&sites, "Cliff rim: water surface")),
+                            ("Outcrop overhang: release point", pin(&sites, "Outcrop overhang: release point")),
+                            ("Outcrop overhang: water shutter", pin(&sites, "Outcrop overhang: water shutter")),
+                        ];
+                        check_view(&world, &sites, &[], &pins, &mut note);
                     }
                     PuzzleKind::Channel => {
                         // Test every possible block stack 0..=MAX_STACK in the jack frame.

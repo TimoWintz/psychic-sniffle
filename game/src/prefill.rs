@@ -11,15 +11,15 @@
 //! into is yours and is left alone; clear it to get the formula back. While a station's panel is
 //! open, the calculator offers the tour's working there in the same way, until its result is noted.
 //!
-//! Everything in the world is still yours to do: walking, carrying the cart's block, the light gate and
-//! the channel's blocks, running the experiments, committing.
+//! Everything in the world is still yours to do: walking, carrying the cart's block, dropping quarry
+//! stones and carrying the channel's blocks, running the experiments, committing.
 
 use crate::island::Sites;
-use crate::sim::CRAWLER_TIME;
+use crate::sim::{CLIFF_DROP_TIME, CRAWLER_TIME};
 use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, not_paused};
 use bevy::prelude::*;
 use physics_core::notebook::{Notebook, source};
-use physics_core::units::{Dim, Quantity};
+use physics_core::units::Quantity;
 
 pub struct PrefillPlugin;
 
@@ -51,7 +51,7 @@ const READINGS: [(&str, &str, &str, bool); 8] = [
     ("d2", "Haul cart: front coupler", "Crawler: rear coupler", false),
     ("d3", "Haul cart: front coupler", "Transfer marker: centre", false),
     ("d4", "Timing post A", "Timing post B", false),
-    ("h1", "Drop tower: release point", "Drop tower: landing plate", true),
+    ("h1", "Cliff rim: drop lip", "Cliff rim: water surface", true),
     ("d5", "Ledge launcher: release point", "Platform: centre", false),
     ("h2", "Ledge launcher: release point", "Platform: centre", true),
     ("d6", "Tilting launcher: release point", "Landing circle: centre", false),
@@ -142,18 +142,10 @@ fn formula(game: &Game, puzzle: usize) -> Option<Vec<String>> {
             Some(vec![format!("({d4}/{t})*{d3}/({d3} - {d2})")])
         }
         2 => {
-            // The light gate's reading over the longest drop.
-            let (h, t) = notebook
-                .entries
-                .iter()
-                .filter(|e| e.source == source::LIGHT_GATE && e.quantity.dim == Dim::TIME)
-                .filter_map(|t| {
-                    let h = format!("h{}", t.name.trim_start_matches('t'));
-                    notebook.get(&h).map(|drop| (drop.quantity.value, h, t.name.clone()))
-                })
-                .max_by(|a, b| a.0.total_cmp(&b.0))
-                .map(|(_, h, t)| (h, t))?;
-            Some(vec![format!("2*{h}/{t}^2")])
+            // The stopwatch time from the deep cliff rim, paired with the cliff height measured by the ruler.
+            let t = cliff_time(game)?;
+            let h1 = name("h1")?;
+            Some(vec![format!("2*{h1}/{t}^2")])
         }
         3 => {
             // For the stack in the jack frame, once it is one the dial can reach; until then, the
@@ -195,10 +187,16 @@ fn crawler_time(game: &Game) -> Option<String> {
     game.save.notebook.entries.iter().rev().find(|e| e.label == CRAWLER_TIME).map(|e| e.name.clone())
 }
 
+/// The name of the stopwatch's latest cliff rim drop time.
+fn cliff_time(game: &Game) -> Option<String> {
+    game.save.notebook.entries.iter().rev().find(|e| e.label == CLIFF_DROP_TIME).map(|e| e.name.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{judge_commit, note_crawler, note_reading};
+    use crate::carry::DropLedge;
+    use crate::sim::{judge_commit, note_crawler, note_quarry_drop};
 
     /// Commit the prefilled blueprint at a station as the player would, and record the result.
     fn commit(game: &mut Game, ui: &mut Ui, puzzle: usize) {
@@ -226,11 +224,10 @@ mod tests {
         note_crawler(game);
         commit(game, &mut ui, 1);
 
-        assert!(formula(game, 2).is_none(), "gravity waits for the light gate");
-        note_reading(game, 3);
-        let long = game.layout.tower_h - 2;
-        note_reading(game, long);
-        game.save.placed.insert(game.def(2).id.clone(), long);
+        assert!(formula(game, 2).is_none(), "gravity waits for a cliff drop");
+        note_quarry_drop(game, DropLedge::Low);
+        assert!(formula(game, 2).is_none(), "the prefill waits for the clean cliff drop");
+        note_quarry_drop(game, DropLedge::Cliff);
         commit(game, &mut ui, 2);
 
         let stack = *game.layout.channel_stacks().start();
@@ -258,7 +255,7 @@ mod tests {
             let (_, mut sites) = crate::island::build(&game.layout);
             // The player noted other readings first, so d2 and h2 are taken.
             game.save.notebook.set("d2", "horizontal distance, somewhere else", Quantity::metres(99.0), source::RULER);
-            game.save.notebook.set("h2", "drop from the release point to the light gate", Quantity::metres(1.0), source::LIGHT_GATE);
+            game.save.notebook.set("h2", crate::sim::LOW_DROP_TIME, Quantity::metres(1.0), source::RULER);
             // And two blocks stand in the jack frame, raising the launcher's pin.
             let pin = sites.channel_release_pin;
             sites.pins[pin].position.y += 2.0;

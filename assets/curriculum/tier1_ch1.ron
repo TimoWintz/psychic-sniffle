@@ -134,7 +134,7 @@ Chapter(
             id: "acceleration",
             title: "Acceleration",
             found: Demo("1.1.2"),
-            hint: "Watch the test mass fall from the drop tower. Try the experiment at the Local gravity station.",
+            hint: "Watch a stone fall down the sea cliff. Try the experiment at the Local gravity station.",
             card: "Acceleration tells you how fast a velocity changes. For an object speeding up steadily, it's the change in velocity divided by the time taken:\n\n    a = (change in v) / (change in t)\n\nIts unit is a velocity divided by a time, (m/s)/s, which is written m/s². An acceleration of 3 m/s² adds 3 m/s to the speed every second.\n\nIf an object starts from rest with a steady acceleration a, then after a time t its velocity and the distance it has covered are\n\n    v = a t\n    x = (1/2) a t^2\n\nBecause the speed grows by the same step every second, the object covers more ground in each second than in the one before. Photos taken at equal moments show the gaps getting longer.",
             derivation: Some("Start from steady acceleration from rest, where the initial speed is 0:\n\n    a = v / t    so    v = a t\n\nWhy is there a factor of 1/2 in the distance formula? Because the speed rises in a straight line from 0 to a t. The object spends half the time slower than the midpoint and half the time faster by the same amount, so its average speed is half its final speed:\n\n    v_avg = (0 + a t) / 2 = (1/2) a t\n\nMultiplying average speed by elapsed time t gives the distance:\n\n    x = v_avg t = (1/2) a t^2\n\nOn a graph of speed against time, the rising speed forms a right triangle of base t and height a t. Its area is (1/2) × base × height = (1/2) a t^2."),
             illustration: Some(Illustration(
@@ -166,7 +166,7 @@ Chapter(
             id: "free_fall",
             title: "Free fall",
             found: Demo("1.1.2"),
-            hint: "Watch the test mass fall from the drop tower. Try the experiment at the Local gravity station.",
+            hint: "Watch a stone fall down the sea cliff. Try the experiment at the Local gravity station.",
             card: "When you let go of an object from rest and only gravity pulls on it, it falls with a steady acceleration called g, the gravitational acceleration, measured in m/s². After a time t it has fallen\n\n    h = (1/2) g t^2\n\nThe object's mass doesn't appear in this formula, so heavy and light things fall together. Air can hold back light, spread-out things such as feathers, but it hardly affects a crate or an apple.\n\nThe value of g depends on the planet. The value you learned was for a different planet, so you'll have to measure it here.",
             derivation: Some("Free fall is steady acceleration from rest with a = g. Substituting a = g into the acceleration formulas gives:\n\n    v = g t\n    h = (1/2) g t^2\n\nRearranging h = (1/2) g t^2 gives two handy forms. Solving for the fall time t:\n\n    t = sqrt(2 h / g)\n\nSolving for the gravitational acceleration g from a measured drop h and time t:\n\n    g = 2 h / t^2\n\nBecause t is squared in the denominator, a small rounding step on a stopwatch has a larger relative effect on a short drop than on a long one. Longer falls therefore give a cleaner measurement of g."),
             illustration: Some(Illustration(
@@ -294,7 +294,7 @@ Chapter(
             id: "a_rule_predicts",
             title: "A rule is a guess until it predicts",
             found: Side("1.1.s1"),
-            hint: "Wake the stone beam, north of the railway between the wreck and the drop tower.",
+            hint: "Wake the stone beam, north of the railway between the wreck and the quarry.",
             card: "When you try something a few times and watch what happens, you often notice a pattern. A pattern seen in a few cases is a guess about every case. Write it down as a rule, so that you can test it.\n\nTo test a rule, use it to predict. Pick a case you haven't tried, work out what the rule says will happen, and only then try it. If the world does what the rule said, the rule has earned some trust. If it doesn't, the rule is wrong or only works for some cases, and you have learned something either way.\n\nWhile you look for a pattern, change one thing at a time. If you change two things at once and the result changes, you can't tell which of them did it.\n\nA rule that has passed many tests is still a guess, though it is one you have good reasons to use.",
             illustration: Some(Illustration(
                 scene: Bounce,
@@ -388,7 +388,7 @@ Chapter(
                     ),
                 ],
             ),
-            done: "The crane lifted that piece straight off the crawler's back, and now the light's run all the way to that tall tower. I still don't know what it's for, or why the road keeps opening ahead of us.",
+            done: "The crane lifted that piece straight off the crawler's back, and now the light's run east to the sea cliff. I still don't know what it's for, or why the road keeps opening ahead of us.",
             concepts: ["velocity", "relative_velocity"],
             requires: ["1.1.0"],
             charges: 3,
@@ -410,39 +410,39 @@ Chapter(
             task: "Measure this planet's gravitational acceleration.",
             dialogue: Dialogue(
                 present: [
-                    Spoken(text: "This console won't take a distance or a speed. It wants the planet's gravitational acceleration, and my tables are only good for home.", look: Some("Drop tower: release point")),
-                    Spoken(text: "We can time drops on this stone tower beside us. When you commit a value, the taller survey mast drops a second mass to check your prediction.", look: Some("Survey mast: landing plate")),
+                    Spoken(text: "This pedestal won't take a distance or a speed. It wants local gravity, and my tables are only good for home.", look: Some("Outcrop overhang: release point")),
+                    Spoken(text: "See that heavy counterweight hanging off the outcrop above the cove? When you enter a value, those stone shutters on the water open right when it should arrive.", look: Some("Outcrop overhang: water shutter")),
                 ],
                 topics: [
                     Topic(
-                        ask: "How does the light gate work?",
+                        ask: "How do I time a drop?",
                         lines: [
-                            Spoken(text: "Leave the console and pick up the light gate from its stand with F. Aim at any orange notch on the drop tower and press F to clamp it there.", look: Some("Light gate on its stand")),
-                            Spoken(text: "Back at the console, hit Drop and time. Each run logs the drop height and time as a matching pair in your notebook, and it costs nothing.", look: Some("Notches on the drop tower")),
+                            Spoken(text: "Leave the console and pick up a quarry stone from the stack beside us with F. Walk to either orange drop lip and press F to release it straight down.", look: Some("Stack of quarry stones")),
+                            Spoken(text: "I'll time the fall with my stopwatch and log it in your notebook, and it costs nothing. Measure the drop height yourself with R.", look: Some("Cliff rim: drop lip")),
                         ],
                     ),
                     Topic(
-                        ask: "Any tips for a clean reading?",
+                        ask: "Which ledge should I drop from?",
                         lines: [
-                            Spoken(text: "The notches are a metre apart, and you can also measure the full tower with R from the release point to the landing plate.", look: Some("Drop tower: landing plate")),
-                            Spoken(text: "The timer reads to hundredths of a second, so a very short drop only gives a rough value. Try a short drop and a long one to see the difference."),
+                            Spoken(text: "There's a short step right beside us and a much deeper cliff rim hanging straight over the cove water. Both have orange lips and pins to measure.", look: Some("Low quarry step: drop lip")),
+                            Spoken(text: "My stopwatch rounds to hundredths of a second, so a short drop only gives a rough number. Try both ledges and see how much cleaner the splash from the cliff is.", look: Some("Cliff rim: water surface")),
                         ],
                     ),
                 ],
             ),
-            done: "The tower lit all the way to the top, and stone steps just rose out of the ground! I've logged your g too. Let's climb up and see what's been sitting on that ledge.",
+            done: "The counterweight plunged straight through the water shutter, the cliff lit all the way to the outcrop, and stone steps just rose out of the ground! I've logged your g too. Let's climb up and see what's waiting on that ledge.",
             concepts: ["acceleration", "free_fall"],
             requires: ["1.1.1"],
             charges: 3,
             demo: Some(DemoDef(
-                question: "The test mass is released from the top of the drop tower. A flash marks where it is at equal moments as it falls. How will the marks be spaced?",
+                question: "A quarry stone is released from the cliff rim. A flash marks where it is at equal moments as it falls. How will the marks be spaced?",
                 choices: [
                     "Evenly, because it falls at a steady speed.",
                     "Further apart lower down, because it keeps speeding up.",
                     "Closer together lower down, because it slows as it falls.",
                 ],
                 answer: 1,
-                reveal: "The gaps grow all the way down. In each moment the mass falls further than in the moment before, because it gains speed at a steady rate, and that rate is the planet's gravitational acceleration.",
+                reveal: "The gaps grow all the way down. In each moment the stone falls further than in the moment before, because it gains speed at a steady rate, and that rate is the planet's gravitational acceleration.",
             )),
         ),
         PuzzleDef(

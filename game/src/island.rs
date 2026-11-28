@@ -13,7 +13,7 @@
 //! pale stone with quartz down its middle (see [`Way`]), whose builders' machines are the stations:
 //!
 //! - one railway runs east from the wreck: the supply rail, the stone gate, then the haul track;
-//! - the drop tower and the survey mast stand at the line's end, under the outcrop;
+//! - a stepped sea-cliff quarry opens to a cove at the line's end, flush against the outcrop;
 //! - a ramp climbs north onto the outcrop, whose ledge launcher fires north across the channel to the
 //!   second island, the north island; the builders' bridge over the channel wakes when the casket lands;
 //! - the tiller lands beside the tilting launcher, which fires it north over the ridge into the landing circle on the quay;
@@ -48,9 +48,6 @@ pub struct Pin {
 }
 
 impl Pin {
-    /// Where a pin is put while what it marks is not in the world (no gate on the tower).
-    pub const AWAY: Vec3 = Vec3::new(0.0, -1000.0, 0.0);
-
     /// Whether the pin marks something in the world now.
     pub fn present(&self) -> bool {
         self.position.y > -100.0
@@ -96,16 +93,20 @@ pub struct Sites {
     pub haul_direction: Vec3,
     /// Where the crawler's rear coupler starts, in metres along the track (its head start).
     pub crawler_start: f32,
-    /// Underside of the test mass at rest, and where it lands.
-    pub tower_release: Vec3,
-    pub tower_plate: Vec3,
-    /// Foot of the light gate's stand by the drop tower's station, where the gate rests.
-    pub gate_stand: Vec3,
-    /// Index in `pins` of the light gate, which moves with the gate (out of sight while none is
-    /// clamped on the tower).
-    pub gate_pin: usize,
-    pub mast_release: Vec3,
-    pub mast_plate: Vec3,
+    /// Puzzle 2 (sea-cliff quarry): underside of a stone dropped from the 1 m low step, and the
+    /// bench directly below it.
+    pub low_drop: Vec3,
+    pub low_landing: Vec3,
+    /// Puzzle 2: underside of a stone dropped from the main cliff rim, and the cove water surface
+    /// directly below it.
+    pub cliff_drop: Vec3,
+    pub cliff_landing: Vec3,
+    /// Puzzle 2: underside of the counterweight hanging from the outcrop overhang, and the water
+    /// shutter directly below it at sea level.
+    pub overhang_release: Vec3,
+    pub overhang_socket: Vec3,
+    /// Ground at the quarry stone stack beside the console, where loose drop-stones are picked up.
+    pub stone_pile: Vec3,
     /// The ledge launcher. Its origin rises with the blocks stacked under it (see `carry`); the
     /// island is built with none.
     pub channel_launch: LaunchSite,
@@ -413,8 +414,8 @@ struct Route {
     rail_x: i32,
     /// Block the haul cart's front coupler starts on, past the stone gate on the same row.
     haul_x: i32,
-    tower: IVec3,
-    mast: IVec3,
+    /// Anchor column `(quarry_x, quarry_z)` of the sea-cliff quarry, east of the ramp foot.
+    quarry: IVec2,
     /// The ledge launcher's line: column (0, 0) is the channel's first column past the near bank.
     channel: Frame,
     /// The tilting launcher's line.
@@ -434,10 +435,9 @@ impl Route {
             line_z: rim + LINE_BACK,
             rail_x,
             haul_x: rail_x + Ch1Layout::RAIL_LENGTH as i32 + 3,
-            // East of the transfer crane's furthest position so the crane mast never blocks the
-            // drop tower or survey mast from their station view.
-            tower: IVec3::new(channel_x - 4, GROUND, rim + 30),
-            mast: IVec3::new(channel_x - 13, GROUND, rim + 30),
+            // East of the ramp foot, flush against the south-east flank of the outcrop and open to
+            // a coastal cove on the south.
+            quarry: IVec2::new(channel_x + 12, rim + 24),
             channel: Frame::north(IVec2::new(channel_x, rim)),
             ridge: Frame::north(IVec2::new(RIDGE_X, ridge_first)),
         }
@@ -521,7 +521,6 @@ impl Plan {
     fn new(layout: &Ch1Layout, route: &Route) -> Self {
         let (channel, ridge) = (&route.channel, &route.ridge);
         let line = route.line_z;
-        let rim = channel.origin.y;
         let line_end = route.haul_x + Ch1Layout::HAUL_LENGTH as i32 + 4;
         let pad = layout.pad_centre.floor() as i32;
         let width = layout.channel_width as i32;
@@ -530,8 +529,8 @@ impl Plan {
             Rect::new(route.rail_x - 22, line - 14, route.rail_x + 4, line + 3),
             // The railway, from the wreck to the buffer past the crane.
             Rect::new(route.rail_x - 3, line - 6, line_end, line + 4),
-            // Drop tower, survey mast and their station, between the line and the outcrop.
-            Rect::new(route.mast.x - 5, route.tower.z - 4, route.tower.x + 8, line - 2),
+            // Sea-cliff quarry: console, stone pile, low step, cliff rim and outcrop spur.
+            Rect::new(route.quarry.x - 10, channel.origin.y + 8, route.quarry.x + 12, route.quarry.y + 6),
             // Ramp foot, outcrop, and the ledge launcher's line out past the channel to the end of its
             // level run.
             channel.rect(-LEDGE_DEPTH - 18, -6, Ch1Layout::CHANNEL_RUN as i32 + 10, 6),
@@ -552,11 +551,14 @@ impl Plan {
         // launchers' (which fire north) from the east.
         let corridors = vec![
             Rect::new(route.rail_x - 8, line, line_end + 4, WORLD_SIZE.z),
-            Rect::new(route.mast.x - 6, rim + 20, route.tower.x + 10, line),
+            Rect::new(route.quarry.x - 10, route.quarry.y, route.quarry.x + 20, WORLD_SIZE.z),
             channel.rect(-6, 0, Ch1Layout::CHANNEL_RUN as i32 + 6, 90),
             ridge.rect(-6, 0, pad + 43, 90),
         ];
-        let views = vec![Rect::new(route.rail_x - 6, line + 2, line_end + 4, WORLD_SIZE.z)];
+        let views = vec![
+            Rect::new(route.rail_x - 6, line + 2, line_end + 4, WORLD_SIZE.z),
+            Rect::new(route.quarry.x - 8, route.quarry.y + 2, route.quarry.x + 18, WORLD_SIZE.z),
+        ];
         // The bay comes in short of the quay, the ridge and the drop tower on the east, and stops a
         // shore's width north of the landing site.
         let bay = Vec2::new((RIDGE_X - 14) as f32, (line - 14 - 22) as f32);
@@ -728,48 +730,39 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // Past the stone gate, on the station side of the rail.
     let station_haul = IVec3::new(hx - 2, GROUND, row - 3);
 
-    // --- Puzzle 2: drop tower and survey mast, at the line's end -----------------------------
-    let gantry = |world: &mut VoxelWorld, base: IVec3, height: i32, quartz: &mut Vec<IVec3>| -> (Vec3, Vec3) {
-        // A stone column with an arm; the mass hangs under the end of the arm, two blocks out. It
-        // stands on a dressed footing that runs out under the landing plate, with three stone feet,
-        // and quartz bands the column every few blocks.
-        world.fill(base + IVec3::new(-1, -1, -1), base + IVec3::new(3, -1, 1), Material::Limestone);
-        for foot in [IVec3::NEG_X, IVec3::Z, IVec3::NEG_Z] {
-            world.set(base + foot, Material::Limestone);
-        }
-        let top = base.y + height + 1;
-        world.fill(base, IVec3::new(base.x, top, base.z), Material::Limestone);
-        world.fill(IVec3::new(base.x, top, base.z), IVec3::new(base.x + 2, top, base.z), Material::Limestone);
-        for y in (base.y + 2..top).step_by(3) {
-            world.set(IVec3::new(base.x, y, base.z), Material::Quartz);
-            quartz.push(IVec3::new(base.x, y, base.z));
-        }
-        let plate = IVec3::new(base.x + 2, base.y - 1, base.z);
-        world.set(plate, Material::Marker);
-        let foot = Vec3::new(plate.x as f32 + 0.5, base.y as f32, plate.z as f32 + 0.5);
-        (foot + Vec3::Y * height as f32, foot)
-    };
-    let (tower, mast) = (route.tower, route.mast);
-    let mut tower_quartz = Vec::new();
-    let (tower_release, tower_plate) = gantry(&mut world, tower, layout.tower_h as i32, &mut tower_quartz);
-    let (mast_release, mast_plate) = gantry(&mut world, mast, layout.mast_h as i32, &mut tower_quartz);
-    // Sit the tower and mast pins on the near (+z) side of the fall line, clear of both the
-    // hanging test mass and the light gate's near sensor head; both pins stay vertically aligned.
-    let near_face = Vec3::Z * 0.9;
-    pins.push(Pin { position: tower_release + near_face, label: "Drop tower: release point" });
-    pins.push(Pin { position: tower_plate + near_face, label: "Drop tower: landing plate" });
-    pins.push(Pin { position: mast_release + near_face, label: "Survey mast: release point" });
-    pins.push(Pin { position: mast_plate + near_face, label: "Survey mast: landing plate" });
-    let station1 = IVec3::new(tower.x + 1, GROUND, tower.z + 5);
-    // The light gate rests on a stand on the station's apron until it is clamped on the tower.
-    let gate_stand = Vec3::new(tower.x as f32 + 3.5, ground, tower.z as f32 + 3.5);
-
-    // --- Puzzle 3: ledge, channel, platform ---------------------------------------------------
+    // --- Puzzle 3: ledge, channel, platform (outcrop built before the quarry that joins its flank) -
     let channel_frame = route.channel;
     let ledge_top = GROUND + layout.ledge_h as i32;
     outcrop(&mut world, &channel_frame, layout.ledge_h as i32);
     channel(&mut world, &channel_frame, layout);
     let (bridge_cells, cables) = bridge(&mut world, &channel_frame, layout.channel_width as i32);
+
+    // --- Puzzle 2: sea-cliff quarry, low 1 m step, cliff rim and outcrop overhang ----------------
+    let (qx, qz) = (route.quarry.x, route.quarry.y);
+    let (low_x, rim_x, overhang_x) = (qx - 2, qx + 2, qx + 6);
+    let rim_y = GROUND - (10 - layout.cliff_h as i32);
+    let release_y = GROUND + layout.ledge_h as i32;
+    let (quarry_wake_quartz, quarry_done_quartz) = quarry_cove(&mut world, route.quarry, layout, channel_frame.origin.x, channel_frame.origin.y);
+    let low_drop = Vec3::new(low_x as f32 + 0.5, ground, qz as f32 + 1.5);
+    let low_landing = Vec3::new(low_x as f32 + 0.5, (GROUND - Ch1Layout::LOW_DROP as i32) as f32, qz as f32 + 1.5);
+    let cliff_drop = Vec3::new(rim_x as f32 + 0.5, rim_y as f32, qz as f32 + 1.5);
+    let cliff_landing = Vec3::new(rim_x as f32 + 0.5, SEA_LEVEL, qz as f32 + 1.5);
+    let overhang_release = Vec3::new(overhang_x as f32 + 0.5, release_y as f32, qz as f32 + 1.5);
+    let overhang_socket = Vec3::new(overhang_x as f32 + 0.5, SEA_LEVEL, qz as f32 + 1.5);
+    // Survey pins sit on the south (+z) edge of each drop line, facing the cove camera with clear
+    // sightlines across the water.
+    let south_edge = Vec3::Z * 0.55;
+    pins.push(Pin { position: cliff_drop + south_edge, label: "Cliff rim: drop lip" });
+    pins.push(Pin { position: cliff_landing + south_edge, label: "Cliff rim: water surface" });
+    pins.push(Pin { position: overhang_release + south_edge, label: "Outcrop overhang: release point" });
+    pins.push(Pin { position: overhang_socket + south_edge, label: "Outcrop overhang: water shutter" });
+    let low_step_pins = [
+        Pin { position: low_drop + south_edge, label: "Low quarry step: drop lip" },
+        Pin { position: low_landing + south_edge, label: "Low quarry step: landing slab" },
+    ];
+    let station1 = IVec3::new(qx - 7, GROUND, qz + 1);
+    let stone_pile = Vec3::new((qx - 4) as f32 + 0.5, ground, qz as f32 + 0.5);
+
     // Launcher rail along the launch line, ending at the rim.
     channel_frame.fill(&mut world, (-4, 0, ledge_top - 1), (-1, 0, ledge_top - 1), Material::Steel);
     let channel_launch = channel_frame.launch(ledge_top as f32);
@@ -898,18 +891,17 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         .collect();
 
     // Pins are numbered in the order they were added (the scripted tour picks them by number), so the
-    // tutorial's go last, and the light gate's after them.
+    // tutorial's go next, then the low quarry step's, then the haul track's.
     pins.push(rail_start_pin);
     pins.push(rail_marker_pin);
-    let gate_pin = pins.len();
-    pins.push(Pin { position: Pin::AWAY, label: "Light gate" });
+    pins.extend(low_step_pins);
     // The haul track's came last of all.
     pins.extend(haul_pins);
 
     // The road: from the wreck beside the railway
-    // to the stone gate and its end, past the drop tower, up the ramp onto the ledge; down again, west
-    // round the outcrop and over the bridge to the north island, the platform and the tilting
-    // launcher; round the ridge's east end, across the quay and down the slipway to the north gate.
+    // to the stone gate and its end, over to the sea-cliff quarry, up the ramp onto the ledge; down
+    // again, west round the outcrop and over the bridge to the north island, the platform and the
+    // tilting launcher; round the ridge's east end, across the quay and down the slipway to the north gate.
     // Quartz runs down its middle, one stretch from each machine to the next.
     let ramp_foot = channel_frame.col(-LEDGE_DEPTH - layout.ledge_h as i32 - 2, 0);
     let ledge_end = channel_frame.col(-6, 0);
@@ -926,25 +918,17 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     let pocket_top = (run_end - 2).min(ridge_row);
     let spine_cells = spine(&mut world, ridge_row, pocket_top, channel_frame.origin.x, ridge_frame.col(layout.ridge_x as i32, 0).x);
     let prelude = road(&mut world, &[(wreck.x + 9, row - 3), (rail_x + 2, row - 2)]);
+    let south_road_z = channel_frame.origin.y + 27;
     let runs = [
         road(&mut world, &[(rail_x + 2, row - 2), (hx - 1, row - 2)]),
-        road(&mut world, &[(hx - 1, row - 2), (hx + haul_len - 6, row - 2), (station1.x, station1.z + 1)]),
-        road(
-            &mut world,
-            &[
-                (station1.x + 1, station1.z - 1),
-                (tower.x + 5, station1.z - 1),
-                (tower.x + 5, tower.z - 3),
-                (ramp_foot.x, ramp_foot.y),
-                (ledge_end.x, ledge_end.y),
-            ],
-        ),
+        road(&mut world, &[(hx - 1, row - 2), (station1.x, row - 2), (station1.x, station1.z + 2)]),
+        road(&mut world, &[(station1.x - 1, station1.z - 1), (ramp_foot.x, ramp_foot.y), (ledge_end.x, ledge_end.y)]),
         road(&mut world, &[(ledge_end.x, ledge_end.y), (ramp_foot.x, ramp_foot.y)]).then(road(
             &mut world,
             &[
                 (ramp_foot.x, ramp_foot.y + 2),
-                (ramp_foot.x, tower.z - 3),
-                (near_end.x, tower.z - 3),
+                (ramp_foot.x, south_road_z),
+                (near_end.x, south_road_z),
                 (near_end.x, near_end.y),
                 (far_end.x, far_end.y),
                 (far_end.x, approach),
@@ -967,7 +951,7 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     ];
     // Each machine's console, with one of the builders' lamps beside it (see `stations`).
     let stations = [station0, station_haul, station1, station2, station3];
-    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -2), IVec2::new(-2, 1), IVec2::new(2, 2), IVec2::new(2, 2)];
+    let lamps = [IVec2::new(-2, -2), IVec2::new(2, -2), IVec2::new(-2, 0), IVec2::new(2, 2), IVec2::new(2, 2)];
     for (i, console) in stations.into_iter().enumerate() {
         lanterns.push(console.as_vec3() + Vec3::new(lamps[i].x as f32 + 0.5, 0.0, lamps[i].y as f32 + 0.5));
         lantern_machine.push(i);
@@ -1042,16 +1026,12 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         cells.sort_by_key(|c| c.y);
         cells
     };
-    // The tower's and the mast's lowest bands light as the light reaches them; the rest, to the top,
-    // when gravity is measured.
-    let foot_y = tower_quartz.iter().map(|c| c.y).min().expect("the tower has quartz");
-    let (tower_foot, tower_rest): (Vec<IVec3>, Vec<IVec3>) = tower_quartz.iter().partition(|c| c.y == foot_y);
     let mut first_done = marker_quartz;
     first_done.extend(prelude.cells.iter().map(|&(c, _)| c));
     let way = Way {
         machines: std::array::from_fn(|i| if i < PUZZLES { stations[i].as_vec3() + Vec3::new(0.5, 0.0, 0.5) } else { north_gate }),
-        wake: [Vec::new(), gate_quartz, tower_foot, Vec::new(), breech_quartz, north_quartz],
-        done: [first_done, crane_quartz, by_height(tower_rest), channel_quartz, circle_quartz, Vec::new()],
+        wake: [Vec::new(), gate_quartz, quarry_wake_quartz, Vec::new(), breech_quartz, north_quartz],
+        done: [first_done, crane_quartz, by_height(quarry_done_quartz), channel_quartz, circle_quartz, Vec::new()],
         runs,
         ramp,
         leaf,
@@ -1076,12 +1056,13 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
         haul_start,
         haul_direction,
         crawler_start: layout.head_start as f32,
-        tower_release,
-        tower_plate,
-        gate_stand,
-        gate_pin,
-        mast_release,
-        mast_plate,
+        low_drop,
+        low_landing,
+        cliff_drop,
+        cliff_landing,
+        overhang_release,
+        overhang_socket,
+        stone_pile,
         channel_launch,
         channel_well,
         block_pile,
@@ -1300,6 +1281,147 @@ fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
             world.set(IVec3::new(col.x, top, col.y), surface);
         }
     }
+}
+
+/// The sea-cliff quarry for Puzzle 2, carved into the south-east flank of the outcrop and opening
+/// south straight into a deep coastal cove:
+/// - open cove water right up to the sheer cliff face (depth > `WADE_DEPTH`, so falling in rescues
+///   the castaway cleanly back onto dry ground);
+/// - a 1 m low quarry step right beside the console at `GROUND` -> `GROUND - 1`;
+/// - a main cliff rim (`9.4..=11.4 m` above the water surface, reached by carved quarry steps);
+/// - a sheer rock spur continuing the outcrop mesa (`ledge_h` above `GROUND`, unclimbable) with a
+///   short pale-stone davit overhang holding the verification counterweight `14.4..=16.4 m` above
+///   the waterline shutter.
+///
+/// Returns `(wake_quartz, done_quartz)`: waterline studs on the cliff face flanking the shutter
+/// that light when the station wakes, and a vertical quartz vein climbing the sheer cliff face to
+/// the davit cap that lights when gravity is solved.
+fn quarry_cove(world: &mut VoxelWorld, quarry: IVec2, layout: &Ch1Layout, channel_x: i32, rim_z: i32) -> (Vec<IVec3>, Vec<IVec3>) {
+    let (qx, qz) = (quarry.x, quarry.y);
+    let (low_x, rim_x, overhang_x) = (qx - 2, qx + 2, qx + 6);
+    let rim_y = GROUND - (10 - layout.cliff_h as i32);
+    let ledge_top = GROUND + layout.ledge_h as i32;
+    let release_y = ledge_top;
+    let water_y = SEA_LEVEL.floor() as i32;
+
+    // 1. Open sea cove south of the quarry, right up to the sheer cliff face (z >= qz + 1 under the
+    //    cliff rim and outcrop spur, z >= qz + 2 south of the low step), so stones and the
+    //    counterweight drop straight into deep water and the station camera floats over the cove.
+    for z in (qz + 1)..WORLD_SIZE.z {
+        let zf = z as f32;
+        let west = if z >= qz + 4 {
+            let taper = ((z - (qz + 4)) as f32 / 14.0).min(1.0);
+            let west_wander = (fbm(0.5, zf / 8.0, 91, 2) * 3.0 * taper).round() as i32;
+            (low_x - 1 - west_wander).max(channel_x + 7)
+        } else if z >= qz + 2 {
+            low_x - 1
+        } else {
+            rim_x - 1
+        };
+        for x in west..WORLD_SIZE.x {
+            let bed = CHANNEL_BED - (hash01(IVec3::new(x, 304, z)) < 0.3) as i32;
+            if world.surface(x, z) <= bed {
+                continue;
+            }
+            world.fill(IVec3::new(x, bed, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+            world.set(IVec3::new(x, bed - 1, z), Material::Sand);
+        }
+    }
+
+    // 2. Keep the console apron and path flat at GROUND, east to the low step.
+    for z in (qz - 4)..=(qz + 2) {
+        for x in (qx - 9)..=(low_x + 1) {
+            if z > qz && x >= low_x - 1 {
+                continue;
+            }
+            world.fill(IVec3::new(x, 0, z), IVec3::new(x, GROUND - 2, z), Material::Rock);
+            let top = if z >= qz - 1 && x >= qx - 5 { Material::Limestone } else { Material::Grass };
+            world.set(IVec3::new(x, GROUND - 1, z), top);
+            world.fill(IVec3::new(x, GROUND, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+        }
+    }
+
+    // 3. Low 1 m quarry step: standing lip at (low_x, GROUND, qz), landing bench 1 m lower at
+    //    (low_x, GROUND - 1, qz + 1), perched right over the cove edge.
+    world.set(IVec3::new(low_x, GROUND - 1, qz), Material::Marker);
+    for x in (low_x - 1)..=(low_x + 1) {
+        world.fill(IVec3::new(x, 0, qz + 1), IVec3::new(x, GROUND - 3, qz + 1), Material::Rock);
+        world.set(IVec3::new(x, GROUND - 2, qz + 1), if x == low_x { Material::Marker } else { Material::Limestone });
+        world.fill(IVec3::new(x, GROUND - 1, qz + 1), IVec3::new(x, WORLD_SIZE.y - 1, qz + 1), Material::Air);
+    }
+
+    // 4. Main cliff rim (`rim_y` = 18..=20, so `9.4..=11.4 m` above the cove water) with carved
+    //    limestone steps descending smoothly from GROUND.
+    let drop_steps = (GROUND - rim_y).max(0);
+    for z in (qz - 4)..=qz {
+        for x in (rim_x - 2)..=(rim_x + 1) {
+            // Step down cleanly both from the west (low step) and from the north (apron).
+            let step_x = (x - (rim_x - 2)).clamp(0, drop_steps);
+            let step_z = (z - (qz - 3)).clamp(0, drop_steps);
+            let h = if z == qz && x >= rim_x - 1 {
+                rim_y
+            } else if z >= qz - 2 && x >= rim_x - 1 {
+                (GROUND - step_x.max(step_z)).max(rim_y)
+            } else {
+                GROUND
+            };
+            world.fill(IVec3::new(x, 0, z), IVec3::new(x, h - 2, z), Material::Rock);
+            let surface = if x == rim_x && z == qz {
+                Material::Marker
+            } else if z >= qz - 2 && x >= rim_x - 1 {
+                Material::Limestone
+            } else {
+                Material::Grass
+            };
+            world.set(IVec3::new(x, h - 1, z), surface);
+            world.fill(IVec3::new(x, h, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+        }
+    }
+    // Clean water-filled cleft between the cliff rim (rim_x + 1) and the outcrop spur
+    // (overhang_x - 1) so the two drops read distinctly and nothing bridges them.
+    for x in (rim_x + 2)..=(overhang_x - 2) {
+        for z in qz..=(qz + 3) {
+            world.fill(IVec3::new(x, CHANNEL_BED, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+            world.set(IVec3::new(x, CHANNEL_BED - 1, z), Material::Sand);
+        }
+    }
+
+    // 5. Sheer outcrop rock spur connected seamlessly to the outcrop mesa (south of the channel's
+    //    camera corridor), rising to `ledge_top` (always >= 3 m above GROUND: unclimbable).
+    for z in (rim_z + 11)..=qz {
+        let min_x = if z <= rim_z + 17 { channel_x + 6 } else { overhang_x - 1 };
+        let max_x = overhang_x + 1;
+        for x in min_x..=max_x {
+            world.fill(IVec3::new(x, 0, z), IVec3::new(x, ledge_top - 2, z), Material::Rock);
+            let surface = if x == overhang_x && z >= qz - 2 { Material::Limestone } else { Material::Grass };
+            world.set(IVec3::new(x, ledge_top - 1, z), surface);
+            world.fill(IVec3::new(x, ledge_top, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+        }
+    }
+
+    // 6. Builders' pale-stone davit pier atop the outcrop spur (its cantilevered arm over the
+    //    water is spawned as an entity in `sim` so the water column below stays unobstructed for
+    //    deep-water checks), plus quartz vein up the sheer cliff face.
+    for z in [qz - 1, qz] {
+        world.fill(IVec3::new(overhang_x, ledge_top, z), IVec3::new(overhang_x, release_y + 1, z), Material::Limestone);
+    }
+
+    // Quartz inlaid at the waterline flanking the shutter (wake) and climbing the sheer cliff face
+    // up to the davit cap (done).
+    let wake_quartz = vec![IVec3::new(overhang_x - 1, water_y, qz), IVec3::new(overhang_x + 1, water_y, qz)];
+    for &q in &wake_quartz {
+        world.set(q, Material::Quartz);
+    }
+    let mut done_quartz = vec![IVec3::new(overhang_x, water_y, qz)];
+    for y in (water_y + 2..ledge_top).step_by(2) {
+        done_quartz.push(IVec3::new(overhang_x, y, qz));
+    }
+    done_quartz.push(IVec3::new(overhang_x, release_y + 1, qz));
+    for &q in &done_quartz {
+        world.set(q, Material::Quartz);
+    }
+
+    (wake_quartz, done_quartz)
 }
 
 /// The channel between the islands, across the ledge launcher's line from one coast to the other:
@@ -1777,12 +1899,20 @@ mod tests {
             let ridge = Instance::new(PuzzleKind::Ridge, &layout).profile().unwrap();
             assert_eq!(columns(&world, &sites.ridge_launch, ridge.heights.len()), ridge.heights, "seed {seed}: ridge");
 
-            // The drops are clear all the way down and exactly as tall as the layout says.
-            for (release, plate, height) in [(sites.tower_release, sites.tower_plate, layout.tower_h), (sites.mast_release, sites.mast_plate, layout.mast_h)] {
-                assert_eq!(release.y - plate.y, height as f32);
+            // The low quarry step hits its orange landing block; the cliff rim and outcrop overhang
+            // drop cleanly all the way down into deep cove water at SEA_LEVEL.
+            assert_eq!(sites.low_drop.y - sites.low_landing.y, Ch1Layout::LOW_DROP as f32);
+            let low_hit = world.raycast(sites.low_drop + Vec3::Y * 0.5, Vec3::NEG_Y, 80.0).unwrap();
+            assert!((low_hit.point.y - sites.low_landing.y).abs() < 1e-4, "seed {seed}: something blocks the low step");
+            assert_eq!(world.get(low_hit.cell), Material::Marker);
+
+            for (release, water_hit, height) in
+                [(sites.cliff_drop, sites.cliff_landing, layout.cliff_drop_h()), (sites.overhang_release, sites.overhang_socket, layout.overhang_drop_h())]
+            {
+                assert!((release.y - water_hit.y - height as f32).abs() < 1e-4, "seed {seed}");
+                assert!((water_hit.y - SEA_LEVEL).abs() < 1e-5, "seed {seed}");
                 let hit = world.raycast(release + Vec3::Y * 0.5, Vec3::NEG_Y, 80.0).unwrap();
-                assert!((hit.point.y - plate.y).abs() < 1e-4, "seed {seed}: something is in the way of the drop");
-                assert_eq!(world.get(hit.cell), Material::Marker);
+                assert!(too_deep(hit.point.y.round() as i32), "seed {seed}: drop does not reach deep water (hit y={})", hit.point.y);
             }
         }
     }
@@ -2088,17 +2218,21 @@ mod tests {
     }
 
     #[test]
-    fn the_light_gate_has_a_stand_and_a_pin() {
+    fn the_quarry_drops_into_deep_cove_water() {
         for seed in 0..200 {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
-            let stand = sites.gate_stand.floor().as_ivec3();
-            assert!(world.is_solid(stand - IVec3::Y), "seed {seed}: the stand floats");
-            assert!(!world.is_solid(stand) && !world.is_solid(stand + IVec3::Y), "seed {seed}: the stand is buried");
-            let pin = &sites.pins[sites.gate_pin];
-            assert_eq!(pin.label, "Light gate");
-            assert!(!pin.present(), "no gate is on the tower when the island is built");
-            assert!(sites.pins.iter().enumerate().all(|(i, p)| i == sites.gate_pin || p.present()));
+            let pile = sites.stone_pile.floor().as_ivec3();
+            assert!(world.is_solid(pile - IVec3::Y), "seed {seed}: the stone pile floats");
+            assert!(!world.is_solid(pile) && !world.is_solid(pile + IVec3::Y), "seed {seed}: the stone pile is buried");
+            // Every pin is present when the island is built.
+            assert!(sites.pins.iter().all(Pin::present), "seed {seed}");
+            // Both the cliff rim and the counterweight shutter sit over deep cove water, so falling
+            // off triggers deep-water rescue cleanly back to dry ground.
+            for target in [sites.cliff_landing, sites.overhang_socket] {
+                let col = target.floor().as_ivec3();
+                assert!(too_deep(world.surface(col.x, col.z)), "seed {seed}: cove column ({}, {}) is not deep water", col.x, col.z);
+            }
         }
     }
 

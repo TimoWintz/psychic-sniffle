@@ -1,25 +1,24 @@
 //! Carrying: pick something up, carry it, put it down or into the place a station reads.
 //!
 //! What has an orange handle (our paint) moves. The builders' dressed blocks are real blocks of the
-//! island: they can be stood on and measured. Each block belongs to a yard (the channel ledge's pile, or the cart's block beside
-//! the supply rail) and is put down only there. The light gate is not a block: it rests on a stand by
-//! the drop tower's station until it is clamped on the tower.
+//! island: they can be stood on and measured. Each block belongs to a yard (the channel ledge's pile,
+//! the cart's block beside the supply rail, or the beam's pile) and is put down only there. Beside
+//! the sea-cliff quarry console sits a stack of smaller quarry stones: carry one to either orange
+//! drop lip and press `F` to release it straight down while Lumen times the fall.
 //!
-//! What a station reads is a [`Slot`]: the cart on the supply rail (its one block), the notches of
-//! the drop tower (the light gate), the jack frame under the ledge launcher (a stack of blocks). `F`
-//! facing a slot puts in what is carried, or takes it out again. The beam, the side-machine off the
-//! road, takes its own blocks on the seats of its two arms the same way. What is in each slot and on
-//! the beam is kept in the save; loose blocks are not: they are back where they started the next
-//! time the game starts.
+//! What a station reads is a [`Slot`]: the cart on the supply rail (its one block) and the jack
+//! frame under the ledge launcher (a stack of blocks). `F` facing a slot puts in what is carried,
+//! or takes it out again. The beam, the side-machine off the road, takes its own blocks on the
+//! seats of its two arms the same way. What is in each slot and on the beam is kept in the save;
+//! loose blocks are not: they are back where they started the next time the game starts.
 
-use crate::island::{Pin, Sites};
+use crate::island::Sites;
 use crate::player::Player;
-use crate::sim::Sim;
+use crate::sim::{Request, Sim};
 use crate::state::{BuildWorld, Game, Mode, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 use bevy_egui::input::EguiWantsInput;
 use physics_core::beam::{Arm, MOST_ON_A_SEAT, PILE, Placement, SEATS};
 use physics_core::materials::Material;
@@ -27,20 +26,17 @@ use physics_core::puzzle::{Ch1Layout, PuzzleKind};
 
 /// How far in front of the avatar's feet a block is picked up or put down.
 const AHEAD: f32 = 1.1;
-/// How close to a slot's foot (or the gate's stand) the avatar must stand to use it.
+/// How close to a slot's foot, drop lip, or stone stack the avatar must stand to use it.
 const SLOT_REACH: f32 = 1.9;
-const TOWER_REACH: f32 = 2.4;
-const STAND_REACH: f32 = 1.6;
-/// How close, in metres, the pointer's ray must pass to the drop tower's fall line to pick a notch.
-const AIM_REACH: f32 = 1.5;
+const DROP_REACH: f32 = 2.0;
+const PILE_REACH: f32 = 2.0;
 /// Where the carried block is held, in the avatar's frame (its front is −Z).
 pub const HELD_AT: Vec3 = Vec3::new(0.0, 1.05, -0.62);
 const HELD_SIZE: f32 = 0.8;
+/// Size of a loose quarry drop-stone (smaller than a 1 m structural block so a 1 m drop reads
+/// clearly against its own height).
+pub const QUARRY_STONE_SIZE: f32 = 0.5;
 const HANDLE: Color = Color::srgb(1.0, 0.56, 0.10);
-/// From the light gate's beam to the centre of the tower's column it clamps on.
-const GATE_REACH: f32 = 2.0;
-/// The light gate's size while it is carried or on its stand (it folds).
-const GATE_FOLDED: f32 = 0.45;
 
 /// The places loose blocks are put down. A block stays in its own.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,11 +49,36 @@ pub enum Yard {
     Beam,
 }
 
+/// Which quarry ledge a drop-stone is released from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DropLedge {
+    /// The 1 m step right beside the console.
+    Low,
+    /// The deep sea-cliff rim straight above the cove water.
+    Cliff,
+}
+
+impl DropLedge {
+    pub fn release(self, sites: &Sites) -> Vec3 {
+        match self {
+            DropLedge::Low => sites.low_drop,
+            DropLedge::Cliff => sites.cliff_drop,
+        }
+    }
+
+    pub fn landing(self, sites: &Sites) -> Vec3 {
+        match self {
+            DropLedge::Low => sites.low_landing,
+            DropLedge::Cliff => sites.cliff_landing,
+        }
+    }
+}
+
 /// What can be carried.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Item {
     Block(Yard),
-    Gate,
+    QuarryStone,
 }
 
 /// How a slot holds what is put in it.
@@ -67,24 +88,19 @@ pub enum SlotKind {
     Stack,
     /// One thing, or nothing.
     Single,
-    /// One thing, clamped at a whole-metre notch along a column.
-    Notches,
 }
 
 /// A place in the world that a station reads. What it holds is the save's `placed` value for its
-/// puzzle: blocks in the frame, 0 or 1 on the cart, the gate's notch (its drop below the release
-/// point, 0 for none).
+/// puzzle: blocks in the frame, or 0/1 on the cart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Slot {
     /// The cart on the supply rail.
     Cart,
-    /// The drop tower's notches, for the light gate.
-    Tower,
     /// The jack frame under the ledge launcher.
     Frame,
 }
 
-pub const SLOTS: [Slot; 3] = [Slot::Cart, Slot::Tower, Slot::Frame];
+pub const SLOTS: [Slot; 2] = [Slot::Cart, Slot::Frame];
 
 impl Slot {
     fn index(self) -> usize {
@@ -94,7 +110,6 @@ impl Slot {
     pub fn kind(self) -> SlotKind {
         match self {
             Slot::Cart => SlotKind::Single,
-            Slot::Tower => SlotKind::Notches,
             Slot::Frame => SlotKind::Stack,
         }
     }
@@ -103,7 +118,6 @@ impl Slot {
     pub fn puzzle(self) -> PuzzleKind {
         match self {
             Slot::Cart => PuzzleKind::Rail,
-            Slot::Tower => PuzzleKind::Gravity,
             Slot::Frame => PuzzleKind::Channel,
         }
     }
@@ -112,16 +126,14 @@ impl Slot {
     pub fn takes(self) -> Item {
         match self {
             Slot::Cart => Item::Block(Yard::Rail),
-            Slot::Tower => Item::Gate,
             Slot::Frame => Item::Block(Yard::Ledge),
         }
     }
 
-    /// The most it holds: blocks in the frame, the lowest notch on the tower.
-    pub fn most(self, sites: &Sites) -> u32 {
+    /// The most it holds: blocks in the frame, or 1 on the cart.
+    pub fn most(self, _sites: &Sites) -> u32 {
         match self {
             Slot::Cart => 1,
-            Slot::Tower => tower_height(sites),
             Slot::Frame => Ch1Layout::MAX_STACK,
         }
     }
@@ -130,25 +142,9 @@ impl Slot {
     fn foot(self, sites: &Sites) -> Vec3 {
         match self {
             Slot::Cart => sites.cart,
-            Slot::Tower => sites.tower_plate,
             Slot::Frame => sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5),
         }
     }
-
-    fn reach(self) -> f32 {
-        if self == Slot::Tower { TOWER_REACH } else { SLOT_REACH }
-    }
-}
-
-/// Height of the drop tower's release point above its landing plate, in whole metres.
-fn tower_height(sites: &Sites) -> u32 {
-    (sites.tower_release.y - sites.tower_plate.y).round() as u32
-}
-
-/// Where the light gate's beam crosses the fall line when it is clamped `notch` metres below the
-/// release point.
-pub fn gate_at(sites: &Sites, notch: u32) -> Vec3 {
-    sites.tower_release - Vec3::Y * notch as f32
 }
 
 /// What `F` would do now.
@@ -158,10 +154,12 @@ pub enum Target {
     Take(IVec3),
     /// Put the block down in this cell.
     Put(IVec3),
-    /// Lift the light gate off its stand.
-    TakeGate,
-    /// Put the light gate back on its stand.
-    StowGate,
+    /// Pick up a quarry drop-stone from the stack beside the console.
+    TakeStone,
+    /// Put the carried quarry drop-stone back on the stack.
+    StowStone,
+    /// Release the carried quarry drop-stone straight down from rest off a quarry ledge.
+    DropStone(DropLedge),
     /// Put what is carried into a slot, which then holds this much.
     PutIn(Slot, u32),
     /// Take something out of a slot, which then holds this much.
@@ -181,11 +179,9 @@ pub struct Carry {
     pub loose: Vec<IVec3>,
     pub holding: Option<Item>,
     /// What each slot holds, by [`Slot`] order.
-    pub filled: [u32; 3],
+    pub filled: [u32; 2],
     /// What `F` would do, worked out each frame from where the avatar stands and faces.
     pub target: Option<Target>,
-    /// The height on the drop tower's fall line that the pointer marks, when it is near the tower.
-    pub aim: Option<f32>,
     /// Whether the rail cart has carried its block to the marker and gone on up the line, past the stone gate,
     /// to wait for the crawler: its slot can no longer be reached.
     pub cart_gone: bool,
@@ -201,11 +197,6 @@ impl Carry {
     pub fn holds(&self, slot: Slot) -> u32 {
         self.filled[slot.index()]
     }
-
-    /// Whether the light gate is on its stand.
-    pub fn gate_on_stand(&self) -> bool {
-        self.holding != Some(Item::Gate) && self.holds(Slot::Tower) == 0
-    }
 }
 
 /// Cells whose blocks changed since the terrain was last meshed; `scenery` rebuilds their chunks.
@@ -216,17 +207,13 @@ pub struct DirtyCells(pub Vec<IVec3>);
 #[derive(Component)]
 struct BlockMark(usize);
 
-/// The block in the avatar's hands.
+/// The 1 m dressed block in the avatar's hands.
 #[derive(Component)]
 struct HeldBlock;
 
-/// The light gate, wherever it is.
+/// The smaller quarry drop-stone in the avatar's hands.
 #[derive(Component)]
-struct Gate;
-
-/// The light gate's stand.
-#[derive(Component)]
-struct GateStand;
+struct HeldStone;
 
 pub struct CarryPlugin;
 
@@ -235,8 +222,8 @@ impl Plugin for CarryPlugin {
         app.init_resource::<Carry>()
             .init_resource::<DirtyCells>()
             .add_systems(BuildWorld, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
-        app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)).run_if(not_paused))
-            .add_systems(Update, (place_marks, hold, place_gate, draw_target));
+        app.add_systems(Update, (aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)).run_if(not_paused))
+            .add_systems(Update, (place_marks, hold, draw_target));
     }
 }
 
@@ -265,8 +252,8 @@ const MARKS: usize = Ch1Layout::MAX_STACK as usize + 1 + PILE as usize;
 
 /// Put everything where the save says: as many blocks in the jack frame as were left there, the
 /// rest on the pile (the top layer leaves the pile first); the cart's block on the cart or beside the
-/// rail; the light gate on its notch or its stand; the beam's blocks on its seats, the rest on its
-/// pile.
+/// rail; the beam's blocks on its seats, the rest on its pile; and the stack of quarry drop-stones
+/// beside the sea-cliff console.
 #[allow(clippy::too_many_arguments)]
 fn lay_out(
     mut commands: Commands,
@@ -344,7 +331,7 @@ fn lay_out(
         WorldEntity,
         HeldBlock,
         Mesh3d(body),
-        MeshMaterial3d(stone),
+        MeshMaterial3d(stone.clone()),
         Transform::default(),
         Visibility::Hidden,
         children![(
@@ -354,31 +341,36 @@ fn lay_out(
         )],
     ));
 
-    // The light gate: two arms clamped on the tower's column either side of the fall line, an
-    // emitter and a receiver facing each other across it, and an orange handle on the clamp. Its
-    // origin is where the beam crosses the fall line.
-    let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.12, 0.13, 0.16), perceptual_roughness: 0.6, ..default() });
-    let lens = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.2, 0.15), emissive: LinearRgba::rgb(1.5, 0.15, 0.1), ..default() });
-    let arm = meshes.add(Cuboid::new(2.0, 0.12, 0.12));
-    let head = meshes.add(Cuboid::new(0.24, 0.24, 0.2));
-    // The clamp wraps the tower's column, whose centre is two metres from the fall line.
-    let clamp = meshes.add(Cuboid::new(1.2, 0.4, 1.6));
-    let eye = meshes.add(Cuboid::new(0.1, 0.1, 0.04));
-    commands.spawn((WorldEntity, Gate, Transform::default(), Visibility::default())).with_children(|g| {
-        g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
-        g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
-        for side in [-1.0f32, 1.0] {
-            g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-1.0, 0.0, side * 0.68)));
-            g.spawn((Mesh3d(head.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, side * 0.68)));
-            g.spawn((Mesh3d(eye.clone()), MeshMaterial3d(lens.clone()), Transform::from_xyz(0.0, 0.0, side * 0.56)));
+    // The smaller quarry drop-stone in the avatar's hands.
+    let small_stone = meshes.add(Cuboid::from_length(QUARRY_STONE_SIZE));
+    let small_handle = meshes.add(Cuboid::new(0.36, 0.05, 0.09));
+    commands.spawn((
+        WorldEntity,
+        HeldStone,
+        Mesh3d(small_stone.clone()),
+        MeshMaterial3d(stone.clone()),
+        Transform::default(),
+        Visibility::Hidden,
+        children![(Mesh3d(small_handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, QUARRY_STONE_SIZE / 2.0 + 0.025, 0.0),)],
+    ));
+
+    // A neat stack of quarry drop-stones beside the sea-cliff console: always ready to pick up
+    // and drop off either ledge.
+    let plinth = meshes.add(Cuboid::new(1.15, 0.14, 1.15));
+    commands.spawn((WorldEntity, Transform::from_translation(sites.stone_pile), Visibility::default())).with_children(|s| {
+        s.spawn((Mesh3d(plinth), MeshMaterial3d(stone.clone()), Transform::from_xyz(0.0, 0.07, 0.0)));
+        for (x, y, z, yaw, has_handle) in [
+            (-0.27, 0.14 + QUARRY_STONE_SIZE / 2.0, -0.22, 0.08, false),
+            (0.27, 0.14 + QUARRY_STONE_SIZE / 2.0, -0.18, -0.1, false),
+            (-0.18, 0.14 + QUARRY_STONE_SIZE / 2.0, 0.28, 0.14, false),
+            (0.0, 0.14 + QUARRY_STONE_SIZE * 1.5, -0.02, -0.06, true),
+        ] {
+            let mut block =
+                s.spawn((Mesh3d(small_stone.clone()), MeshMaterial3d(stone.clone()), Transform::from_xyz(x, y, z).with_rotation(Quat::from_rotation_y(yaw))));
+            if has_handle {
+                block.with_child((Mesh3d(small_handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, QUARRY_STONE_SIZE / 2.0 + 0.025, 0.0)));
+            }
         }
-    });
-    // Its stand: a post with a cradle the gate's clamp rests in.
-    let post = meshes.add(Cuboid::new(0.14, 1.0, 0.14));
-    let cradle = meshes.add(Cuboid::new(0.5, 0.08, 0.5));
-    commands.spawn((WorldEntity, GateStand, Transform::from_translation(sites.gate_stand), Visibility::default())).with_children(|s| {
-        s.spawn((Mesh3d(post), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
-        s.spawn((Mesh3d(cradle), MeshMaterial3d(dark), Transform::from_xyz(0.0, 1.0, 0.0)));
     });
 }
 
@@ -388,15 +380,10 @@ fn colour(material: Material) -> Color {
 }
 
 /// Make the world show what a slot holds: blocks in the jack frame (which raise the launcher and its
-/// survey pin), the light gate's pin on its notch. The cart's cargo is shown by `sim`, which moves
-/// the cart.
+/// survey pin). The cart's cargo is shown by `sim`, which moves the cart.
 pub fn set_slot(world: &mut VoxelWorld, sites: &mut Sites, dirty: &mut DirtyCells, slot: Slot, holds: u32) {
     match slot {
         Slot::Frame => set_stack(world, sites, dirty, holds),
-        Slot::Tower => {
-            let pin = sites.gate_pin;
-            sites.pins[pin].position = if holds == 0 { Pin::AWAY } else { gate_at(sites, holds) };
-        }
         Slot::Cart => {}
     }
 }
@@ -427,25 +414,27 @@ fn overlaps_avatar(feet: Vec3, cell: IVec3) -> bool {
     a.x < high.x && b.x > low.x && a.y < high.y && b.y > low.y && a.z < high.z && b.z > low.z
 }
 
-/// The notch the light gate goes to: the one nearest the height the pointer marks on the tower, or,
-/// with the pointer elsewhere, the one at the avatar's hands.
-pub fn notch_for(sites: &Sites, feet: Vec3, aim: Option<f32>) -> u32 {
-    let height = aim.unwrap_or(feet.y + 1.0);
-    let notch = (sites.tower_release.y - height).round().max(1.0) as u32;
-    notch.min(tower_height(sites))
-}
-
-/// What `F` would do for an avatar at `feet` facing along `forward` (horizontal, unit length), with
-/// the pointer marking `aim` on the drop tower (see [`Carry::aim`]).
-pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, forward: Vec3, aim: Option<f32>) -> Option<Target> {
+/// What `F` would do for an avatar at `feet` facing along `forward` (horizontal, unit length).
+pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, forward: Vec3) -> Option<Target> {
     let faces = |point: Vec3, reach: f32| {
         let to = (point - feet).with_y(0.0);
-        to.length() < reach && (feet.y - point.y).abs() < 0.6 && to.normalize_or_zero().dot(forward) > 0.5
+        to.length() < reach && (feet.y - point.y).abs() < 0.6 && to.normalize_or_zero().dot(forward) > 0.45
     };
-    let at = |slot: Slot| faces(slot.foot(sites), slot.reach()) && !(slot == Slot::Cart && carry.cart_gone);
+    let at = |slot: Slot| faces(slot.foot(sites), SLOT_REACH) && !(slot == Slot::Cart && carry.cart_gone);
     let level = (feet.y + 0.01).floor() as i32;
     let seat = beam_seat(sites, feet, forward);
     if let Some(item) = carry.holding {
+        if item == Item::QuarryStone {
+            for ledge in [DropLedge::Low, DropLedge::Cliff] {
+                if faces(ledge.release(sites), DROP_REACH) {
+                    return Some(Target::DropStone(ledge));
+                }
+            }
+            if faces(sites.stone_pile, PILE_REACH) {
+                return Some(Target::StowStone);
+            }
+            return Some(Target::Blocked("Carry the quarry stone to either orange drop lip and press F, or put it back on the stack."));
+        }
         if let (Some(seat), Item::Block(Yard::Beam)) = (seat, item) {
             return Some(match seat {
                 _ if carry.beam_swinging => Target::Blocked("Wait for the beam to come back level."),
@@ -460,14 +449,9 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
                 SlotKind::Stack if holds < slot.most(sites) => Target::PutIn(slot, holds + 1),
                 SlotKind::Stack => Target::Blocked("The jack frame is full."),
                 SlotKind::Single => Target::PutIn(slot, 1),
-                SlotKind::Notches => Target::PutIn(slot, notch_for(sites, feet, aim)),
             });
         }
-        let yard = match item {
-            Item::Gate if faces(sites.gate_stand, STAND_REACH) => return Some(Target::StowGate),
-            Item::Gate => return Some(Target::Blocked("The light gate clamps on the drop tower, or goes back on its stand.")),
-            Item::Block(yard) => yard,
-        };
+        let Item::Block(yard) = item else { unreachable!() };
         // On the ground in front, or on top of a block there.
         let ahead = (feet + forward * AHEAD).floor().as_ivec3();
         for y in [level, level + 1] {
@@ -494,8 +478,8 @@ pub fn target_for(world: &VoxelWorld, sites: &Sites, carry: &Carry, feet: Vec3, 
         let left = if slot.kind() == SlotKind::Stack { carry.holds(slot) - 1 } else { 0 };
         return Some(Target::TakeOut(slot, left));
     }
-    if carry.gate_on_stand() && faces(sites.gate_stand, STAND_REACH) {
-        return Some(Target::TakeGate);
+    if faces(sites.stone_pile, PILE_REACH) {
+        return Some(Target::TakeStone);
     }
     // The nearest loose block in front with nothing on top of it, within reach of the hands.
     let reach_point = feet + forward * 0.9;
@@ -527,55 +511,12 @@ pub fn beam_seat(sites: &Sites, feet: Vec3, forward: Vec3) -> Option<Option<(Arm
     Some((offset != 0).then_some((arm, offset.unsigned_abs())))
 }
 
-/// Where the pointer marks the drop tower's fall line: the height on it nearest the pointer's ray,
-/// if the ray passes close enough.
-pub fn aim_on_tower(sites: &Sites, origin: Vec3, direction: Vec3) -> Option<f32> {
-    let line = sites.tower_plate.with_y(0.0);
-    // Closest approach between the ray and the vertical line through the plate.
-    let flat = direction.with_y(0.0);
-    let along = if flat.length_squared() < 1e-6 { 0.0 } else { (line - origin.with_y(0.0)).dot(flat) / flat.length_squared() };
-    if along <= 0.0 {
-        return None;
-    }
-    let near = origin + direction * along;
-    let low = sites.tower_plate.y;
-    ((near.with_y(0.0) - line).length() < AIM_REACH && (low - 0.5..=sites.tower_release.y + 0.5).contains(&near.y)).then_some(near.y)
-}
-
-/// Follow the pointer onto the drop tower while the light gate is carried. In free-look mode, aim
-/// from the centre of the screen so the player can pick a notch by looking up and down the tower.
-fn point(
-    mut carry: ResMut<Carry>,
-    sites: Res<Sites>,
-    orbit: Res<crate::player::OrbitCamera>,
-    wants: Res<EguiWantsInput>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
-) {
-    let pointer = if carry.holding != Some(Item::Gate) {
-        None
-    } else if orbit.free_look {
-        Some(window.size() / 2.0)
-    } else if !wants.wants_any_pointer_input() {
-        window.cursor_position()
-    } else {
-        None
-    };
-    let aim = pointer.and_then(|cursor| camera.0.viewport_to_world(camera.1, cursor).ok()).and_then(|ray| aim_on_tower(&sites, ray.origin, *ray.direction));
-    if carry.aim != aim {
-        carry.aim = aim;
-    }
-}
-
-/// World position and compact label for a placement ghost (light gate notch, jack frame height,
-/// beam seat), plus whether the action places (`true`) or removes (`false`).
+/// World position and compact label for a placement ghost (quarry drop lip, jack frame height,
+/// beam seat), plus whether the action places/drops (`true`) or removes (`false`).
 pub fn badge_for(carry: &Carry, sites: &Sites) -> Option<(Vec3, String, bool)> {
     match carry.target? {
-        Target::PutIn(Slot::Tower, notch) => Some((gate_at(sites, notch) + Vec3::Y * 0.45, format!("Notch: {notch} m"), true)),
-        Target::TakeOut(Slot::Tower, _) => {
-            let notch = carry.holds(Slot::Tower);
-            Some((gate_at(sites, notch) + Vec3::Y * 0.45, format!("Gate at {notch} m"), false))
-        }
+        Target::DropStone(DropLedge::Low) => Some((sites.low_drop + Vec3::Y * 0.65, "Drop stone (low step)".into(), true)),
+        Target::DropStone(DropLedge::Cliff) => Some((sites.cliff_drop + Vec3::Y * 0.65, "Drop stone (cliff rim)".into(), true)),
         Target::PutIn(Slot::Frame, holds) => {
             let at = (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::new(0.5, 1.1, 0.5);
             let plural = if holds == 1 { "" } else { "s" };
@@ -612,7 +553,7 @@ fn aim(
 ) {
     let busy = ui.at_console() || sim.busy();
     let forward = (player.rotation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
-    let target = if busy { None } else { target_for(&world, &sites, &carry, player.translation, forward, carry.aim) };
+    let target = if busy { None } else { target_for(&world, &sites, &carry, player.translation, forward) };
     if carry.target != target {
         carry.target = target;
     }
@@ -632,6 +573,7 @@ fn act(
     mut carry: ResMut<Carry>,
     mut dirty: ResMut<DirtyCells>,
     mut game: ResMut<Game>,
+    mut sim: ResMut<Sim>,
 ) {
     if wants.wants_any_keyboard_input() || !keys.just_pressed(KeyCode::KeyF) {
         return;
@@ -645,17 +587,21 @@ fn act(
         Target::TakeOut(Slot::Frame, holds) => Some(foot(sites.channel_well + IVec3::Y * holds as i32)),
         _ => None,
     };
-    apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target);
+    if let Some(ledge) = apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target) {
+        sim.request = Some(Request::DropStone(ledge));
+    }
     if let Some(at) = dust {
         crate::particles::burst(&mut commands, crate::particles::Kind::Dust, at, 1.0);
     }
 }
 
-/// Do what a target says. Also used by the scripted tour.
-pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty: &mut DirtyCells, game: &mut Game, target: Target) {
+/// Do what a target says. Returns `Some(ledge)` when a quarry drop-stone was released so the caller
+/// can trigger the timed fall in `sim`. Also used by the scripted tour.
+pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty: &mut DirtyCells, game: &mut Game, target: Target) -> Option<DropLedge> {
+    let mut dropped = None;
     match target {
         Target::Take(cell) => {
-            let Some(i) = carry.loose.iter().position(|c| *c == cell) else { return };
+            let i = carry.loose.iter().position(|c| *c == cell)?;
             carry.loose.swap_remove(i);
             world.set(cell, Material::Air);
             dirty.0.push(cell);
@@ -667,8 +613,12 @@ pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty
             carry.loose.push(cell);
             carry.holding = None;
         }
-        Target::TakeGate => carry.holding = Some(Item::Gate),
-        Target::StowGate => carry.holding = None,
+        Target::TakeStone => carry.holding = Some(Item::QuarryStone),
+        Target::StowStone => carry.holding = None,
+        Target::DropStone(ledge) => {
+            carry.holding = None;
+            dropped = Some(ledge);
+        }
         Target::PutIn(slot, holds) | Target::TakeOut(slot, holds) => {
             set_slot(world, sites, dirty, slot, holds);
             carry.filled[slot.index()] = holds;
@@ -686,9 +636,10 @@ pub fn apply(world: &mut VoxelWorld, sites: &mut Sites, carry: &mut Carry, dirty
             game.save.sides.entry(crate::beam::BEAM_ID.to_string()).or_default().placed = carry.beam.to_saved();
             game.persist();
         }
-        Target::Blocked(_) => return,
+        Target::Blocked(_) => return None,
     }
     carry.target = None;
+    dropped
 }
 
 /// Keep the handles and colliders on the blocks: the loose ones, then the ones in the frame.
@@ -712,39 +663,24 @@ fn place_marks(carry: Res<Carry>, sites: Res<Sites>, mut marks: Query<(&BlockMar
     }
 }
 
-/// A carried block rides in front of the avatar, between its hands.
+/// A carried block or quarry stone rides in front of the avatar, between its hands.
+#[allow(clippy::type_complexity)]
 fn hold(
     carry: Res<Carry>,
-    player: Query<&Transform, (With<Player>, Without<HeldBlock>)>,
-    mut held: Single<(&mut Transform, &mut Visibility), With<HeldBlock>>,
+    player: Query<&Transform, (With<Player>, Without<HeldBlock>, Without<HeldStone>)>,
+    mut held_block: Single<(&mut Transform, &mut Visibility), (With<HeldBlock>, Without<HeldStone>)>,
+    mut held_stone: Single<(&mut Transform, &mut Visibility), (With<HeldStone>, Without<HeldBlock>)>,
 ) {
-    let (transform, visibility) = &mut *held;
     let Ok(avatar) = player.single() else { return };
-    **visibility = if matches!(carry.holding, Some(Item::Block(_))) { Visibility::Inherited } else { Visibility::Hidden };
-    transform.translation = avatar.translation + avatar.rotation * HELD_AT;
-    transform.rotation = avatar.rotation;
+    let pose = Transform::from_translation(avatar.translation + avatar.rotation * HELD_AT).with_rotation(avatar.rotation);
+    *held_block.0 = pose;
+    *held_block.1 = if matches!(carry.holding, Some(Item::Block(_))) { Visibility::Inherited } else { Visibility::Hidden };
+    *held_stone.0 = pose;
+    *held_stone.1 = if carry.holding == Some(Item::QuarryStone) { Visibility::Inherited } else { Visibility::Hidden };
 }
 
-/// The light gate: on its stand, in the avatar's hands, or clamped on its notch, its arms reaching
-/// from the tower's column to either side of the fall line.
-fn place_gate(carry: Res<Carry>, sites: Res<Sites>, player: Query<&Transform, (With<Player>, Without<Gate>)>, mut gate: Single<&mut Transform, With<Gate>>) {
-    let folded = Vec3::splat(GATE_FOLDED);
-    **gate = if let Some(Item::Gate) = carry.holding {
-        let Ok(avatar) = player.single() else { return };
-        // Carried by its clamp in both hands, arms pointing ahead.
-        let rotation = avatar.rotation * Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        let origin = HELD_AT + Vec3::NEG_Z * GATE_REACH * GATE_FOLDED;
-        Transform::from_translation(avatar.translation + avatar.rotation * origin).with_rotation(rotation).with_scale(folded)
-    } else if carry.holds(Slot::Tower) > 0 {
-        Transform::from_translation(gate_at(&sites, carry.holds(Slot::Tower)))
-    } else {
-        // Its clamp resting in the stand's cradle.
-        Transform::from_translation(sites.gate_stand + Vec3::new(GATE_REACH * GATE_FOLDED, 1.12, 0.0)).with_scale(folded)
-    };
-}
-
-/// Outline where `F` would act: the block to lift, the ghost of the one to put down, the notch the
-/// light gate would clamp at.
+/// Outline where `F` would act: the block to lift, the ghost of the one to put down, or the quarry
+/// stone poised at a drop lip.
 fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
     let Some(target) = carry.target else { return };
     let take = Color::srgb(1.0, 0.85, 0.3);
@@ -761,21 +697,14 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
         }
         Target::PutIn(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), put),
         Target::TakeOut(Slot::Cart, _) => cube(&mut gizmos, sites.cart + Vec3::Y * (0.7 + HELD_SIZE / 2.0), Vec3::splat(HELD_SIZE + 0.04), take),
-        Target::PutIn(Slot::Tower, notch) => {
-            // The ghost of the gate at the notch: its beam across the fall line, and a tick on the
-            // column at every notch so the choice reads as one of them.
-            let at = gate_at(&sites, notch);
-            gizmos.line(at - Vec3::Z * 0.7, at + Vec3::Z * 0.7, put);
-            cube(&mut gizmos, at - Vec3::X * 0.9, Vec3::new(2.4, 0.2, 1.5), put);
-            let column = sites.tower_release - Vec3::X * GATE_REACH;
-            for n in 1..=tower_height(&sites) {
-                let tick = column - Vec3::Y * n as f32;
-                gizmos.line(tick + Vec3::X * 0.5, tick + Vec3::X * if n == notch { 1.0 } else { 0.7 }, put);
-            }
+        Target::DropStone(ledge) => {
+            let release = ledge.release(&sites);
+            let landing = ledge.landing(&sites);
+            cube(&mut gizmos, release + Vec3::Y * (QUARRY_STONE_SIZE / 2.0), Vec3::splat(QUARRY_STONE_SIZE + 0.04), put);
+            gizmos.line(release, landing, Color::srgba(0.4, 0.9, 1.0, 0.55));
         }
-        Target::TakeOut(Slot::Tower, _) => {
-            cube(&mut gizmos, gate_at(&sites, carry.holds(Slot::Tower)) - Vec3::X * 0.9, Vec3::new(2.4, 0.3, 1.6), take);
-        }
+        Target::TakeStone => cube(&mut gizmos, sites.stone_pile + Vec3::Y * 0.6, Vec3::new(1.1, 1.1, 1.1), take),
+        Target::StowStone => cube(&mut gizmos, sites.stone_pile + Vec3::Y * 0.6, Vec3::new(1.1, 1.1, 1.1), put),
         Target::PutOnBeam(arm, seat) => {
             let at = sites.beam.seat(arm, seat) + Vec3::Y * (HELD_SIZE * (carry.beam.get(arm, seat) as f32 + 0.5));
             cube(&mut gizmos, at, Vec3::splat(HELD_SIZE + 0.04), put);
@@ -784,8 +713,6 @@ fn draw_target(carry: Res<Carry>, sites: Res<Sites>, mut gizmos: Gizmos) {
             let at = sites.beam.seat(arm, seat) + Vec3::Y * (HELD_SIZE * (carry.beam.get(arm, seat) as f32 - 0.5));
             cube(&mut gizmos, at, Vec3::splat(HELD_SIZE + 0.04), take);
         }
-        Target::TakeGate => cube(&mut gizmos, sites.gate_stand + Vec3::new(0.5, 1.12, 0.0), Vec3::new(1.4, 0.3, 0.8), take),
-        Target::StowGate => cube(&mut gizmos, sites.gate_stand + Vec3::new(0.5, 1.12, 0.0), Vec3::new(1.4, 0.3, 0.8), put),
         Target::Blocked(_) => {}
     }
 }
@@ -803,19 +730,17 @@ pub fn hint(carry: &Carry) -> Option<String> {
     Some(match carry.target? {
         Target::Take(_) => "F: pick up the block".into(),
         Target::Put(_) => "F: put the block down".into(),
-        Target::TakeGate => "F: take the light gate off its stand".into(),
-        Target::StowGate => "F: put the light gate back on its stand".into(),
+        Target::TakeStone => "F: pick up a quarry stone".into(),
+        Target::StowStone => "F: put the quarry stone back on the stack".into(),
+        Target::DropStone(DropLedge::Low) => "F: drop the stone off the low step (Lumen will time the fall)".into(),
+        Target::DropStone(DropLedge::Cliff) => "F: drop the stone off the cliff rim (Lumen will time the fall)".into(),
         Target::PutIn(Slot::Frame, _) => "F: slide the block into the jack frame (the launcher goes up a metre)".into(),
         Target::TakeOut(Slot::Frame, _) => "F: take a block out of the jack frame (the launcher comes down a metre)".into(),
         Target::PutIn(Slot::Cart, _) => "F: load the block onto the cart".into(),
         Target::TakeOut(Slot::Cart, _) => "F: take the block off the cart".into(),
-        Target::PutIn(Slot::Tower, notch) => {
-            format!("F: clamp the gate {notch} m below the release point (point higher or lower on the tower to choose the notch)")
-        }
-        Target::TakeOut(Slot::Tower, _) => "F: unclamp the light gate".into(),
         Target::PutOnBeam(arm, seat) => format!("F: put the block on seat {seat} of the beam's {}", arm_name(arm)),
         Target::TakeOffBeam(arm, seat) => format!("F: take a block off seat {seat} of the beam's {}", arm_name(arm)),
-        Target::Blocked(why) => format!("{} {why}", if carry.holding == Some(Item::Gate) { "Carrying the light gate." } else { "Carrying a block." }),
+        Target::Blocked(why) => format!("{} {why}", if carry.holding == Some(Item::QuarryStone) { "Carrying a quarry stone." } else { "Carrying a block." }),
     })
 }
 
@@ -846,7 +771,7 @@ mod tests {
             let pile_west = sites.block_pile.iter().map(|c| c.x).min().unwrap();
             let row = sites.block_pile[0].z;
             let feet = Vec3::new(pile_west as f32 - 0.6, base.y, row as f32 + 0.5);
-            let Some(Target::Take(cell)) = target_for(&world, &sites, &carry, feet, Vec3::X, None) else { panic!("seed {seed}: nothing to take") };
+            let Some(Target::Take(cell)) = target_for(&world, &sites, &carry, feet, Vec3::X) else { panic!("seed {seed}: nothing to take") };
             assert_eq!(cell.y, base.y as i32 + 1, "the top block is taken first");
             assert_eq!(yard_of(&sites, cell), Yard::Ledge);
             world.set(cell, Material::Air);
@@ -856,9 +781,9 @@ mod tests {
             // At the frame's foot on the launcher's rail, facing it.
             let out = sites.channel_launch.direction;
             let foot = sites.channel_well.as_vec3() + Vec3::new(0.5, 0.0, 0.5) - out * 1.4;
-            assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::PutIn(Slot::Frame, 1)), "seed {seed}");
+            assert_eq!(target_for(&world, &sites, &carry, foot, out), Some(Target::PutIn(Slot::Frame, 1)), "seed {seed}");
             // Facing away from it, the block cannot be put on the rail.
-            assert!(matches!(target_for(&world, &sites, &carry, foot, -out, None), Some(Target::Blocked(_))), "seed {seed}");
+            assert!(matches!(target_for(&world, &sites, &carry, foot, -out), Some(Target::Blocked(_))), "seed {seed}");
 
             set_stack(&mut world, &mut sites, &mut dirty, 3);
             assert_eq!(sites.channel_launch.origin, base + Vec3::Y * 3.0);
@@ -867,7 +792,7 @@ mod tests {
             assert!(!world.is_solid(sites.channel_well + IVec3::Y * 3));
             carry.filled[Slot::Frame.index()] = 3;
             carry.holding = None;
-            assert_eq!(target_for(&world, &sites, &carry, foot, out, None), Some(Target::TakeOut(Slot::Frame, 2)));
+            assert_eq!(target_for(&world, &sites, &carry, foot, out), Some(Target::TakeOut(Slot::Frame, 2)));
             set_stack(&mut world, &mut sites, &mut dirty, 0);
             assert_eq!(sites.channel_launch.origin, base);
         }
@@ -880,14 +805,14 @@ mod tests {
         // At the yard's west edge, clear of the pile.
         let [low, high] = sites.block_yard;
         let feet = Vec3::new(low.x as f32 + 0.5, low.y as f32, high.z as f32 - 1.5);
-        assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::Z, None), Some(Target::Put(IVec3::new(low.x, low.y, high.z - 1))));
+        assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::Z), Some(Target::Put(IVec3::new(low.x, low.y, high.z - 1))));
         // Facing out of the yard (west, off its edge).
-        assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_X, None), Some(Target::Blocked(_))));
+        assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_X), Some(Target::Blocked(_))));
         assert!(overlaps_avatar(feet, feet.floor().as_ivec3()));
         // A ledge block does not go into the rail's yard, nor onto the cart.
         let [rail_low, _] = sites.cargo_yard;
         let by_rail = Vec3::new(rail_low.x as f32 + 0.5, rail_low.y as f32, rail_low.z as f32 - 0.6);
-        assert!(matches!(target_for(&world, &sites, &carry, by_rail, Vec3::Z, None), Some(Target::Blocked(_))));
+        assert!(matches!(target_for(&world, &sites, &carry, by_rail, Vec3::Z), Some(Target::Blocked(_))));
     }
 
     #[test]
@@ -897,20 +822,20 @@ mod tests {
             // From beside the block, facing it.
             let cell = sites.cargo_cell;
             let feet = Vec3::new(cell.x as f32 - 0.6, cell.y as f32, cell.z as f32 + 0.5);
-            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::X, None), Some(Target::Take(cell)), "seed {seed}");
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::X), Some(Target::Take(cell)), "seed {seed}");
             world.set(cell, Material::Air);
             carry.loose.retain(|c| *c != cell);
             carry.holding = Some(Item::Block(yard_of(&sites, cell)));
             assert_eq!(carry.holding, Some(Item::Block(Yard::Rail)));
             // Facing the cart from the rail behind it.
             let behind = sites.cart - Vec3::X * 1.2;
-            assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X, None), Some(Target::PutIn(Slot::Cart, 1)), "seed {seed}");
+            assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X), Some(Target::PutIn(Slot::Cart, 1)), "seed {seed}");
             // Back down in its yard instead.
-            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::X, None), Some(Target::Put(cell)), "seed {seed}");
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::X), Some(Target::Put(cell)), "seed {seed}");
             // A block on the cart comes off it again.
             carry.holding = None;
             carry.filled[Slot::Cart.index()] = 1;
-            assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X, None), Some(Target::TakeOut(Slot::Cart, 0)));
+            assert_eq!(target_for(&world, &sites, &carry, behind, Vec3::X), Some(Target::TakeOut(Slot::Cart, 0)));
         }
     }
 
@@ -929,15 +854,15 @@ mod tests {
             carry.holding = Some(Item::Block(Yard::Beam));
             // South of the beam, facing it, in front of seat 3 of the far arm.
             let feet = Vec3::new(beam.pivot.x + 3.0, beam.pivot.y - crate::island::BEAM_AXLE, beam.pivot.z + 1.4);
-            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::PutOnBeam(Arm::Far, 3)), "seed {seed}");
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z), Some(Target::PutOnBeam(Arm::Far, 3)), "seed {seed}");
             // And from the north side, in front of seat 2 of the load's arm.
             let north = Vec3::new(beam.pivot.x - 2.0, feet.y, beam.pivot.z - 1.4);
-            assert_eq!(target_for(&world, &sites, &carry, north, Vec3::Z, None), Some(Target::PutOnBeam(Arm::Load, 2)), "seed {seed}");
+            assert_eq!(target_for(&world, &sites, &carry, north, Vec3::Z), Some(Target::PutOnBeam(Arm::Load, 2)), "seed {seed}");
             // Over the pivot, nothing goes.
             let pivot = Vec3::new(beam.pivot.x, feet.y, feet.z);
-            assert!(matches!(target_for(&world, &sites, &carry, pivot, Vec3::NEG_Z, None), Some(Target::Blocked(_))));
+            assert!(matches!(target_for(&world, &sites, &carry, pivot, Vec3::NEG_Z), Some(Target::Blocked(_))));
             // Facing away from it, the block goes down by the pile or nowhere.
-            assert!(!matches!(target_for(&world, &sites, &carry, feet, Vec3::Z, None), Some(Target::PutOnBeam(..))));
+            assert!(!matches!(target_for(&world, &sites, &carry, feet, Vec3::Z), Some(Target::PutOnBeam(..))));
 
             let mut dirty = DirtyCells::default();
             let mut game = Game::for_test(seed);
@@ -946,73 +871,44 @@ mod tests {
             assert!(carry.holding.is_none());
             assert_eq!(Placement::from_saved(&game.save.side(crate::beam::BEAM_ID).placed), carry.beam, "the save keeps it");
             // Empty-handed, the top block comes off again.
-            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::TakeOffBeam(Arm::Far, 3)));
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z), Some(Target::TakeOffBeam(Arm::Far, 3)));
             // Not while the beam swings.
             carry.beam_swinging = true;
-            assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::Blocked(_))));
+            assert!(matches!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z), Some(Target::Blocked(_))));
             carry.beam_swinging = false;
             // A full seat takes no more.
             carry.beam.set(Arm::Far, 3, MOST_ON_A_SEAT);
             carry.holding = Some(Item::Block(Yard::Beam));
-            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z, None), Some(Target::Blocked("That seat is full.")));
+            assert_eq!(target_for(&world, &sites, &carry, feet, Vec3::NEG_Z), Some(Target::Blocked("That seat is full.")));
             let _ = std::fs::remove_file(&game.save_path);
         }
     }
 
     #[test]
-    fn the_light_gate_is_clamped_at_the_notch_pointed_at() {
+    fn quarry_stones_are_picked_up_and_dropped_off_either_ledge() {
         for seed in [0, 7, 42, 199] {
-            let layout = Ch1Layout::generate(seed);
-            let (world, mut sites, mut carry) = laid_out(seed);
-            let mut dirty = DirtyCells::default();
-            let mut world = world;
-            // Off its stand.
-            let at_stand = sites.gate_stand - Vec3::X * 1.0;
-            assert_eq!(target_for(&world, &sites, &carry, at_stand, Vec3::X, None), Some(Target::TakeGate), "seed {seed}");
-            carry.holding = Some(Item::Gate);
-            assert_eq!(target_for(&world, &sites, &carry, at_stand, Vec3::X, None), Some(Target::StowGate));
-            // At the foot of the tower, facing the fall line: the notch pointed at, else hand height.
-            let feet = sites.tower_plate + Vec3::Z * 1.8;
-            let toward = Vec3::NEG_Z;
-            assert_eq!(target_for(&world, &sites, &carry, feet, toward, None), Some(Target::PutIn(Slot::Tower, layout.tower_h - 1)));
-            let five_below = sites.tower_release.y - 5.2;
-            assert_eq!(target_for(&world, &sites, &carry, feet, toward, Some(five_below)), Some(Target::PutIn(Slot::Tower, 5)));
-            // Notches run from a metre below the release to the plate.
-            assert_eq!(notch_for(&sites, feet, Some(sites.tower_release.y + 3.0)), 1);
-            assert_eq!(notch_for(&sites, feet, Some(sites.tower_plate.y - 3.0)), layout.tower_h);
-            // Clamped, its pin is on the fall line that far below the release point.
-            set_slot(&mut world, &mut sites, &mut dirty, Slot::Tower, 5);
-            let pin = &sites.pins[sites.gate_pin];
-            assert!(pin.present());
-            assert_eq!(sites.tower_release.y - pin.position.y, 5.0);
-            assert_eq!(pin.position.with_y(0.0), sites.tower_release.with_y(0.0));
-            carry.holding = None;
-            carry.filled[Slot::Tower.index()] = 5;
-            assert_eq!(target_for(&world, &sites, &carry, feet, toward, None), Some(Target::TakeOut(Slot::Tower, 0)));
-            assert!(!carry.gate_on_stand());
-            set_slot(&mut world, &mut sites, &mut dirty, Slot::Tower, 0);
-            assert!(!sites.pins[sites.gate_pin].present());
+            let (world, sites, mut carry) = laid_out(seed);
+            // Pick up from the stack beside the console.
+            let at_pile = sites.stone_pile - Vec3::X * 1.1;
+            assert_eq!(target_for(&world, &sites, &carry, at_pile, Vec3::X), Some(Target::TakeStone), "seed {seed}");
+            carry.holding = Some(Item::QuarryStone);
+            assert_eq!(target_for(&world, &sites, &carry, at_pile, Vec3::X), Some(Target::StowStone));
+            // Stand on the 1 m low step facing south toward the drop lip.
+            let at_low = sites.low_drop - Vec3::Z * 1.0;
+            assert_eq!(target_for(&world, &sites, &carry, at_low, Vec3::Z), Some(Target::DropStone(DropLedge::Low)), "seed {seed}");
+            // Stand on the cliff rim facing south toward the drop lip.
+            let at_cliff = sites.cliff_drop - Vec3::Z * 1.0;
+            assert_eq!(target_for(&world, &sites, &carry, at_cliff, Vec3::Z), Some(Target::DropStone(DropLedge::Cliff)), "seed {seed}");
+            // Facing north (away from the drop lip), it refuses to drop.
+            assert!(matches!(target_for(&world, &sites, &carry, at_cliff, Vec3::NEG_Z), Some(Target::Blocked(_))));
         }
     }
 
     #[test]
-    fn the_pointer_marks_a_height_on_the_tower() {
-        let (_, sites, _) = laid_out(5);
-        let target = sites.tower_plate + Vec3::Y * 6.0;
-        let eye = target + Vec3::new(-8.0, 2.0, 9.0);
-        let aim = aim_on_tower(&sites, eye, (target - eye).normalize()).expect("the ray passes the tower");
-        assert!((aim - target.y).abs() < 1e-3, "{aim}");
-        // Looking away from the tower marks nothing.
-        assert_eq!(aim_on_tower(&sites, eye, (eye - target).normalize()), None);
-        // Nor does a ray that passes far to the side.
-        assert_eq!(aim_on_tower(&sites, eye, (target + Vec3::Z * 5.0 - eye).normalize()), None);
-    }
-
-    #[test]
-    fn placement_badges_report_notches_stacks_and_beam_seats() {
+    fn placement_badges_report_quarry_drops_stacks_and_beam_seats() {
         let (_, sites, mut carry) = laid_out(7);
-        carry.target = Some(Target::PutIn(Slot::Tower, 8));
-        assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("Notch: 8 m".into(), true)));
+        carry.target = Some(Target::DropStone(DropLedge::Cliff));
+        assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("Drop stone (cliff rim)".into(), true)));
 
         carry.target = Some(Target::PutIn(Slot::Frame, 5));
         assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("5 m (5 blocks)".into(), true)));

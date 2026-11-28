@@ -25,7 +25,7 @@
 //! does not see what it expects panics, which fails the run.
 
 use crate::avatar::{Activity, AvatarState};
-use crate::carry::{self, Carry, DirtyCells, Slot, Target};
+use crate::carry::{self, Carry, DirtyCells, DropLedge, Slot, Target};
 use crate::companion::{Companion, station_name};
 use crate::intro::Intro;
 use crate::island::Sites;
@@ -92,13 +92,11 @@ enum Step {
     ExpectQuizDone(&'static str),
     Draft(usize, Vec<String>),
     Commit(usize),
-    /// Stand at `feet` facing along `facing`, with the pointer marking `aim` on the drop tower, and
-    /// press F; fail unless F would do what is expected.
+    /// Stand at `feet` facing along `facing` and press F; fail unless F would do what is expected.
     CarryAt {
         feet: Vec3,
         facing: Vec3,
         expect: Expect,
-        aim: Option<f32>,
     },
     /// Fail unless the last commit was refused for this reason.
     ExpectRefusal(&'static str),
@@ -212,11 +210,9 @@ enum Step {
 enum Expect {
     /// Pick up a loose block.
     Take,
-    TakeGate,
+    TakeStone,
+    DropStone(DropLedge),
     PutIn(Slot),
-    TakeOut(Slot),
-    /// Clamp the light gate at this notch.
-    Clamp(u32),
     /// Put the block on this seat of the beam.
     OnBeam(physics_core::beam::Arm, u32),
 }
@@ -224,9 +220,9 @@ enum Expect {
 impl Expect {
     fn matches(self, target: Option<Target>) -> bool {
         match (self, target) {
-            (Expect::Take, Some(Target::Take(_))) | (Expect::TakeGate, Some(Target::TakeGate)) => true,
-            (Expect::PutIn(slot), Some(Target::PutIn(s, _))) | (Expect::TakeOut(slot), Some(Target::TakeOut(s, _))) => s == slot,
-            (Expect::Clamp(notch), Some(Target::PutIn(Slot::Tower, n))) => n == notch,
+            (Expect::Take, Some(Target::Take(_))) | (Expect::TakeStone, Some(Target::TakeStone)) => true,
+            (Expect::DropStone(ledge), Some(Target::DropStone(l))) => l == ledge,
+            (Expect::PutIn(slot), Some(Target::PutIn(s, _))) => s == slot,
             (Expect::OnBeam(arm, seat), Some(Target::PutOnBeam(a, s))) => (a, s) == (arm, seat),
             _ => false,
         }
@@ -235,7 +231,7 @@ impl Expect {
 
 /// Stand at `feet` facing along `facing` and press F.
 fn carry_at(feet: Vec3, facing: Vec3, expect: Expect) -> Step {
-    Step::CarryAt { feet, facing, expect, aim: None }
+    Step::CarryAt { feet, facing, expect }
 }
 
 /// Where to stand to pick up the cart's block, and to load it onto the cart.
@@ -293,7 +289,7 @@ fn uncap_frame_rate(mut window: Single<&mut Window, With<PrimaryWindow>>) {
 
 /// Index of the haul track's first pin (the cart's front coupler; then the crawler, the marker and the
 /// two posts): its pins are added after every other.
-const HAUL_PINS: usize = 13;
+const HAUL_PINS: usize = 14;
 /// The camera's yaw at the haul track: from the beach, south-west of the station, looking along it.
 const HAUL_YAW: f32 = -0.65;
 /// The launchers fire north: a view of one is turned this far from the view it would have firing east.
@@ -311,12 +307,11 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
     let angle = ((min + max) / 2.0).to_degrees().round();
     let closed = Windows { notebook: false, handbook: false, tutor: false };
     let (cargo_at, cart_at) = by_the_rail(sites);
-    // The light gate: off its stand, then clamped at a short drop and a long one.
-    let at_stand = sites.gate_stand - Vec3::X * 1.0;
-    let at_tower = sites.tower_plate + Vec3::Z * 1.8;
-    let (short, long) = (3, game.layout.tower_h - 2);
-    let clamp =
-        |notch: u32| Step::CarryAt { feet: at_tower, facing: Vec3::NEG_Z, expect: Expect::Clamp(notch), aim: Some(sites.tower_release.y - notch as f32) };
+    // The quarry drop-stones: picked up from the stack beside the console, then dropped off the
+    // 1 m low step and the deep cliff rim.
+    let at_stone_pile = sites.stone_pile - Vec3::X * 1.1;
+    let at_low_lip = sites.low_drop - Vec3::Z * 1.0;
+    let at_cliff_lip = sites.cliff_drop - Vec3::Z * 1.0;
     // When things happen in each wake, to photograph them.
     let wakes: Vec<Timeline> = (1..=crate::state::PUZZLES).map(|stage| Timeline::new(stage, &sites.way)).collect();
     let mut steps = vec![
@@ -331,7 +326,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         // The whole route, from the wreck on the south coast to the skiff on the north shore.
         // The route's northern half, from the channel to the skiff on the north shore, looked at from
         // high over it so no hill comes between the camera and it (the camera keeps within 80 m).
-        Watch(Some(sites.tower_plate.lerp(sites.slipway, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
+        Watch(Some(sites.cliff_landing.lerp(sites.slipway, 0.35).with_y(crate::island::GROUND as f32 + 45.0))),
         Look { yaw: 0.25, pitch: 1.0, distance: 80.0 },
         Wait(1.5),
         Shot("02_island"),
@@ -529,51 +524,42 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(0.6),
         Shot("08h_quiz_done"),
         closed_step(),
-        // Now measure: ruler on the tower, then clamp the light gate at a short drop and a long one.
+        // Now measure: ruler on the cliff rim (h1), then carry quarry stones off the 1 m step (t2)
+        // and the deep cliff rim (t3).
         RulerPin(0),
         RulerPin(1),
         Wait(0.3),
-        Shot("07_ruler_on_tower"),
+        Shot("07_ruler_on_cliff"),
         RulerNote(1),
         RulerOff,
         Station(None),
-        carry_at(at_stand, Vec3::X, Expect::TakeGate),
-        clamp(short),
-        Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
+        carry_at(at_stone_pile, Vec3::X, Expect::TakeStone),
+        carry_at(at_low_lip, Vec3::Z, Expect::DropStone(DropLedge::Low)),
+        WaitIdle,
+        carry_at(at_stone_pile, Vec3::X, Expect::TakeStone),
+        carry_at(at_cliff_lip, Vec3::Z, Expect::DropStone(DropLedge::Cliff)),
         Wait(0.8),
-        Shot("08c_gate_clamped"),
-        GoToStation(2),
-        Look { yaw: 0.9, pitch: 0.35, distance: 26.0 },
-        Station(Some(2)),
-        RunMeasure(2),
+        Shot("08d_cliff_drop"),
         WaitIdle,
-        // Then a long drop: the gate moves down the tower, and the light gate times it again.
-        Station(None),
-        carry_at(at_tower, Vec3::NEG_Z, Expect::TakeOut(Slot::Tower)),
-        clamp(long),
         GoToStation(2),
         Station(Some(2)),
-        RunMeasure(2),
-        Wait(1.4),
-        Shot("08d_gate_tripped"),
-        WaitIdle,
         Wait(0.4),
-        Shot("08e_gate_reading"),
+        Shot("08e_stopwatch_reading"),
         Windows { notebook: true, handbook: false, tutor: false },
-        Draft(2, vec!["2*h3/t3^2".into()]),
+        Draft(2, vec!["2*h1/t3^2".into()]),
         Wait(0.3),
         Shot("09_gravity_blueprint"),
         closed_step(),
         Commit(2),
         Wait(1.0),
-        Shot("10_mast_test"),
+        Shot("10_overhang_test"),
         WaitIdle,
         Wait(3.0),
         Shot("11_gravity_result"),
         Station(None),
-        // The tower lights to the top, then the ramp rises.
+        // The cliff quartz vein lights to the outcrop, then the ramp rises.
         UntilWakeAt { stage: 3, at: 0.9, within: 30.0 },
-        Shot("11_wake_tower_to_the_top"),
+        Shot("11_wake_cliff_lights"),
         UntilWakeAt { stage: 3, at: wakes[2].wake_starts() + 1.2, within: 30.0 },
         Shot("11_wake_ramp_rises"),
         WaitWakeEnd(30.0),
@@ -606,12 +592,12 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         // The rating plate, then the lowest height above the ledge the band allows, in the calculator.
         NotePlate,
         Windows { notebook: true, handbook: false, tutor: false },
-        Calculate("hmin = g*d5^2/(2*vmax^2) - h4".into()),
+        Calculate("hmin = g*d5^2/(2*vmax^2) - h2".into()),
         Wait(0.5),
         Shot("13_calculator_rise"),
         closed_step(),
         // Straight from the bare ledge first: the speed it needs is past the top of the dial.
-        Draft(3, vec![String::new(), "d5/sqrt(2*h4/g)".into()]),
+        Draft(3, vec![String::new(), "d5/sqrt(2*h2/g)".into()]),
         Commit(3),
         Wait(0.3),
         Shot("13b_dial_refuses"),
@@ -638,7 +624,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         GoToStation(3),
         Look { yaw: -1.4 + TURN, pitch: 0.45, distance: 30.0 },
         Station(Some(3)),
-        Draft(3, vec![String::new(), format!("d5/sqrt(2*(h4 + {stack} m)/g)")]),
+        Draft(3, vec![String::new(), format!("d5/sqrt(2*(h2 + {stack} m)/g)")]),
         Wait(0.5),
         Shot("14c_blueprint"),
         Commit(3),
@@ -835,7 +821,7 @@ fn way(sites: &Sites) -> Vec<Step> {
     let views: [(&'static str, Vec3, f32, f32, f32); 10] = [
         ("01_stone_gate", way.stone_gate, 0.9, 0.35, 16.0),
         ("02_crane", way.crane_pivot.lerp(sites.crane_foot, 0.5), 0.6, 0.4, 16.0),
-        ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
+        ("03_quarry", sites.cliff_landing, 0.2, 0.25, 28.0),
         ("04_ramp", sites.channel_launch.origin - sites.channel_launch.direction * 18.0, 2.6, 0.45, 26.0),
         ("05_channel", sites.channel_launch.origin, 1.9, 0.5, 34.0),
         ("05b_bridge", way.bridge.centre(), -0.8, 0.4, 36.0),
@@ -892,7 +878,7 @@ fn look(sites: &Sites) -> Vec<Step> {
     let views: [(&'static str, Vec3, f32, f32, f32); 7] = [
         ("01_wreck", sites.wreck, 0.4, 0.3, 26.0),
         ("02_supply_rail", way.stone_gate, 0.9, 0.35, 16.0),
-        ("03_tower", sites.tower_plate, 0.7, 0.3, 26.0),
+        ("03_quarry", sites.cliff_landing, 0.2, 0.25, 28.0),
         ("04_channel", sites.channel_launch.origin, 1.9, 0.35, 30.0),
         ("05_bridge", way.bridge.centre(), -0.8, 0.25, 40.0),
         ("06_north_gate", way.north_gate, 0.25, 0.25, 30.0),
@@ -1277,13 +1263,15 @@ fn run(
         Step::ExpectQuizDone(page) => assert!(game.save.quiz_done(&game.chapter, page), "the quiz on '{page}' is not done: {:?}", game.save.quizzes.get(page)),
         Step::Draft(puzzle, texts) => ui.drafts[puzzle] = texts,
         Step::Commit(puzzle) => sim.request = Some(Request::Commit(puzzle)),
-        Step::CarryAt { feet, facing, expect, aim } => {
+        Step::CarryAt { feet, facing, expect } => {
             player.1.translation = feet;
             player.1.rotation = Quat::from_rotation_y(f32::atan2(-facing.x, -facing.z));
             player.0.velocity = Vec3::ZERO;
-            let target = carry::target_for(&world, &sites, &carry, feet, facing, aim);
+            let target = carry::target_for(&world, &sites, &carry, feet, facing);
             assert!(expect.matches(target), "at {feet} facing {facing}, F would do {target:?}, not {expect:?}");
-            carry::apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target.expect("checked above"));
+            if let Some(ledge) = carry::apply(&mut world, &mut sites, &mut carry, &mut dirty, &mut game, target.expect("checked above")) {
+                sim.request = Some(Request::DropStone(ledge));
+            }
             script.wait = 0.3;
         }
         Step::ExpectRefusal(reason) => {

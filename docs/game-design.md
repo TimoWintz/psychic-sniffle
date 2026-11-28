@@ -64,7 +64,7 @@ other line in the game is written, is set out in [writing.md](writing.md).
   remark only when nothing is going on: no station open, no test or experiment running, the ruler
   away, nothing carried, its conversation closed, and nothing said for 40 seconds.
 - **Help.** Once per station a session: after a first miss at the channel or the ridge, that the
-  player's g held up at the drop tower; after two misses, if the player has not talked to it and a
+  player's g held up at the quarry; after two misses, if the player has not talked to it and a
   model is connected, that it can help without giving the number; when a station runs out of
   charges, that it is a good moment to check the readings.
 
@@ -85,20 +85,21 @@ Two hands built what stands at the puzzle sites, and they should never be confus
 
 - **The way.** A road of dressed pale stone runs from the south coast to a gate on the north shore,
   and its builders' machines stand along it: a cart in a groove sunk in stone, a crawler that walks
-  on six stone legs, a drop tower and a
-  taller survey mast, two launchers (one in a stone jack frame on a ledge over the channel, one that
+  on six stone legs, a sea-cliff quarry with a counterweight davit overhanging a waterline stone
+  shutter in the cove, two launchers (one in a stone jack frame on a ledge over the channel, one that
   tilts), a crane arm, a suspension bridge over the channel, and a quay with a slipway down to the
   strait, where their skiff lies. The bridge's deck hangs from cables of the same light as the road's
   quartz, and while it sleeps there is no bridge at all. Beside each machine
   stands its console, a stone with a quartz face (Lumen reads through it, the player commits through
-  it), and a stone lamp. The blocks the cart carries and the jack frame takes, the casket the helm
+  it), and a stone lamp. The blocks the cart carries and the jack frame takes, the quarry drop-stones,
+  the casket the helm
   travels in and the helm itself are theirs too. Their stone is smooth and pale and its edges are
   worn; quartz runs in channels through the joints. A machine that is **asleep** has dark quartz and
   does not move, and neither its console nor its lamp glows. An **awake** one glows the island's
   quartz colour, console and lamp with it.
 - **The castaway's marks.** What the player and Lumen add is little, and all of it is for measuring:
-  the light gate, and survey orange paint on the old stone wherever a number lives: markers, timing
-  posts, the tower's metre notches, the target strip, the rating plate, and the handles painted on
+  survey orange paint on the old stone wherever a number lives: markers, timing
+  posts, the quarry drop lips, the target strip, the rating plate, and the handles painted on
   what can be carried. Orange means "a number lives here" (or "this moves"), and it is always ours:
   the builders left no numbers. Apart from that, only the wreck and the scrap thrown clear of it are
   ours.
@@ -230,7 +231,8 @@ by one pass, which a stone seal closes until the tiller is in the landing circle
 
 1. The road's rail runs east from the wreck. Its first stretch is the supply rail; past a stone gate
    the same rail is the haul track, where the same cart chases the crawler to the transfer crane.
-2. The drop tower and the survey mast stand at the rail's end, under the outcrop.
+2. A stepped sea-cliff quarry opens south to a coastal cove at the rail's end, flush against the
+   outcrop's eastern flank.
 3. A ramp climbs north onto the outcrop, where the ledge launcher fires the casket north across the
    channel to the north island. It lands on the platform beside the tilting launcher, and a dolly
    rail takes the tiller aboard. The bridge rises out of the water, and the road runs over it.
@@ -264,8 +266,8 @@ spine, and nothing goes round it. The castaway reaches the skiff only once its h
 | Station | Why, in the story | What wakes, and what changes in the world |
 |---|---|---|
 | The supply rail | their cart, and the one console that still glows; the cart will not run empty, so a block of theirs goes on it (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
-| Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the drop tower |
-| Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the tower lights to the top and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
+| Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the sea-cliff quarry |
+| Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the counterweight plunges cleanly through the water shutter into the cove, the quartz vein lights up the cliff face to the outcrop, and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
 | Across the channel | the helm, in its casket, has to cross the channel to the north island; the first real shot with the player's g | both banks light and the bridge rises across the channel; the casket stays on the platform and the tiller waits on the tilting launcher |
 | Over the ridge | the tiller itself, on to the skiff | the tiller lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff takes its helm, which settles into the socket at the stern, and the helm's quartz lights (the rest of the skiff stays dark); Lumen hears the core for the first time; the seal in the pass through the spine sinks, and the castaway can walk to the skiff (the seal only ever stood in the castaway's way, not the helm's) |
 
@@ -329,19 +331,19 @@ builds it, and the exact simulator judges what was built.
 | Pattern | What the player does | Where |
 |---|---|---|
 | Build, then compute | Work out what the world must hold, build it, then calculate the rest for what was built: blocks under a launcher whose dial only turns within a band set its height, and the speed for that height is typed. | 1.1 Across the channel (built) |
-| Place to measure | Put an instrument where it measures what is wanted: a light gate clamped at a chosen notch of the drop tower, so the player designs their own measurement and collects pairs of drop and time. | 1.1 Local gravity (built) |
+| Drop to measure | Pick up a quarry stone (`F`) and release it straight down off either orange drop lip (a 1 m step beside the console or the deep sea-cliff rim) while Lumen's stopwatch times the fall (`t`), then measure the height (`h`) with the ruler. | 1.1 Local gravity (built) |
 | Place the catcher | The setting is fixed and read off a plate; carry the target (net, stop, bin) to where the load will end up. | 1.3, the sled: place the stop where it comes to rest under friction (planned; see the curriculum) |
 
 The verb is taught first with nothing at stake: the tutorial's cart will not run until the player
 has carried a block onto it. That refusal is free, like a value of the wrong kind, and since
 nothing typed was committed it does not write the tutorial's handbook page.
 
-Placements snap to whole blocks or to fixed notches, so what is built can be counted and measured
+Placements snap to whole blocks, so what is built can be counted and measured
 exactly. A placement on its own is a small choice (a handful of stacks), which a few tries find by
 luck, so a built answer comes with a calculated one or a small target: guessing should cost at least
-as many tests as guessing a typed value, and every wrong stack also costs a walk with blocks. An
-instrument that is placed (the light gate) answers nothing itself; what it measures still has to be
-worked into the typed answer.
+as many tests as guessing a typed value, and every wrong stack also costs a walk with blocks. A
+stone dropped from a quarry ledge answers nothing itself; the height still has to be measured and
+worked with the fall time into the typed answer.
 
 ### What makes guessing a bad strategy
 
@@ -469,9 +471,10 @@ inventory.
   of another block, at most one above the feet (so blocks can be stacked into steps). The builders'
   dressed blocks are real blocks: they can be stood on and measured, and each stays near where it
   belongs (the ledge's pile on the ledge, the cart's block beside the rail). Where a station reads a
-  placement, putting the thing into its place is the act: a block onto the cart or into the jack frame, the
-  light gate onto a notch of the drop tower (the notch is the one the pointer marks on the tower, or
-  the one at hand height). The station shows what is placed there, and the save keeps it.
+  placement, putting the thing into its place is the act: a block onto the cart or into the jack
+  frame. At the sea-cliff quarry, `F` picks up a quarry drop-stone from the stack and releases it
+  straight down from either orange drop lip. The station shows what is placed there, and the save
+  keeps it.
 - **Water.** The castaway wades in the shallows. Where the water gets too deep (deeper than about a
   metre) it can walk or jump off the edge, but it falls in with a splash and comes back on the bank
   where it last stood on dry ground. A jump never carries it across deep water: out over it, the

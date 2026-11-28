@@ -70,7 +70,7 @@ shows the verdict, and counts the puzzle solved, only once the world has played 
 | `sim` | experiment and test playback, hand-off to the physics engine (whose view of the island is built again when the way's blocks come or go), handbook pages written by what is seen |
 | `rig` | launchers that show the blueprint: the tilting arm and the speed gauges |
 | `ruler` | two-point measurement tool |
-| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block, the light gate's notch on the drop tower, the ledge launcher's jack frame, which raises it), and the beam's seats |
+| `carry` | carrying: pick up, the ghost of where it goes, put down; the slots stations read (the rail cart's block and the ledge launcher's jack frame, which raises it), quarry drop-stones released off the sea-cliff ledges, and the beam's seats |
 | `beam` | the beam off the road: its console and panel, the beam and its blocks as entities that turn together on a release, a stud lit for each load held, and its wake (its quartz and lamp, then the path to the road, lit while the player watches, with no letterbox) |
 | `ui` | panels: station (brief, instruments, blueprint, result), notebook and calculator, the handbook's frame, chat |
 | `handbook` | the handbook's pages: words with formulas boxed, each page's looping Earth picture (motion in closed form by `tracks`, tested without the engine), the optional quiz |
@@ -102,19 +102,20 @@ blueprint then reads it from the world (the blocks in the jack frame), and the s
 
 ## Building placed puzzles
 
-What a station reads from the world is a `carry::Slot`: `Cart` (one block), `Tower` (the light gate
-at a notch), `Frame` (a stack of blocks). Each holds one number, which is the save's `placed` value
-for its puzzle. Adding a placement is adding a slot:
+What a station reads from the world is a `carry::Slot`: `Cart` (one block) and `Frame` (a stack of
+blocks). Each holds one number, which is the save's `placed` value for its puzzle. Quarry
+drop-stones are carried (`Item::QuarryStone`) and released directly off either drop lip with `F`
+(`Request::DropStone`), without a console slot. Adding a placement is adding a slot:
 
-- `carry::target_for` says what `F` would do from where the avatar stands and faces (and where the
-  pointer marks the tower); it is pure and tested without the engine. `carry::apply` does it, and is
-  also what the scripted tour calls. `carry::set_slot` makes the world show what a slot holds
-  (blocks, the launcher's height, a pin) and lists the changed cells for re-meshing.
+- `carry::target_for` says what `F` would do from where the avatar stands and faces; it is pure and
+  tested without the engine. `carry::apply` does it, and is also what the scripted tour calls.
+  `carry::set_slot` makes the world show what a slot holds (blocks, the launcher's height, a pin)
+  and lists the changed cells for re-meshing.
 - `physics_core` says what a placement means: `Instance::built` puts it in words (station panel,
   tutor) and `Instance::unready` refuses a test until something is in place. `sim::judge_commit`
   runs that check before anything typed is read, so such a refusal writes no handbook page.
 - Things that move with what is placed follow `Sites` changing: `ruler::follow_pins` (pins by index,
-  such as `Sites::channel_release_pin` and `Sites::gate_pin`; a pin at `Pin::AWAY` is not in the world),
+  such as `Sites::channel_release_pin`; a pin at `Pin::AWAY` is not in the world),
   `sim::follow_launcher`, `rig::ride_the_stack`. Lumen's director (`companion::choose_gaze`) is pure
   and tested; its `Facts` say what is carried and whether the puzzle's slot is empty.
 
@@ -132,12 +133,12 @@ Rules learned the hard way:
    `island.rs`; island tests compare the terrain along each launch line with the simulator's profile.
 5. **Hide placed answers from Lumen without over-redacting.** A small whole number is too common to
    redact everywhere: scope each secret by the unit words that follow it (`tutor/src/context.rs`, the
-   ridge and the channel), and put numbers in plain view (plates, the gate's notch) in `known_numbers`.
+   ridge and the channel), and put numbers in plain view (plates) in `known_numbers`.
 6. **Stations freeze the avatar.** Carrying happens with the panel closed, and a commit reads what is
    placed at that moment. Walking away from a console closes its panel.
 7. **Movable blocks are blocks, not entities.** One is `Material::Limestone` in the voxel world plus
    a `BlockMark`, put in after `sim::setup` so the physics engine's static collider never contains it.
-   Something that is not a whole block (the light gate, the block riding the cart) is an entity.
+   Something that is not a whole block (a quarry drop-stone, the block riding the cart) is an entity.
 
 ## Building side-machines
 
@@ -185,7 +186,7 @@ CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy` with wa
   player's view).
 - `GAME_SCRIPT=<name> cargo run -p game` — scripted run (`tour`, `walk`, `intro`, `pose`, `way`, `beam`) that drives
   the game and writes screenshots. The tour loads the rail cart, times the crawler and catches it,
-  times drops with the light gate at two notches, and carries the ledge's blocks into the jack frame. Headless, it runs under
+  drops quarry stones from both quarry ledges to time them, and carries the ledge's blocks into the jack frame. Headless, it runs under
   `xvfb-run -a -s "-screen 0 1920x1080x24"` (with `libxkbcommon-x11-0` and `mesa-vulkan-drivers`
   installed) and takes about ten minutes.
 - `GAME_SCRIPT=prefill GAME_SAVE=/tmp/fp-prefill.ron cargo run -p game` — not a script: the player plays by hand while the

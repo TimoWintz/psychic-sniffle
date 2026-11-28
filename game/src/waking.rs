@@ -951,12 +951,13 @@ mod tests {
                 settle(&mut world, way, machine + 1);
                 assert!(lit(&world, &way.done[machine]), "seed {seed}: machine {machine} done but dark");
             }
-            // The stone gate opens and the haul track wakes at the first pass; the tower's foot lights
-            // when the light reaches it, the rest of it at its own pass.
+            // The stone gate opens and the haul track wakes at the first pass; the quarry socket's
+            // rim lights when the light reaches it, and the socket floor + cliff vein light up to
+            // the outcrop at its own pass.
             assert_eq!(way.leaf.stage, 1);
-            assert_eq!(way.wake[2].len(), 2, "seed {seed}: the tower's and the mast's feet");
-            assert!(way.done[2].iter().all(|c| c.y > way.wake[2][0].y), "seed {seed}: the tower does not light to the top");
-            assert!(way.done[2].windows(2).all(|w| w[0].y <= w[1].y), "seed {seed}: the tower lights out of order");
+            assert_eq!(way.wake[2].len(), 2, "seed {seed}: the socket's two rim studs");
+            assert!(way.done[2].iter().all(|c| c.y >= way.wake[2][0].y), "seed {seed}: the cliff vein does not light up from the socket");
+            assert!(way.done[2].windows(2).all(|w| w[0].y <= w[1].y), "seed {seed}: the cliff vein lights out of order");
             assert!(!way.wake[MACHINES - 1].is_empty() && way.done[MACHINES - 1].is_empty());
         }
     }

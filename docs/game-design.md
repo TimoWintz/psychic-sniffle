@@ -20,10 +20,10 @@ Lumen is on screen as a holographic eye in the lower left corner. While it says 
 forward to the bottom centre, a ring spreading from it as the line starts, and goes back after; while
 a wake plays it floats above the letterbox. It points with a beam of light only
 where that helps: the way to the next station for a while after it opens (and again when you stand at
-a station that is done or locked), the experiment and the job of an unsolved station (and what to
-carry for it: the cart's block, the light gate, the ledge's blocks, then where they go), the yellow pin
-to click while measuring, the target while a test runs. Nothing about a solved puzzle draws the beam;
-otherwise the eye just looks about. When the place is off screen, the beam ends in an arrow at the
+a station that is done or locked), along the waking light, at places named in story lines, and at the
+first station (the supply rail) to teach carrying and the ruler. At later stations, during experiments
+and tests, and on solved puzzles the beam stays off so the view stays clear and the player decides what
+to measure; otherwise the eye just looks about. When the place is off screen, the beam ends in an arrow at the
 edge of the screen. It says short lines in a bubble above the eye when something happens (a test lands,
 a station refuses an entry, a new station opens) and its eye shows a mood: pleased, concerned,
 thinking. Talking to it (`T` or a click on the eye) opens the conversation where the bubble appears,
@@ -52,8 +52,8 @@ other line in the game is written, is set out in [writing.md](writing.md).
   model is connected, that it can help without giving the number; when a station runs out of
   charges, that it is a good moment to check the readings.
 
-A line can name a place; the eye holds it while the line is said, unless there is work to point at
-(a running test, an open station's job, something carried). The dock shows the tier's goal and the
+A line can name a place; the eye holds it while the line is said, unless a station console is open or
+a test or experiment is running. The dock shows the tier's goal and the
 chapter's goal above the next task.
 
 ### The look of the world

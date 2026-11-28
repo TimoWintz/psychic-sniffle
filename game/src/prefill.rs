@@ -16,7 +16,7 @@
 
 use crate::island::Sites;
 use crate::sim::CRAWLER_TIME;
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, not_paused};
 use bevy::prelude::*;
 use physics_core::notebook::{Notebook, source};
 use physics_core::units::{Dim, Quantity};
@@ -25,8 +25,15 @@ pub struct PrefillPlugin;
 
 impl Plugin for PrefillPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Prefill>().add_systems(OnEnter(Mode::Playing), note_readings).add_systems(Update, fill.run_if(in_state(Mode::Playing)));
+        app.init_resource::<Prefill>()
+            .add_systems(BuildWorld, reset)
+            .add_systems(OnEnter(Mode::Playing), note_readings)
+            .add_systems(Update, fill.run_if(in_state(Mode::Playing)).run_if(not_paused));
     }
+}
+
+fn reset(mut prefill: ResMut<Prefill>) {
+    *prefill = Prefill::default();
 }
 
 /// What was last written into each blueprint and into the calculator, to tell it from the player's

@@ -8,7 +8,7 @@
 
 use crate::island::{LaunchSite, Sites};
 use crate::sim::Sim;
-use crate::state::{Game, Ui};
+use crate::state::{BuildWorld, Game, Ui, WorldEntity, not_paused};
 use bevy::prelude::*;
 use physics_core::expr::evaluate;
 use physics_core::puzzle::{Ch1Layout, PuzzleKind};
@@ -53,7 +53,7 @@ pub struct RigPlugin;
 
 impl Plugin for RigPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(Update, (follow_blueprint, ride_the_stack));
+        app.add_systems(BuildWorld, spawn).add_systems(Update, (follow_blueprint.run_if(not_paused), ride_the_stack));
     }
 }
 
@@ -81,12 +81,13 @@ pub(crate) fn spawn(
     let base = Quat::from_rotation_arc(Vec3::X, site.direction);
     let rail = meshes.add(Cuboid::new(ARM_LENGTH, 0.1, 0.08));
     let hinge = meshes.add(Cuboid::new(0.25, 0.25, 0.9));
-    commands.spawn((Mesh3d(hinge), MeshMaterial3d(stone.clone()), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
+    commands.spawn((WorldEntity, Mesh3d(hinge), MeshMaterial3d(stone.clone()), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
     // A band of quartz round the hinge, proud of its faces.
     let band = meshes.add(Cuboid::new(0.08, 0.27, 0.92));
-    commands.spawn((Mesh3d(band), MeshMaterial3d(ridge_quartz), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
+    commands.spawn((WorldEntity, Mesh3d(band), MeshMaterial3d(ridge_quartz), Transform::from_translation(site.origin - Vec3::Y * 0.1).with_rotation(base)));
     commands
         .spawn((
+            WorldEntity,
             Arm { puzzle: ridge, angle: ARM_REST, base, axis: across },
             Transform::from_translation(site.origin).with_rotation(Quat::from_axis_angle(across, ARM_REST) * base),
             Visibility::default(),
@@ -109,8 +110,13 @@ pub(crate) fn spawn(
     let cap = meshes.add(Cuboid::new(0.18, 0.16, 0.18));
     for (u, v) in [(-0.43, -0.58), (0.43, -0.58), (-0.43, 0.58), (0.43, 0.58)] {
         let at = frame_centre + out * u + side * v + Vec3::Y * tall / 2.0;
-        commands.spawn((Mesh3d(upright.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(at)));
-        commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(ledge_quartz.clone()), Transform::from_translation(at + Vec3::Y * (tall / 2.0 + 0.08))));
+        commands.spawn((WorldEntity, Mesh3d(upright.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(at)));
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(cap.clone()),
+            MeshMaterial3d(ledge_quartz.clone()),
+            Transform::from_translation(at + Vec3::Y * (tall / 2.0 + 0.08)),
+        ));
     }
     // The cradle caps the top block: a little wider than a block and standing a little proud of its
     // top, so its faces never share the block's planes (which made them flicker).
@@ -120,6 +126,7 @@ pub(crate) fn spawn(
     let facing = Quat::from_rotation_arc(Vec3::X, ledge.direction);
     commands
         .spawn((
+            WorldEntity,
             Cradle,
             Mesh3d(cradle),
             MeshMaterial3d(stone.clone()),
@@ -146,7 +153,7 @@ pub(crate) fn spawn(
         let frame = Transform::from_translation(foot).with_rotation(Quat::from_rotation_arc(Vec3::X, site.direction));
         let bottom = Vec3::new(0.0, 0.6, 0.02);
         let material = materials.add(StandardMaterial { base_color: FILL, unlit: true, ..default() });
-        commands.spawn((frame, Visibility::default())).with_children(|gauge| {
+        commands.spawn((WorldEntity, frame, Visibility::default())).with_children(|gauge| {
             gauge.spawn((Mesh3d(post.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, (GAUGE_HEIGHT + 0.7) / 2.0, -0.08)));
             gauge.spawn((Mesh3d(panel.clone()), MeshMaterial3d(dark.clone()), Transform::from_translation(bottom + Vec3::new(0.0, GAUGE_HEIGHT / 2.0, -0.02))));
             // The rating: the top of the scale.

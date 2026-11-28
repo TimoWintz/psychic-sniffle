@@ -15,7 +15,7 @@ use crate::island::{SEA_LEVEL, Sites};
 use crate::ruler::Ruler;
 use crate::scenery::WayGlow;
 use crate::sim::Sim;
-use crate::state::Mode;
+use crate::state::{BuildWorld, Mode, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use crate::waking::{Phase, Waking};
 use bevy::light::NotShadowCaster;
@@ -110,6 +110,14 @@ struct Sources {
     wild: Vec<Vec3>,
 }
 
+/// Wake flourish tracking stored as a resource so world reloads reset it cleanly.
+#[derive(Resource, Default)]
+struct FlourishState {
+    last: Option<(usize, Phase)>,
+    pulse: Option<f32>,
+    was: Option<Vec3>,
+}
+
 /// How near the camera may come to the light's bright head before it is hidden, in metres.
 const HEAD_CLOSEST: f32 = 6.0;
 
@@ -131,12 +139,14 @@ impl Plugin for ParticlesPlugin {
         app.add_message::<Burst>()
             .insert_resource(Dice(0x9E37_79B9_7F4A_7C15))
             .init_resource::<Sources>()
+            .init_resource::<FlourishState>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (wake_flourishes, ambient.run_if(in_state(Mode::Playing)), throw, drift).chain());
+            .add_systems(BuildWorld, refresh_sources)
+            .add_systems(Update, (wake_flourishes, ambient.run_if(in_state(Mode::Playing)), throw, drift).chain().run_if(not_paused));
     }
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, world: Res<VoxelWorld>) {
+fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let quartz = Material::Quartz.properties().colour;
     let stone = Material::Limestone.properties().colour;
     let unlit = |materials: &mut Assets<StandardMaterial>, colour: Color| materials.add(StandardMaterial { base_color: colour, unlit: true, ..default() });
@@ -155,8 +165,13 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         Visibility::Hidden,
         NotShadowCaster,
     ));
-    commands.insert_resource(Sources { wild: world.wild_cells().map(|c| c.as_vec3() + Vec3::new(0.5, 1.0, 0.5)).collect() });
     commands.insert_resource(looks);
+}
+
+fn refresh_sources(world: Res<VoxelWorld>, mut sources: ResMut<Sources>, mut flourish: ResMut<FlourishState>, mut head: Single<&mut Visibility, With<Head>>) {
+    sources.wild = world.wild_cells().map(|c| c.as_vec3() + Vec3::new(0.5, 1.0, 0.5)).collect();
+    *flourish = FlourishState::default();
+    **head = Visibility::Hidden;
 }
 
 /// Throw up what was asked for.
@@ -185,7 +200,14 @@ fn throw(mut commands: Commands, mut bursts: MessageReader<Burst>, looks: Res<Lo
 
 fn spawn(commands: &mut Commands, looks: &Looks, material: Handle<StandardMaterial>, at: Vec3, particle: Particle) {
     let scale = Vec3::splat(particle.size);
-    commands.spawn((particle, Mesh3d(looks.cube.clone()), MeshMaterial3d(material), Transform::from_translation(at).with_scale(scale), NotShadowCaster));
+    commands.spawn((
+        WorldEntity,
+        particle,
+        Mesh3d(looks.cube.clone()),
+        MeshMaterial3d(material),
+        Transform::from_translation(at).with_scale(scale),
+        NotShadowCaster,
+    ));
 }
 
 /// How much of its size a particle keeps at this distance from the camera: all of it from two metres
@@ -366,9 +388,9 @@ fn wake_flourishes(
     looks: Res<Looks>,
     mut dice: ResMut<Dice>,
     mut head: Single<(&mut Transform, &mut Visibility), With<Head>>,
-    mut last: Local<Option<(usize, Phase)>>,
-    (way_glow, mut materials, mut pulse): (Res<WayGlow>, ResMut<Assets<StandardMaterial>>, Local<Option<f32>>),
-    (camera, mut was): (Single<&GlobalTransform, With<Camera3d>>, Local<Option<Vec3>>),
+    mut flourish: ResMut<FlourishState>,
+    (way_glow, mut materials): (Res<WayGlow>, ResMut<Assets<StandardMaterial>>),
+    camera: Single<&GlobalTransform, With<Camera3d>>,
 ) {
     let dt = time.delta_secs().min(0.1);
     let way = &sites.way;
@@ -379,8 +401,8 @@ fn wake_flourishes(
             let ground = world.surface(x, z) as f32;
             let to = Vec3::new(at.x, ground + 0.25, at.y);
             // Moving fast enough that it would skip: lay the motes along the way it came.
-            let from = was.unwrap_or(to);
-            *was = Some(to);
+            let from = flourish.was.unwrap_or(to);
+            flourish.was = Some(to);
             transform.translation = to;
             // Where something stands between them, the camera comes in close to the road; the bright
             // head would fill the picture then, so only its motes show.
@@ -398,7 +420,7 @@ fn wake_flourishes(
             }
         }
         _ => {
-            *was = None;
+            flourish.was = None;
             visibility.set_if_neq(Visibility::Hidden);
         }
     }
@@ -406,18 +428,18 @@ fn wake_flourishes(
     // The machine wakes: a burst of its light where the run ends.
     let now = waking.play.map(|p| (p.timeline.stage, p.timeline.phase(p.t).0));
     if let Some((stage, Phase::Wake)) = now
-        && *last != now
+        && flourish.last != now
     {
         let run = &way.runs[stage - 1];
         let end = run.at(run.length());
         let ground = world.surface(end.x.floor() as i32, end.y.floor() as i32) as f32;
         burst(&mut commands, Kind::Motes, Vec3::new(end.x, ground + 0.6, end.y), 1.5);
-        *pulse = Some(0.0);
+        flourish.pulse = Some(0.0);
     }
-    *last = now;
+    flourish.last = now;
 
     // As it wakes, all the way's awake quartz brightens once, as if answering it.
-    if let Some(t) = pulse.as_mut() {
+    if let Some(t) = flourish.pulse.as_mut() {
         *t += dt;
         let u = (*t / PULSE).min(1.0);
         let lift = 1.0 + PULSE_LIFT * (std::f32::consts::PI * u).sin().powi(2);
@@ -425,7 +447,7 @@ fn wake_flourishes(
             material.base_color = Color::LinearRgba(LinearRgba::rgb(lift, lift, lift));
         }
         if u >= 1.0 {
-            *pulse = None;
+            flourish.pulse = None;
         }
     }
 

@@ -24,9 +24,9 @@
 use crate::carry::DirtyCells;
 use crate::companion::Landmarks;
 use crate::island::{Cable, MACHINES, Sites, Stonework, Way};
-use crate::player::OrbitCamera;
+use crate::player::{OrbitCamera, back, follow_blend, reach};
 use crate::sim::{Sim, TerrainReshaped};
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, WorldEntity, not_paused};
 use crate::vessel::{SIGHT_SIZE, Sight};
 use crate::voxel::{DARK_QUARTZ, VoxelWorld};
 use bevy::prelude::*;
@@ -212,6 +212,11 @@ impl Timeline {
         self.glow + self.run + self.wake + self.home
     }
 
+    /// When the light starts up the road, once the machine whose job was done has lit.
+    pub fn run_starts(&self) -> f32 {
+        self.glow
+    }
+
     /// When the machine starts to wake, once the light has run.
     pub fn wake_starts(&self) -> f32 {
         self.glow + self.run
@@ -344,13 +349,18 @@ impl Waking {
         self.play.is_some_and(|p| matches!(p.timeline.phase(p.t).0, Phase::Glow | Phase::Run))
     }
 
-    /// Where the light is on the road, while it runs.
-    pub fn head(&self, way: &Way) -> Option<Vec2> {
+    /// Where the light is on the road, while it runs: just over the quartz it has reached. (The top
+    /// of the column it is in may be something standing on the road, such as the crane's mast.)
+    pub fn head(&self, way: &Way) -> Option<Vec3> {
         let play = self.play?;
-        match play.timeline.phase(play.t).0 {
-            Phase::Glow | Phase::Run => Some(way.runs[play.timeline.stage - 1].at(play.timeline.lit_to(play.t))),
-            _ => None,
+        if !matches!(play.timeline.phase(play.t).0, Phase::Glow | Phase::Run) {
+            return None;
         }
+        let run = &way.runs[play.timeline.stage - 1];
+        let s = play.timeline.lit_to(play.t);
+        let at = run.at(s);
+        let quartz = run.cells.iter().min_by(|a, b| (a.1 - s).abs().total_cmp(&(b.1 - s).abs()))?.0;
+        Some(Vec3::new(at.x, quartz.y as f32 + 1.6, at.y))
     }
 
     /// How far through lifting the sight off the crawler the crane is, while it does.
@@ -389,6 +399,47 @@ impl Waking {
             (Some(u), Some(from)) => lift_pose(u, from, Vec3::ZERO, Vec3::NEG_Z).0,
             _ if self.sight_is_off() => std::f32::consts::PI,
             _ => 0.0,
+        }
+    }
+
+    /// Light the way's quartz and move its stonework as far as the wake playing has come: the
+    /// machine whose job was done from the bottom up, the road as far as the light has run, then
+    /// the machine that wakes.
+    fn light_and_move(&self, world: &mut VoxelWorld, way: &Way) -> Changes {
+        let mut changes = Changes::default();
+        let Some(Play { timeline, t }) = self.play else { return changes };
+        let k = timeline.stage;
+        let done = &way.done[k - 1];
+        let glowed = (timeline.glowed(t) * done.len() as f32).ceil() as usize;
+        light(world, done.iter().take(glowed).copied(), true, &mut changes);
+        let reach = timeline.lit_to(t);
+        light(world, way.runs[k - 1].cells.iter().filter(|(_, s)| *s <= reach).map(|&(c, _)| c), true, &mut changes);
+        let waking_now = !matches!(timeline.phase(t).0, Phase::Glow | Phase::Run);
+        if waking_now {
+            light(world, way.wake[k].iter().copied(), true, &mut changes);
+        }
+        for work in way.stonework() {
+            if work.stage == k && (waking_now || work.with_glow) {
+                shape(world, work, self.moved(work), &mut changes);
+            }
+        }
+        changes
+    }
+
+    /// What the camera watches while the wake plays: the crane lifting the sight, or the stonework
+    /// that moves as the machine whose job was done lights; the light on the road; the machine that
+    /// wakes. `None` once it goes home.
+    fn watch(&self, sites: &Sites) -> Option<Vec3> {
+        let play = self.play?;
+        let way = &sites.way;
+        let k = play.timeline.stage;
+        let building = way.stonework().into_iter().find(|work| work.with_glow && work.stage == k);
+        match play.timeline.phase(play.t).0 {
+            Phase::Glow if self.lift().is_some() => Some(way.crane_pivot - Vec3::Y * 1.5),
+            Phase::Glow if building.is_some() => building.map(Stonework::centre),
+            Phase::Glow | Phase::Run => self.head(way),
+            Phase::Wake => Some(wake_focus(k, sites)),
+            Phase::Home | Phase::Done => None,
         }
     }
 
@@ -507,6 +558,21 @@ pub fn lit_quartz(materials: &mut Assets<StandardMaterial>) -> Handle<StandardMa
 /// The place Lumen's eye follows while the light runs (a landmark that moves).
 pub const LIGHT_ON_THE_ROAD: &str = "The light on the road";
 
+/// Fade state for each machine's quartz trim, stored as a resource so world reloads reset it.
+#[derive(Resource, Default)]
+pub struct TrimFade(pub Option<[f32; MACHINES]>);
+
+/// Reset `Waking`, `MachineTrim`, and `TrimFade` for a newly loaded save's stage.
+pub fn reset_resources(world: &mut World, shown: usize) {
+    let trim = {
+        let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+        MachineTrim(std::array::from_fn(|machine| materials.add(MachineTrim::look(wake_lit(machine, shown)))))
+    };
+    world.insert_resource(Waking::new(shown));
+    world.insert_resource(trim);
+    world.insert_resource(TrimFade::default());
+}
+
 pub struct WakingPlugin;
 
 impl Plugin for WakingPlugin {
@@ -518,8 +584,9 @@ impl Plugin for WakingPlugin {
         };
         app.insert_resource(Waking::new(shown))
             .insert_resource(trim)
-            .add_systems(Startup, spawn)
-            .add_systems(Update, (play.run_if(in_state(Mode::Playing)), pose_parts, light_trim).chain())
+            .init_resource::<TrimFade>()
+            .add_systems(BuildWorld, spawn)
+            .add_systems(Update, (play.run_if(in_state(Mode::Playing)).run_if(not_paused), pose_parts, light_trim.run_if(not_paused)).chain())
             .add_systems(EguiPrimaryContextPass, letterbox.after(crate::ui::style).run_if(in_state(Mode::Playing)));
     }
 }
@@ -538,6 +605,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let towards = (crate::intro::Mainland::wreck() - way.keystone).with_y(0.0).normalize() + Vec3::Y * 0.08;
     let rotation = Quat::from_rotation_arc(Vec3::Y, towards.normalize());
     commands.spawn((
+        WorldEntity,
         Part::NorthBeam,
         Mesh3d(meshes.add(Cylinder::new(0.35, BEAM_LENGTH))),
         MeshMaterial3d(light),
@@ -546,15 +614,23 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     ));
     // The transfer crane's arm: a stone boom on the mast's top, which turns about the mast.
     let arm = Mesh::from(Cuboid::new(0.3, 0.3, ARM_REACH + ARM_TAIL)).translated_by(Vec3::Z * (ARM_REACH - ARM_TAIL) / 2.0);
-    commands.spawn((Part::CraneArm, Mesh3d(meshes.add(arm)), MeshMaterial3d(stone.clone()), Transform::from_translation(way.crane_pivot)));
+    commands.spawn((WorldEntity, Part::CraneArm, Mesh3d(meshes.add(arm)), MeshMaterial3d(stone.clone()), Transform::from_translation(way.crane_pivot)));
     // The line from the arm down to the sight while it hangs there.
-    commands.spawn((Part::HookLine, Mesh3d(meshes.add(Cylinder::new(0.02, 1.0))), MeshMaterial3d(stone), Transform::default(), Visibility::Hidden));
+    commands.spawn((
+        WorldEntity,
+        Part::HookLine,
+        Mesh3d(meshes.add(Cylinder::new(0.02, 1.0))),
+        MeshMaterial3d(stone),
+        Transform::default(),
+        Visibility::Hidden,
+    ));
     // The bridge's cables, a chain of glowing segments each, which come with the deck.
     let glowing = lit_quartz(&mut materials);
     let segment = meshes.add(Cylinder::new(CABLE_RADIUS, 1.0));
     for (c, cable) in way.cables.iter().enumerate() {
         for (i, ends) in cable.points.windows(2).enumerate() {
             commands.spawn((
+                WorldEntity,
                 Part::Cable { cable: c, segment: i },
                 Mesh3d(segment.clone()),
                 MeshMaterial3d(glowing.clone()),
@@ -589,9 +665,61 @@ fn wake_focus(stage: usize, sites: &Sites) -> Vec3 {
         // Over the gate's lintel, so the camera is not drawn in between its posts.
         1 => way.stone_gate + Vec3::Y * 4.5,
         3 => way.ramp.centre(),
-        5 => way.keystone,
+        // The middle of the arch, keystone and all: rising to the keystone itself, the camera's
+        // focus would come up under the lintel, which then stands between it and the camera.
+        5 => way.north_gate.with_y((way.north_gate.y + way.keystone.y) / 2.0),
         k => way.machines[k] + Vec3::Y * 1.5,
     }
+}
+
+/// How far back the wake's camera stands, and the pitches it may look down at, the shallowest
+/// first (see [`watch_view`]).
+const WATCH_DISTANCE: f32 = 28.0;
+const WATCH_PITCHES: [f32; 3] = [0.55, 0.8, 1.05];
+/// How many directions round the compass the wake's camera may watch from.
+const WATCH_YAWS: usize = 16;
+
+/// The yaw and pitch the camera watches a wake from. The camera keeps its distance while it does
+/// (`OrbitCamera::borrow`), unless it would stand inside a block, and the light should not hide
+/// behind one. From the player's own yaw it often would: the light runs past the stone gate's
+/// posts, the crane's mast and the bridge's pylons. So the wake is played ahead as the game plays
+/// it, at 60 frames a second (the world lighting and moving, what [`Waking::watch`] names, the
+/// camera's focus trailing it from `focus`), until the camera goes home. The view is the one with
+/// the fewest frames standing in a block, then the fewest frames with a block between the camera and
+/// its focus, then the shallowest pitch, then the yaw nearest `yaw`.
+fn watch_view(world: &VoxelWorld, sites: &Sites, waking: &Waking, focus: Vec3, yaw: f32) -> (f32, f32) {
+    let Some(play) = waking.play else { return (yaw, WATCH_PITCHES[0]) };
+    let views: Vec<(f32, f32)> = WATCH_PITCHES
+        .iter()
+        .flat_map(|&pitch| {
+            // Nearest first: no turn, then a step either way, and so on round to the far side.
+            (0..WATCH_YAWS).map(move |i| {
+                let steps = i.div_ceil(2) as f32 * if i % 2 == 1 { 1.0 } else { -1.0 };
+                (yaw + steps * std::f32::consts::TAU / WATCH_YAWS as f32, pitch)
+            })
+        })
+        .collect();
+    let backs: Vec<Vec3> = views.iter().map(|&(yaw, pitch)| back(yaw, pitch)).collect();
+    // For each view, frames standing in a block and frames with a block in the way.
+    let mut faults = vec![(0usize, 0usize); views.len()];
+    let mut world = world.clone();
+    let mut ahead = Waking { shown: waking.shown, play: Some(play), waited: 0.0, lift_from: waking.lift_from };
+    let (mut focus, mut watch) = (focus, focus);
+    let dt = 1.0 / 60.0;
+    let mut t = play.t;
+    while t < play.timeline.home_starts() {
+        t += dt;
+        ahead.play = Some(Play { t, ..play });
+        ahead.light_and_move(&mut world, &sites.way);
+        watch = ahead.watch(sites).unwrap_or(watch);
+        focus = focus.lerp(watch, follow_blend(dt));
+        for ((inside, hidden), &back) in faults.iter_mut().zip(&backs) {
+            *inside += world.is_solid((focus + back * WATCH_DISTANCE).floor().as_ivec3()) as usize;
+            *hidden += (reach(&world, focus, back, WATCH_DISTANCE) < WATCH_DISTANCE) as usize;
+        }
+    }
+    let best = (0..views.len()).min_by_key(|&i| faults[i]).unwrap_or(0);
+    views[best]
 }
 
 /// Play the wake to the save's stage, one stage at a time, once a pass has been watched.
@@ -639,7 +767,8 @@ fn play(
         // The panel steps aside and the camera goes to watch. Nothing more this frame: the key that
         // closed the console (E or Esc) must not also skip the wake it starts.
         ui.station = None;
-        orbit.borrow(0.55, 28.0);
+        let (yaw, pitch) = watch_view(&world, &sites, &waking, orbit.focus(), orbit.yaw);
+        orbit.borrow(yaw, pitch, WATCH_DISTANCE);
         return;
     }
     let Some(mut now) = waking.play else { return };
@@ -651,37 +780,14 @@ fn play(
     // What follows reads the wake as it is this frame.
     waking.play = Some(now);
 
-    let mut changes = Changes::default();
-    // The machine whose job was done lights from the bottom up.
-    let done = &way.done[k - 1];
-    let glowed = (timeline.glowed(t) * done.len() as f32).ceil() as usize;
-    light(&mut world, done.iter().take(glowed).copied(), true, &mut changes);
-    let reach = timeline.lit_to(t);
-    light(&mut world, way.runs[k - 1].cells.iter().filter(|(_, s)| *s <= reach).map(|&(c, _)| c), true, &mut changes);
-    let waking_now = !matches!(phase, Phase::Glow | Phase::Run);
-    if waking_now {
-        light(&mut world, way.wake[k].iter().copied(), true, &mut changes);
-    }
-    for work in way.stonework() {
-        if work.stage == k && (waking_now || work.with_glow) {
-            shape(&mut world, work, waking.moved(work), &mut changes);
-        }
-    }
+    let changes = waking.light_and_move(&mut world, way);
     dirty.0.extend(changes.cells);
-
-    let surface = |p: Vec2| Vec3::new(p.x, world.surface(p.x.floor() as i32, p.y.floor() as i32) as f32 + 0.6, p.y);
-    let head = waking.head(way).map(surface);
-    if let Some(head) = head {
+    if let Some(head) = waking.head(way) {
         landmarks.set(LIGHT_ON_THE_ROAD, head);
     }
-    let building = way.stonework().into_iter().find(|work| work.with_glow && work.stage == k);
-    orbit.watch = match phase {
-        Phase::Glow if waking.lift().is_some() => Some(way.crane_pivot - Vec3::Y * 1.5),
-        Phase::Glow if building.is_some() => building.map(Stonework::centre),
-        Phase::Glow | Phase::Run => head,
-        Phase::Wake => Some(wake_focus(k, &sites)),
-        Phase::Home | Phase::Done => orbit.watch,
-    };
+    if let Some(watch) = waking.watch(&sites) {
+        orbit.watch = Some(watch);
+    }
     if timeline.woke(t) && waking.shown < k {
         // Woken (or skipped): the world shows the stage, and the camera glides back to the player.
         let changes = settle(&mut world, way, k);
@@ -720,15 +826,9 @@ fn letterbox(mut contexts: EguiContexts, waking: Res<Waking>) -> Result {
 }
 
 /// Light the quartz on each machine's moving parts as the machine wakes.
-fn light_trim(
-    time: Res<Time>,
-    waking: Res<Waking>,
-    trim: Res<MachineTrim>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut shown: Local<Option<[f32; MACHINES]>>,
-) {
+fn light_trim(time: Res<Time>, waking: Res<Waking>, trim: Res<MachineTrim>, mut materials: ResMut<Assets<StandardMaterial>>, mut shown: ResMut<TrimFade>) {
     let lit: [bool; MACHINES] = std::array::from_fn(|machine| waking.glows(machine));
-    for (machine, f) in fade_towards(&mut shown, lit, time.delta_secs()) {
+    for (machine, f) in fade_towards(&mut shown.0, lit, time.delta_secs()) {
         if let Some(mut material) = materials.get_mut(&trim.0[machine]) {
             *material = MachineTrim::look_at(f);
         }
@@ -953,6 +1053,59 @@ mod tests {
             }
         }
         (cells, dark)
+    }
+
+    /// The wake to `stage` played as the game plays it, at 60 frames a second, until the camera goes
+    /// home: the camera taken from `focus` and `yaw` to the view [`watch_view`] picks, its focus
+    /// trailing what the wake watches, the world lighting and moving as it goes. How many frames the
+    /// camera stood nearer than it was asked to, and how many had a block between the camera and
+    /// its focus.
+    fn watched(built: &VoxelWorld, sites: &Sites, stage: usize, focus: Vec3, yaw: f32) -> (usize, usize) {
+        let way = &sites.way;
+        let mut world = built.clone();
+        settle(&mut world, way, stage - 1);
+        let timeline = Timeline::new(stage, way);
+        let mut waking = Waking::new(stage - 1);
+        waking.play = Some(Play { timeline, t: 0.0 });
+        let mut orbit = OrbitCamera::default();
+        orbit.follow(focus, 1.0);
+        let (yaw, pitch) = watch_view(&world, sites, &waking, focus, yaw);
+        orbit.borrow(yaw, pitch, WATCH_DISTANCE);
+        let dt = 1.0 / 60.0;
+        let (mut near, mut hidden) = (0, 0);
+        let mut t = 0.0;
+        while t < timeline.home_starts() {
+            t += dt;
+            waking.play = Some(Play { timeline, t });
+            waking.light_and_move(&mut world, way);
+            if let Some(watch) = waking.watch(sites) {
+                orbit.watch = Some(watch);
+            }
+            orbit.follow(orbit.watch.unwrap_or(focus), follow_blend(dt));
+            near += (orbit.reach(&world) < WATCH_DISTANCE) as usize;
+            hidden += (reach(&world, orbit.focus(), back(yaw, pitch), WATCH_DISTANCE) < WATCH_DISTANCE) as usize;
+        }
+        (near, hidden)
+    }
+
+    #[test]
+    fn each_wake_is_watched_from_its_distance_with_the_light_in_sight() {
+        for seed in 0..12 {
+            let (built, sites) = island::build(&Ch1Layout::generate(seed));
+            for stage in 1..=PUZZLES {
+                // From the avatar at the console whose pass starts the wake, however the player had
+                // turned the camera.
+                let focus = sites.stations[stage - 1].as_vec3() + Vec3::Y * 1.5;
+                for yaw in [0.0, 1.6, 3.1, 4.7] {
+                    let (near, hidden) = watched(&built, &sites, stage, focus, yaw);
+                    assert_eq!(near, 0, "seed {seed}, stage {stage}, from yaw {yaw}: the camera was pulled in");
+                    // The light runs through the foot of the crane's mast, and between the bridge's
+                    // pylons: from any side it hides for a moment. Never for more than a sixth of a
+                    // second.
+                    assert!(hidden <= 10, "seed {seed}, stage {stage}, from yaw {yaw}: the light hid for {hidden} frames");
+                }
+            }
+        }
     }
 
     #[test]

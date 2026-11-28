@@ -10,7 +10,7 @@
 
 use crate::island::Sites;
 use crate::sim::TILLER_SIZE;
-use crate::state::Mode;
+use crate::state::{BuildWorld, Mode, WorldEntity, not_paused};
 use crate::waking::{MachineTrim, Waking, beam_shines};
 use bevy::prelude::*;
 use physics_core::materials::Material;
@@ -35,7 +35,11 @@ pub struct Delivered;
 struct Skiff;
 
 #[derive(Resource)]
-struct HelmQuartz(Handle<StandardMaterial>);
+struct HelmQuartz {
+    material: Handle<StandardMaterial>,
+    taken: bool,
+    landed: bool,
+}
 
 /// The tiller in the skiff's stern, settling into its socket: seconds since it started.
 #[derive(Component)]
@@ -67,7 +71,8 @@ pub struct VesselPlugin;
 
 impl Plugin for VesselPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_skiff).add_systems(Update, ((take_helm, place_sight).run_if(in_state(Mode::Playing)), settle_helm));
+        app.add_systems(BuildWorld, spawn_skiff)
+            .add_systems(Update, ((take_helm, place_sight).run_if(in_state(Mode::Playing)).run_if(not_paused), settle_helm.run_if(not_paused)));
     }
 }
 
@@ -102,7 +107,7 @@ fn spawn_skiff(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mat
     let stone = crate::waking::stone(&mut materials);
     let hull = hull_stone(&mut materials);
     let dark = materials.add(MachineTrim::look(false));
-    let helm = HelmQuartz(materials.add(MachineTrim::look(false)));
+    let helm = HelmQuartz { material: materials.add(MachineTrim::look(false)), taken: false, landed: false };
     let along_slipway = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
     // The sides, in planks along the skiff's line, each leaning outward from the floor.
     const PLANKS: i32 = 20;
@@ -124,36 +129,38 @@ fn spawn_skiff(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mat
     let mut part = |size: Vec3, at: Vec3, material: &Handle<StandardMaterial>| {
         (Mesh3d(meshes.add(Cuboid::from_size(size))), MeshMaterial3d(material.clone()), Transform::from_translation(at))
     };
-    commands.spawn((Skiff, Transform::from_translation(sites.slipway).with_rotation(along_slipway), Visibility::default())).with_children(|skiff| {
-        // The cradle: two stone blocks the keel rests in.
-        for x in [-4.0, 4.0] {
-            skiff.spawn(part(Vec3::new(0.9, 0.8, 3.2), Vec3::new(x, 0.4, 0.0), &stone));
-        }
-        // The keel, then the hull in planks: a floor, and on each hand a side that follows the
-        // skiff's line, leans outward and rises towards the bow and the stern.
-        skiff.spawn(part(Vec3::new(LENGTH, 0.5, 0.6), Vec3::new(0.0, FLOOR - 0.25, 0.0), &hull));
-        for i in 0..PLANKS {
-            let (xa, xb) = (-LENGTH / 2.0 + step * i as f32, -LENGTH / 2.0 + step * (i + 1) as f32);
-            let xm = (xa + xb) / 2.0;
-            skiff.spawn(part(Vec3::new(step + 0.04, 0.3, 2.0 * bottom(xm) + 0.3), Vec3::new(xm, FLOOR - 0.15, 0.0), &hull));
-        }
-        for (at, height, plank, quartz) in planks {
-            // The gunwale's quartz, dark until the skiff has power.
-            let gunwale = Transform::from_xyz(0.0, height / 2.0 + 0.035, 0.0);
-            skiff.spawn((Mesh3d(plank), MeshMaterial3d(hull.clone()), at)).with_child((Mesh3d(quartz), MeshMaterial3d(dark.clone()), gunwale));
-        }
-        // The transom across the stern.
-        let stern = -LENGTH / 2.0;
-        skiff.spawn(part(Vec3::new(0.24, sheer(stern) - FLOOR, 2.0 * half_beam(stern)), Vec3::new(stern - 0.05, (sheer(stern) + FLOOR) / 2.0, 0.0), &hull));
-        // The stern seat, and on it the helm's socket: a stone block with quartz set in its top.
-        let seat = SOCKET.y - 0.5 - FLOOR;
-        skiff.spawn(part(Vec3::new(1.2, seat, 2.0 * bottom(SOCKET.x)), Vec3::new(SOCKET.x + 0.1, FLOOR + seat / 2.0, 0.0), &stone));
-        skiff.spawn(part(Vec3::new(0.8, 0.5, 0.8), SOCKET - Vec3::Y * 0.25, &stone));
-        skiff.spawn(part(Vec3::new(0.5, 0.06, 0.5), SOCKET + Vec3::Y * 0.02, &helm.0));
-        // A carved prow post at the bow, standing above the sheer.
-        let bow = LENGTH / 2.0;
-        skiff.spawn(part(Vec3::new(0.45, sheer(bow) + 0.9 - FLOOR, 0.45), Vec3::new(bow - 0.1, (sheer(bow) + 0.9 + FLOOR) / 2.0, 0.0), &stone));
-    });
+    commands.spawn((WorldEntity, Skiff, Transform::from_translation(sites.slipway).with_rotation(along_slipway), Visibility::default())).with_children(
+        |skiff| {
+            // The cradle: two stone blocks the keel rests in.
+            for x in [-4.0, 4.0] {
+                skiff.spawn(part(Vec3::new(0.9, 0.8, 3.2), Vec3::new(x, 0.4, 0.0), &stone));
+            }
+            // The keel, then the hull in planks: a floor, and on each hand a side that follows the
+            // skiff's line, leans outward and rises towards the bow and the stern.
+            skiff.spawn(part(Vec3::new(LENGTH, 0.5, 0.6), Vec3::new(0.0, FLOOR - 0.25, 0.0), &hull));
+            for i in 0..PLANKS {
+                let (xa, xb) = (-LENGTH / 2.0 + step * i as f32, -LENGTH / 2.0 + step * (i + 1) as f32);
+                let xm = (xa + xb) / 2.0;
+                skiff.spawn(part(Vec3::new(step + 0.04, 0.3, 2.0 * bottom(xm) + 0.3), Vec3::new(xm, FLOOR - 0.15, 0.0), &hull));
+            }
+            for (at, height, plank, quartz) in planks {
+                // The gunwale's quartz, dark until the skiff has power.
+                let gunwale = Transform::from_xyz(0.0, height / 2.0 + 0.035, 0.0);
+                skiff.spawn((Mesh3d(plank), MeshMaterial3d(hull.clone()), at)).with_child((Mesh3d(quartz), MeshMaterial3d(dark.clone()), gunwale));
+            }
+            // The transom across the stern.
+            let stern = -LENGTH / 2.0;
+            skiff.spawn(part(Vec3::new(0.24, sheer(stern) - FLOOR, 2.0 * half_beam(stern)), Vec3::new(stern - 0.05, (sheer(stern) + FLOOR) / 2.0, 0.0), &hull));
+            // The stern seat, and on it the helm's socket: a stone block with quartz set in its top.
+            let seat = SOCKET.y - 0.5 - FLOOR;
+            skiff.spawn(part(Vec3::new(1.2, seat, 2.0 * bottom(SOCKET.x)), Vec3::new(SOCKET.x + 0.1, FLOOR + seat / 2.0, 0.0), &stone));
+            skiff.spawn(part(Vec3::new(0.8, 0.5, 0.8), SOCKET - Vec3::Y * 0.25, &stone));
+            skiff.spawn(part(Vec3::new(0.5, 0.06, 0.5), SOCKET + Vec3::Y * 0.02, &helm.material));
+            // A carved prow post at the bow, standing above the sheer.
+            let bow = LENGTH / 2.0;
+            skiff.spawn(part(Vec3::new(0.45, sheer(bow) + 0.9 - FLOOR, 0.45), Vec3::new(bow - 0.1, (sheer(bow) + 0.9 + FLOOR) / 2.0, 0.0), &stone));
+        },
+    );
     commands.insert_resource(helm);
 }
 
@@ -166,17 +173,16 @@ fn take_helm(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     waking: Res<Waking>,
-    helm: Res<HelmQuartz>,
+    mut helm: ResMut<HelmQuartz>,
     skiff: Single<Entity, With<Skiff>>,
     delivered: Query<Entity, With<Delivered>>,
-    mut taken: Local<bool>,
 ) {
     let due = beam_shines(waking.shown);
-    if due == *taken {
+    if due == helm.taken {
         return;
     }
-    *taken = due;
-    if let Some(mut material) = materials.get_mut(&helm.0) {
+    helm.taken = due;
+    if let Some(mut material) = materials.get_mut(&helm.material) {
         *material = MachineTrim::look(due);
     }
     if !due {
@@ -194,7 +200,7 @@ fn take_helm(
     commands.entity(*skiff).with_children(|skiff| {
         skiff
             .spawn((Settling(0.0), Mesh3d(shaft), MeshMaterial3d(stone), fitted.with_translation(fitted.translation + Vec3::Y * 2.0)))
-            .with_child((Mesh3d(core), MeshMaterial3d(helm.0.clone())));
+            .with_child((Mesh3d(core), MeshMaterial3d(helm.material.clone())));
     });
 }
 
@@ -220,16 +226,16 @@ fn place_sight(
     mut materials: ResMut<Assets<StandardMaterial>>,
     waking: Res<Waking>,
     sites: Res<Sites>,
+    mut helm: ResMut<HelmQuartz>,
     mut units: Query<(&Sight, &mut Visibility, &mut Transform)>,
-    mut landed: Local<bool>,
 ) {
     let off = waking.sight(&sites);
     if let Some(at) = off
-        && !*landed
+        && !helm.landed
     {
-        *landed = true;
+        helm.landed = true;
         let [body, lens] = sight_parts(&mut meshes, &mut materials);
-        commands.spawn((Sight { riding: false }, body.0, body.1, Transform::from_translation(at), Visibility::Inherited)).with_child(lens);
+        commands.spawn((WorldEntity, Sight { riding: false }, body.0, body.1, Transform::from_translation(at), Visibility::Inherited)).with_child(lens);
     }
     for (unit, mut visibility, mut transform) in &mut units {
         let show = unit.riding == off.is_none();

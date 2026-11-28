@@ -9,7 +9,7 @@ use crate::carry::DirtyCells;
 use crate::graphics::Quality;
 use crate::island::SEA_LEVEL;
 use crate::scenery::Sky;
-use crate::state::Game;
+use crate::state::{BuildWorld, Game};
 use crate::voxel::VoxelWorld;
 use bevy::asset::{RenderAssetUsages, embedded_asset};
 use bevy::image::ImageSampler;
@@ -71,6 +71,7 @@ impl Plugin for WaterPlugin {
         embedded_asset!(app, "water.wesl");
         app.add_plugins(MaterialPlugin::<WaterMaterial>::default())
             .add_systems(Startup, spawn)
+            .add_systems(BuildWorld, refresh_all)
             .add_systems(Update, follow_the_land.before(crate::scenery::rebuild_chunks));
     }
 }
@@ -187,6 +188,17 @@ fn spawn(
         NotShadowCaster,
     ));
     commands.insert_resource(WaterMap { image, dry });
+}
+
+/// Refresh the entire water depth/foam map after a world rebuild.
+fn refresh_all(world: Res<VoxelWorld>, mut map: ResMut<WaterMap>, mut images: ResMut<Assets<Image>>) {
+    let size = IVec2::new(world.size.x, world.size.z);
+    let WaterMap { image, dry } = &mut *map;
+    if let Some(mut image) = images.get_mut(image.id())
+        && let Some(data) = image.data.as_mut()
+    {
+        refresh(&world, dry, data, IVec2::ZERO, size - 1);
+    }
 }
 
 /// When blocks at the water's level change, work the map out again around them.

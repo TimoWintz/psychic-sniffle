@@ -2,7 +2,7 @@
 
 use crate::island::Sites;
 use crate::ruler::Ruler;
-use crate::state::{Game, Mode, Ui};
+use crate::state::{BuildWorld, Game, Mode, Ui, not_paused};
 use crate::voxel::VoxelWorld;
 use crate::waking::Waking;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
@@ -35,6 +35,8 @@ pub struct Player {
     jump_buffer: f32,
     /// Negative vertical offset after a 1-block step-up, decayed smoothly so the camera glides up.
     pub step_offset: f32,
+    /// Space also starts the game from the menu: a press still held from there is not a jump.
+    jump_armed: bool,
 }
 
 #[derive(Resource)]
@@ -64,6 +66,8 @@ pub struct OrbitCamera {
     lock_settle: u8,
     /// Accumulated mouse movement in pixels while resisting micro-jitter during a story camera pan.
     turn_cancel_drag: f32,
+    /// A wake has the camera (see [`OrbitCamera::borrow`]): it keeps its distance.
+    held: bool,
 }
 
 impl Default for OrbitCamera {
@@ -82,6 +86,7 @@ impl Default for OrbitCamera {
             free_look: false,
             lock_settle: 0,
             turn_cancel_drag: 0.0,
+            held: false,
         }
     }
 }
@@ -90,9 +95,9 @@ impl Default for OrbitCamera {
 const STORY_PAN_CANCEL_PX: f32 = 18.0;
 
 /// Whether button-free mouse look may engage: focused window, exploring with no panel, ruler,
-/// hidden HUD (wake/test/swing), or explicit cursor unlock active.
-pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, hud_hidden: bool, cursor_free: bool) -> bool {
-    window_focused && !at_console && !panel_open && !ruler_in_use && !hud_hidden && !cursor_free
+/// hidden HUD (wake/test/swing), or pause menu active.
+pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, hud_hidden: bool, paused: bool) -> bool {
+    window_focused && !at_console && !panel_open && !ruler_in_use && !hud_hidden && !paused
 }
 
 /// Automated screenshot/test scripts drive the camera themselves and should not lock the OS cursor.
@@ -141,13 +146,16 @@ impl OrbitCamera {
         self.watch = Some((min + max) / 2.0 + right * 0.42 * half_screen_width * distance);
     }
 
-    /// Take the camera to watch something with this pitch and distance (set `watch` to say what),
-    /// keeping the player's own view to come back with [`OrbitCamera::release_view`].
-    pub fn borrow(&mut self, pitch: f32, distance: f32) {
+    /// Take the camera to watch something from this yaw, pitch and distance (set `watch` to say
+    /// what), keeping the player's own view to come back with [`OrbitCamera::release_view`]. It
+    /// keeps that distance while it watches: a block between it and what it watches (a post the
+    /// light runs past) hides that for a moment rather than pulling the camera in to the block.
+    /// Only a block where the camera would stand pulls it in.
+    pub fn borrow(&mut self, yaw: f32, pitch: f32, distance: f32) {
         self.keep_view();
         self.side_view = false;
-        self.pitch = pitch;
-        self.distance = distance;
+        self.held = true;
+        (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
     }
 
     /// Turn the camera, over a moment, to look past `from` (the avatar) towards `to`, with this
@@ -162,6 +170,7 @@ impl OrbitCamera {
     /// Keep the player's own view to come back to, unless it is kept already. Whatever the camera
     /// was turning to or easing back to stops: it is taken from here.
     fn keep_view(&mut self) {
+        self.held = false;
         if self.saved.is_none() {
             let fallback = (self.yaw, self.pitch, self.returning_distance.unwrap_or(self.distance));
             self.saved = Some(self.returning.take().unwrap_or(fallback));
@@ -174,6 +183,7 @@ impl OrbitCamera {
     /// Set the yaw, pitch and distance outright, cancelling any glide (the scripts' `Look`).
     pub fn set_view(&mut self, yaw: f32, pitch: f32, distance: f32) {
         (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
+        self.held = false;
         self.returning = None;
         self.returning_distance = None;
         self.turning = None;
@@ -182,6 +192,7 @@ impl OrbitCamera {
 
     pub fn release_view(&mut self) {
         self.watch = None;
+        self.held = false;
         self.returning = None;
         self.returning_distance = None;
         self.turning = None;
@@ -196,6 +207,7 @@ impl OrbitCamera {
     /// a moment instead of cutting to it.
     pub fn ease_home(&mut self) {
         self.watch = None;
+        self.held = false;
         self.turning = None;
         self.turn_cancel_drag = 0.0;
         self.returning_distance = None;
@@ -247,9 +259,53 @@ impl OrbitCamera {
         focus + self.back() * self.distance
     }
 
+    /// What the camera looks at now: it trails the point it is told to watch.
+    pub fn focus(&self) -> Vec3 {
+        self.focus
+    }
+
+    /// Move what the camera looks at `blend` of the way towards `target`.
+    pub fn follow(&mut self, target: Vec3, blend: f32) {
+        self.focus = self.focus.lerp(target, blend);
+    }
+
+    /// How far back from its focus the camera stands: as far as asked, unless terrain is in the way
+    /// (or, while a wake holds it, where it would stand).
+    pub fn reach(&self, world: &VoxelWorld) -> f32 {
+        let back = self.back();
+        if self.held && !world.is_solid((self.focus + back * self.distance).floor().as_ivec3()) {
+            return self.distance;
+        }
+        reach(world, self.focus, back, self.distance)
+    }
+
     /// Direction from what the camera looks at back to the camera.
     fn back(&self) -> Vec3 {
-        Quat::from_euler(EulerRot::YXZ, self.yaw, -self.pitch, 0.0) * Vec3::Z
+        back(self.yaw, self.pitch)
+    }
+}
+
+/// How much of the way the camera closes in a frame `dt` long, on what it watches and on the view
+/// it is easing back to.
+pub fn follow_blend(dt: f32) -> f32 {
+    (dt * 6.0).min(1.0)
+}
+
+/// Direction from what the camera looks at back to the camera, at this yaw and pitch.
+pub fn back(yaw: f32, pitch: f32) -> Vec3 {
+    Quat::from_euler(EulerRot::YXZ, yaw, -pitch, 0.0) * Vec3::Z
+}
+
+/// How far back along `back` from `focus` a camera may stand, up to `distance`: pulled in to just
+/// short of terrain in the way. A focus that is itself inside terrain (a fixed test view can be) is
+/// left alone.
+pub fn reach(world: &VoxelWorld, focus: Vec3, back: Vec3, distance: f32) -> f32 {
+    if world.is_solid(focus.floor().as_ivec3()) {
+        return distance;
+    }
+    match world.raycast(focus, back, distance) {
+        Some(hit) => (hit.distance - 0.4).max(1.0),
+        None => distance,
     }
 }
 
@@ -266,7 +322,8 @@ impl Plugin for PlayerPlugin {
         app.init_resource::<OrbitCamera>()
             .init_resource::<Shore>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (move_player, orbit_camera).chain().run_if(in_state(Mode::Playing)));
+            .add_systems(BuildWorld, reset)
+            .add_systems(Update, (move_player.run_if(not_paused), orbit_camera).chain().run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -282,6 +339,15 @@ fn spawn(
     let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
     crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;
+}
+
+/// Place the avatar and camera back at the current island's landing site.
+pub(crate) fn reset(sites: Res<Sites>, mut camera: ResMut<OrbitCamera>, mut shore: ResMut<Shore>, mut player: Single<(&mut Player, &mut Transform)>) {
+    let (player, transform) = &mut *player;
+    **player = Player::default();
+    **transform = Transform::from_translation(sites.spawn);
+    *shore = Shore { dry: sites.spawn, ..Shore::default() };
+    *camera = OrbitCamera { focus: sites.spawn + Vec3::Y * 1.5, ..OrbitCamera::default() };
 }
 
 fn collides(world: &VoxelWorld, feet: Vec3) -> bool {
@@ -334,7 +400,6 @@ pub(crate) fn move_player(
     camera: Res<OrbitCamera>,
     mut shore: ResMut<Shore>,
     mut player: Single<(&mut Player, &mut Transform)>,
-    mut jump_armed: Local<bool>,
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
@@ -366,21 +431,21 @@ pub(crate) fn move_player(
     player.velocity.y = (player.velocity.y - game.layout.g as f32 * dt).max(-40.0);
     // Space also starts the game from the menu: a press still held from there is not a jump.
     if !keys.pressed(KeyCode::Space) {
-        *jump_armed = true;
+        player.jump_armed = true;
     }
     if player.grounded {
         player.coyote = COYOTE_SECONDS;
     } else {
         player.coyote = (player.coyote - dt).max(0.0);
     }
-    if !still && *jump_armed && keys.just_pressed(KeyCode::Space) {
+    if !still && player.jump_armed && keys.just_pressed(KeyCode::Space) {
         player.jump_buffer = JUMP_BUFFER_SECONDS;
     } else {
         player.jump_buffer = (player.jump_buffer - dt).max(0.0);
     }
     let can_jump = player.grounded || player.coyote > 0.0;
     let wants_jump = player.jump_buffer > 0.0 || (player.grounded && keys.pressed(KeyCode::Space));
-    if can_jump && wants_jump && !still && *jump_armed {
+    if can_jump && wants_jump && !still && player.jump_armed {
         player.velocity.y = JUMP_SPEED;
         player.grounded = false;
         player.coyote = 0.0;
@@ -470,7 +535,7 @@ fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     wants: Res<EguiWantsInput>,
     world: Res<VoxelWorld>,
-    mut ui: ResMut<Ui>,
+    ui: Res<Ui>,
     sim: Res<crate::sim::Sim>,
     beam: Res<crate::beam::Beam>,
     ruler: Res<Ruler>,
@@ -485,15 +550,7 @@ fn orbit_camera(
     let (mut win, mut cursor) = window.into_inner();
     let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open;
     let hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
-    if ui.at_console()
-        || panel_open
-        || ruler.in_use()
-        || hidden
-        || (ui.cursor_free && !wants.wants_any_pointer_input() && buttons.just_pressed(MouseButton::Left))
-    {
-        ui.cursor_free = false;
-    }
-    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), hidden, ui.cursor_free);
+    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), hidden, ui.paused);
     let entering = want_free_look && !orbit.free_look;
     if entering {
         orbit.lock_settle = 2;
@@ -510,6 +567,9 @@ fn orbit_camera(
     }
     if cursor.visible != want_visible {
         cursor.visible = want_visible;
+    }
+    if ui.paused {
+        return;
     }
     let settling = orbit.lock_settle > 0;
     if orbit.lock_settle > 0 {
@@ -574,7 +634,7 @@ fn orbit_camera(
         orbit.manual_zoom();
     }
 
-    let blend = (dt * 6.0).min(1.0);
+    let blend = follow_blend(dt);
     // Back to the player's view, or round to show something or a station's puzzle: slower, so the
     // eye can follow. Yielded immediately above whenever the player turns the camera themselves.
     let easing = orbit.returning.map(|view| (view, blend)).or(orbit.turning.map(|view| (view, (dt * 2.5).min(1.0))));
@@ -600,17 +660,9 @@ fn orbit_camera(
 
     let (player_state, player_transform) = *player;
     let target = orbit.watch.unwrap_or(player_transform.translation + Vec3::Y * (1.5 + player_state.step_offset));
-    orbit.focus = orbit.focus.lerp(target, blend);
-
-    // A focus that is itself inside terrain (a fixed test view can be) is left alone.
-    let open_focus = !world.is_solid(orbit.focus.floor().as_ivec3());
-    let back = orbit.back();
+    orbit.follow(target, blend);
     // Pull the camera in if terrain is between it and what it looks at.
-    let reach = match world.raycast(orbit.focus, back, orbit.distance) {
-        Some(hit) if open_focus => (hit.distance - 0.4).max(1.0),
-        _ => orbit.distance,
-    };
-    camera.translation = orbit.focus + back * reach;
+    camera.translation = orbit.focus + orbit.back() * orbit.reach(&world);
     camera.look_at(orbit.focus, Vec3::Y);
 }
 
@@ -690,7 +742,7 @@ mod tests {
         assert!(!can_free_look(true, false, true, false, false, false), "open dock panel releases cursor");
         assert!(!can_free_look(true, false, false, true, false, false), "ruler in use releases cursor");
         assert!(!can_free_look(true, false, false, false, true, false), "hidden HUD (wake/run/swing) releases cursor");
-        assert!(!can_free_look(true, false, false, false, false, true), "Esc cursor unlock releases cursor");
+        assert!(!can_free_look(true, false, false, false, false, true), "pause menu releases cursor");
     }
 
     #[test]

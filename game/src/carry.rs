@@ -15,7 +15,7 @@
 use crate::island::{Pin, Sites};
 use crate::player::Player;
 use crate::sim::Sim;
-use crate::state::{Game, Mode, Ui};
+use crate::state::{BuildWorld, Game, Mode, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -234,8 +234,8 @@ impl Plugin for CarryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Carry>()
             .init_resource::<DirtyCells>()
-            .add_systems(Startup, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
-        app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)))
+            .add_systems(BuildWorld, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
+        app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)).run_if(not_paused))
             .add_systems(Update, (place_marks, hold, place_gate, draw_target));
     }
 }
@@ -278,6 +278,8 @@ fn lay_out(
     mut dirty: ResMut<DirtyCells>,
     game: Res<Game>,
 ) {
+    *carry = Carry::default();
+    dirty.0.clear();
     let placed = |slot: Slot| {
         let puzzle = game.puzzle_of(slot.puzzle());
         game.placed(puzzle).min(slot.most(&sites))
@@ -316,7 +318,14 @@ fn lay_out(
     for i in 0..MARKS {
         // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
         commands
-            .spawn((BlockMark(i), RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0), Transform::from_translation(Vec3::NEG_Y * 100.0), Visibility::default()))
+            .spawn((
+                WorldEntity,
+                BlockMark(i),
+                RigidBody::Static,
+                Collider::cuboid(1.0, 1.0, 1.0),
+                Transform::from_translation(Vec3::NEG_Y * 100.0),
+                Visibility::default(),
+            ))
             .with_children(|c| {
                 c.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.53, 0.0)));
                 for turn in 0..4 {
@@ -332,6 +341,7 @@ fn lay_out(
     let body = meshes.add(Cuboid::from_length(HELD_SIZE));
     let stone = materials.add(StandardMaterial { base_color: colour(Material::Limestone), perceptual_roughness: 0.9, ..default() });
     commands.spawn((
+        WorldEntity,
         HeldBlock,
         Mesh3d(body),
         MeshMaterial3d(stone),
@@ -354,7 +364,7 @@ fn lay_out(
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.
     let clamp = meshes.add(Cuboid::new(1.2, 0.4, 1.6));
     let eye = meshes.add(Cuboid::new(0.1, 0.1, 0.04));
-    commands.spawn((Gate, Transform::default(), Visibility::default())).with_children(|g| {
+    commands.spawn((WorldEntity, Gate, Transform::default(), Visibility::default())).with_children(|g| {
         g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
         g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
         for side in [-1.0f32, 1.0] {
@@ -366,7 +376,7 @@ fn lay_out(
     // Its stand: a post with a cradle the gate's clamp rests in.
     let post = meshes.add(Cuboid::new(0.14, 1.0, 0.14));
     let cradle = meshes.add(Cuboid::new(0.5, 0.08, 0.5));
-    commands.spawn((GateStand, Transform::from_translation(sites.gate_stand), Visibility::default())).with_children(|s| {
+    commands.spawn((WorldEntity, GateStand, Transform::from_translation(sites.gate_stand), Visibility::default())).with_children(|s| {
         s.spawn((Mesh3d(post), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
         s.spawn((Mesh3d(cradle), MeshMaterial3d(dark), Transform::from_xyz(0.0, 1.0, 0.0)));
     });

@@ -439,7 +439,10 @@ inventory.
   A side view stands as far back as it needs to show the whole test, further than the player zooms. `E`, `Esc` or the panel's Leave button steps away. A
   station opens once its console is awake: the way wakes it with its machine.
 - **Waking.** While the way wakes, the engineer waits and the camera follows the light, then glides
-  back; `E` or `Esc` skips to the end.
+  back; `E` or `Esc` skips to the end. The camera watches from 28 m back, from the side where the
+  fewest blocks come between it and what it follows (it looks down more steeply only if every side
+  has some), and it keeps that distance: a post or pylon the light runs past hides the light for a
+  moment rather than pulling the camera in to it.
 - **Ruler.** `R` takes one measurement: two clicks, then the ruler stops taking clicks and its reading
   stays on screen to be noted. `R` again measures anew; `Esc` or the card's close button puts it
   away; `R` or `Esc` before the second click cancels.

@@ -9,7 +9,7 @@ use crate::carry::{Carry, Slot};
 use crate::island::{GROUND, LaunchSite, SEA_LEVEL, Sites};
 use crate::player::OrbitCamera;
 use crate::props::{self, Finishes, Vehicle};
-use crate::state::{Game, PageEvent, RECHARGE_SECONDS, Ui};
+use crate::state::{BuildWorld, Game, Mode, PageEvent, RECHARGE_SECONDS, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -166,6 +166,8 @@ pub struct Sim {
     action: Option<Vec3>,
     /// The test mass has passed the light gate since it was last released: its beam shows it.
     pub gate_tripped: bool,
+    /// Tracks whether the rail cart and tiller have already transitioned to their post-solve places.
+    relayed: Relayed,
 }
 
 impl Sim {
@@ -346,6 +348,7 @@ fn splash(commands: &mut Commands, assets: &PropAssets, at: Vec3) {
     crate::particles::burst(commands, crate::particles::Kind::Splash, at.with_y(SEA_LEVEL), 1.0);
     for delay in [0.0, 0.25] {
         commands.spawn((
+            WorldEntity,
             Splash { age: 0.0, delay },
             Mesh3d(assets.ring.0.clone()),
             MeshMaterial3d(assets.ring.1.clone()),
@@ -413,22 +416,15 @@ pub struct SimPlugin;
 
 impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Sim>().init_resource::<TerrainReshaped>().add_systems(Startup, setup).add_systems(
+        app.init_resource::<Sim>().init_resource::<TerrainReshaped>().add_systems(BuildWorld, setup).add_systems(
             Update,
             (
-                handle_requests,
-                advance,
-                settle,
-                recharge,
-                draw_trail,
-                follow_launcher,
-                relay,
-                ride_the_cart,
-                props::spin_wheels,
-                props::step_legs,
-                reshape_terrain,
-                splash_the_avatar,
-                spread_splashes,
+                (handle_requests, advance, settle, recharge, props::spin_wheels, props::step_legs, splash_the_avatar, spread_splashes)
+                    .chain()
+                    .run_if(in_state(Mode::Playing))
+                    .run_if(not_paused),
+                relay.run_if(not_paused),
+                (draw_trail.run_if(in_state(Mode::Playing)), follow_launcher, ride_the_cart, reshape_terrain).chain(),
             )
                 .chain(),
         );
@@ -551,6 +547,7 @@ pub(crate) fn setup(
             _ => vehicle.map_or_else(|| meshes.add(Cuboid::from_size(prop_size(prop))), |v| v.body.clone()),
         };
         let mut body = commands.spawn((
+            WorldEntity,
             prop,
             Mesh3d(mesh),
             MeshMaterial3d(material.clone()),
@@ -590,7 +587,7 @@ pub(crate) fn setup(
 
     // The physics engine's view of the island: every block anything could touch.
     commands.insert_resource(Gravity(Vec3::NEG_Y * game.layout.g as f32));
-    commands.spawn((TerrainCollider, RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
+    commands.spawn((WorldEntity, TerrainCollider, RigidBody::Static, Collider::voxels(Vec3::ONE, &world.exposed_blocks()), Transform::default()));
 
     // Loose wreckage, left to the engine: it falls and settles where it will. Bent hull plating,
     // conduit, girder, a thruster bell and a console, thrown clear in the crash.
@@ -600,6 +597,7 @@ pub(crate) fn setup(
         let turned = Quat::from_rotation_y(i as f32 * 1.3) * Quat::from_rotation_z(i as f32 * 0.7);
         commands
             .spawn((
+                WorldEntity,
                 RigidBody::Dynamic,
                 piece.collider,
                 Mesh3d(piece.mesh),
@@ -620,6 +618,7 @@ pub(crate) fn setup(
         let lift = Vec3::Y * piece.depth(&meshes) * SCRAP_SCALE;
         commands
             .spawn((
+                WorldEntity,
                 RigidBody::Static,
                 piece.collider,
                 Mesh3d(piece.mesh),
@@ -961,6 +960,7 @@ fn start_pair(
     for (k, shot) in shots.iter().enumerate() {
         let (x, y) = shot.projectile.pos(0.0);
         commands.spawn((
+            WorldEntity,
             DemoBody(k),
             Mesh3d(mesh.clone()),
             MeshMaterial3d(assets.pair[k].clone()),
@@ -991,6 +991,7 @@ fn hand_over(
 ) -> Entity {
     commands
         .spawn((
+            WorldEntity,
             RigidBody::Dynamic,
             Collider::cuboid(size.x, size.y, size.z),
             LinearVelocity(velocity),
@@ -1056,7 +1057,13 @@ fn advance(
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
                 let centre = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * below;
-                commands.spawn((StrobeMark, Mesh3d(assets.mass.clone()), MeshMaterial3d(assets.afterimage.clone()), Transform::from_translation(centre)));
+                commands.spawn((
+                    WorldEntity,
+                    StrobeMark,
+                    Mesh3d(assets.mass.clone()),
+                    MeshMaterial3d(assets.afterimage.clone()),
+                    Transform::from_translation(centre),
+                ));
                 sim.strobe.push(centre);
                 *shown += 1;
             }
@@ -1410,15 +1417,17 @@ struct Relayed {
 /// that has just landed in the circle is not put back on the launcher.
 fn relay(
     time: Res<Time>,
-    (game, sim, sites, waking): (Res<Game>, Res<Sim>, Res<Sites>, Res<crate::waking::Waking>),
+    (game, sites, waking): (Res<Game>, Res<Sites>, Res<crate::waking::Waking>),
+    mut sim: ResMut<Sim>,
     mut carry: ResMut<Carry>,
-    mut relayed: Local<Relayed>,
     mut props: Query<(&Prop, &mut Transform, &mut Visibility)>,
 ) {
     // The cart rolls on once its block is at the marker and the stone gate has opened for it.
     let (rail, channel) = (game.kind_solved(PuzzleKind::Rail) && waking.gate_is_open(&sites.way), game.kind_solved(PuzzleKind::Channel));
-    let finished = std::mem::replace(&mut relayed.busy, sim.busy()) && !sim.busy();
-    if sim.busy() {
+    let busy = sim.busy();
+    let relayed = &mut sim.relayed;
+    let finished = std::mem::replace(&mut relayed.busy, busy) && !busy;
+    if busy {
         return;
     }
     let first = relayed.shown.is_none();

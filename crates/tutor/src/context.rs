@@ -12,6 +12,8 @@ use serde::Serialize;
 pub struct ConceptCard {
     pub title: String,
     pub card: String,
+    /// Optional derivation shown collapsed in the handbook.
+    pub derivation: Option<String>,
     /// Whether the page is in the player's handbook yet (pages are found by watching experiments).
     pub found: bool,
     /// Where the player can find the page while it is locked.
@@ -130,11 +132,13 @@ pub struct TutorContext {
     pub chapter_title: String,
     /// What the chapter is for in the story.
     pub chapter_goal: String,
-    /// Why this station matters to the story, as Lumen says it.
-    pub why: String,
     pub puzzle_title: String,
-    pub brief: String,
-    pub how_to_measure: String,
+    /// One-line objective shown on the station console.
+    pub task: String,
+    /// What Lumen presents when the station first opens.
+    pub presentation: Vec<String>,
+    /// Clickable station Q&A topics (`ask`, joined reply) that Lumen can share.
+    pub topics: Vec<(String, String)>,
     pub concepts: Vec<ConceptCard>,
     pub experiment: Option<ExperimentLine>,
     /// What the player has placed at the station in the world, in words ("the block is on the
@@ -261,15 +265,21 @@ impl TutorContext {
             tier_goal: String::new(),
             chapter_title: chapter.title.clone(),
             chapter_goal: chapter.goal.clone(),
-            why: def.why.clone(),
             puzzle_title: def.title.clone(),
-            brief: def.brief.clone(),
-            how_to_measure: def.investigate.clone(),
+            task: def.task.clone(),
+            presentation: def.dialogue.present.iter().map(|l| l.text.clone()).collect(),
+            topics: def.dialogue.topics.iter().map(|t| (t.ask.clone(), t.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join(" "))).collect(),
             concepts: def
                 .concepts
                 .iter()
                 .filter_map(|id| chapter.concept(id))
-                .map(|c| ConceptCard { title: c.title.clone(), card: c.card.clone(), found: save.is_found(chapter, &c.id), hint: c.hint.clone() })
+                .map(|c| ConceptCard {
+                    title: c.title.clone(),
+                    card: c.card.clone(),
+                    derivation: c.derivation.clone(),
+                    found: save.is_found(chapter, &c.id),
+                    hint: c.hint.clone(),
+                })
                 .collect(),
             experiment: def.demo.as_ref().map(|demo| ExperimentLine {
                 question: demo.question.clone(),

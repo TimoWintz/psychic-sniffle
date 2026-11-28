@@ -462,7 +462,9 @@ pub(crate) fn panel(
         .show(&ctx, |panel| {
             panel.set_width(400.0);
             panel.horizontal(|panel| {
-                panel.label(RichText::new("You'll stay at the console while this is open.").small().color(DIM));
+                if panel.button(RichText::new("Briefing").color(LUMEN)).on_hover_text("Talk through this console with Lumen").clicked() {
+                    ui.request_briefing = true;
+                }
                 panel.with_layout(egui::Layout::right_to_left(egui::Align::Center), |panel| {
                     if panel.button("Leave (E)").clicked() {
                         ui.beam_open = false;
@@ -470,9 +472,7 @@ pub(crate) fn panel(
                 });
             });
             panel.separator();
-            panel.label(RichText::new(format!("Lumen: {}", def.why)).italics().color(LUMEN));
-            panel.add_space(4.0);
-            panel.label(&def.brief);
+            panel.label(RichText::new(&def.task).strong());
             panel.add_space(6.0);
             let done = held(&game).min(CASES as u32);
             let marks: String = (0..CASES as u32).map(|i| if i < done { "■ " } else { "□ " }).collect();

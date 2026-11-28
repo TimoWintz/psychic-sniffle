@@ -22,11 +22,11 @@ The guarantee does not rest on instructions to the model.
 
 One snapshot per message, built at the moment the player sends it:
 
-- the story: what the tier's ship is for, the chapter's goal, and why this station matters (the line
-  Lumen says when it opens), with a note in the policy on who Lumen is (a backup with home's tables,
-  its core across the strait) and that the physics comes first;
-- chapter and puzzle title, the brief, the concepts being taught and which of their pages the player
-  has found;
+- the story: what the tier's ship is for, the chapter's goal, and what Lumen presented and can
+  explain in its station dialogue, with a note in the policy on who Lumen is (a backup with home's
+  tables, its core across the strait) and that the physics comes first;
+- chapter and puzzle title, the console objective (`task`), the concepts being taught (with their
+  cards and derivations) and which of their pages the player has found;
 - the station's experiment: its question and choices, the player's guess before the first run, and
   what happened (or that it has not been watched);
 - what the puzzle asks for (each input, with its dimension);

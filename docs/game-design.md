@@ -36,11 +36,17 @@ other line in the game is written, is set out in [writing.md](writing.md).
 
 - **Opening.** In a fresh game: who Lumen is, the main hull across the strait (its eye turns to it),
   what the chapter has to do, and the road the wreck came down across. While a line of it names a
-  place, the camera turns to show it past the avatar, then turns back. The opening is not cut short: what happens meanwhile waits its turn.
-- **Why.** When a station first opens, one line on why this job matters now. It also heads the
-  station's panel ("Lumen: ...").
+  place, the camera turns to show it past the avatar, then turns back. The opening waits for click
+  or `Enter` between lines and is not cut short: what happens meanwhile waits its turn.
+- **Station briefing.** When an unsolved station (or side-machine) first opens, Lumen presents it in
+  one or two short beats that wait for click or `Enter` (pointing at key parts while speaking),
+  followed by clickable dialogue chips for optional questions (how the machine works, what to
+  measure) and `Got it`. The console itself stays concise (one-line objective, hardware ratings,
+  experiment, handbook links, blueprint, result) and includes a `Briefing` button to reopen Lumen's
+  chips at any time.
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
-- **Closing.** When the chapter's part is installed, and what woke along the way with it.
+- **Closing.** When the chapter's part is installed, and what woke along the way with it (waits for
+  click or `Enter` between lines).
 - **Remarks.** A handful of lines about places (the wreck on the road, the shore facing the strait,
   the ledge over the channel, the bridge once it stands, the ridge, the shut seal in the pass,
   the skiff on the old quay), each
@@ -376,11 +382,12 @@ Unlocked as the curriculum needs them.
   picture of the idea in a scene from Earth (a cyclist past distance posts, an apple dropped from a
   balcony, two kicks landing on one spot), strobed like the stations' experiments, with pause and
   replay. The pictures are Earth's on purpose: the castaway's home, never the island's setups, so
-  they explain without answering a puzzle. Under each page, an optional quiz of two or three
-  multiple-choice questions, some on ideas and some small sums with Earth's numbers (Earth's g may
-  appear; the island's never comes near it). A right answer shows why; a wrong one sends the player
-  back to the page. Answering every question right ticks the page, and Lumen says so. The quizzes
-  change nothing in the world.
+  they explain without answering a puzzle. Under the picture, an optional collapsible **Where this
+  comes from** section walks symbolically through the derivation from earlier relations, followed by
+  an optional quiz of two or three multiple-choice questions, some on ideas and some small sums with
+  Earth's numbers (Earth's g may appear; the island's never comes near it). A right answer shows why;
+  a wrong one sends the player back to the page. Answering every question right ticks the page, and
+  Lumen says so. The quizzes change nothing in the world.
 - **Launchers show the blueprint.** As a value is typed, the tilting launcher's arm swings to the
   angle and its gauge fills to the speed, against the launcher's rating. The ledge launcher's gauge
   marks the bottom of its band too and turns red outside it, and the launcher itself rides up its jack

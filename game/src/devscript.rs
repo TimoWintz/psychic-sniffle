@@ -168,9 +168,11 @@ enum Step {
     Solve(usize),
     /// Wait until no wake is playing; fail if one still is after this many seconds.
     WaitWakeEnd(f32),
-    /// Wait until Lumen has finished telling a story (the opening), which turns the camera to the
-    /// places it names; fail if it has not in time.
+    /// Wait until Lumen has finished telling a story (the opening or closing), advancing each
+    /// waiting line once it has been up as long as a timed line would be; fail if it has not in time.
     UntilStoryEnds(f32),
+    /// Advance Lumen's current speech line (as pressing Enter or clicking the bubble would).
+    AdvanceSpeech,
     /// Wait until the way shows this stage; fail if it has not happened in time.
     UntilWoken {
         stage: usize,
@@ -808,10 +810,13 @@ fn intro() -> Vec<Step> {
         ExpectPlayerView,
         Shot("intro_08_playing"),
         // Lumen's opening names the main hull, then the skiff: the camera turns to show each across
-        // the bay.
+        // the bay as the player advances through the opening lines.
+        AdvanceSpeech,
         ExpectGaze { place: "The main hull, across the strait".into(), within: 15.0 },
         Wait(2.5),
         Shot("intro_09_main_hull"),
+        AdvanceSpeech,
+        AdvanceSpeech,
         ExpectGaze { place: "The boat on the slipway".into(), within: 25.0 },
         Wait(2.5),
         Shot("intro_10_skiff"),
@@ -1133,7 +1138,7 @@ fn run(
     mut player: Single<(&mut Player, &mut Transform), Without<Camera3d>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
-    companion: Res<Companion>,
+    mut companion: ResMut<Companion>,
     mut exit: MessageWriter<AppExit>,
     (mut intro, mode, avatar, mut carry, mut dirty, waking, real, shore, mut beam): MoreOfTheGame,
 ) {
@@ -1167,10 +1172,16 @@ fn run(
         }
         Step::UntilStoryEnds(within) => {
             if companion.telling() {
+                if companion.waiting_line_read() {
+                    companion.advance_line();
+                }
                 let left = within - time.delta_secs();
                 assert!(left > 0.0, "Lumen's story did not end");
                 script.steps.push_front(Step::UntilStoryEnds(left));
             }
+        }
+        Step::AdvanceSpeech => {
+            companion.advance_line();
         }
         Step::UntilWoken { stage, within } => {
             if waking.shown != stage {

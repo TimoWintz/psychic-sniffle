@@ -47,6 +47,10 @@ pub struct Concept {
     pub title: String,
     /// Handbook text: definitions and relations, never a worked answer.
     pub card: String,
+    /// Optional derivation ("Where this comes from"), shown collapsed on the handbook page.
+    /// Written in the textbook voice, with formulas indented by four spaces.
+    #[serde(default)]
+    pub derivation: Option<String>,
     pub found: Found,
     /// Where to find the page, shown while it is locked.
     pub hint: String,
@@ -110,16 +114,44 @@ pub struct DemoDef {
     pub reveal: String,
 }
 
+/// A question the player can ask Lumen at a station, and Lumen's spoken reply.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Topic {
+    /// Short question label shown on a clickable dialogue chip.
+    pub ask: String,
+    /// One or more lines Lumen speaks in reply (spoken, so no digits).
+    pub lines: Vec<Spoken>,
+}
+
+/// Lumen's briefing at a station or side-machine: a short presentation when it first opens,
+/// followed by clickable questions the player can ask.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Dialogue {
+    /// Short beats Lumen presents when the station first opens (wait for click / Enter).
+    #[serde(default)]
+    pub present: Vec<Spoken>,
+    /// Optional questions shown as clickable chips after the presentation and on demand.
+    #[serde(default)]
+    pub topics: Vec<Topic>,
+}
+
+impl Dialogue {
+    /// All spoken lines in this dialogue (presentation first, then each topic's reply).
+    pub fn spoken_lines(&self) -> impl Iterator<Item = &Spoken> {
+        self.present.iter().chain(self.topics.iter().flat_map(|t| t.lines.iter()))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PuzzleDef {
     pub id: String,
     pub kind: PuzzleKind,
     pub title: String,
-    /// One line for the objective display.
+    /// One line for the objective display and the station console.
     pub task: String,
-    pub brief: String,
-    /// How to take the measurements this puzzle needs.
-    pub investigate: String,
+    /// Lumen's interactive station presentation and clickable Q&A topics.
+    #[serde(default)]
+    pub dialogue: Dialogue,
     /// Ids of the concepts this puzzle exercises.
     pub concepts: Vec<String>,
     /// Ids of puzzles that must be solved first.
@@ -129,10 +161,6 @@ pub struct PuzzleDef {
     /// The free experiment to try before any calculation, if the station has one.
     #[serde(default)]
     pub demo: Option<DemoDef>,
-    /// Why this job matters to the story, in Lumen's voice: said when the station first opens and
-    /// shown at the top of its panel. Spoken, so it holds no digits.
-    #[serde(default)]
-    pub why: String,
     /// Lumen's line when the puzzle is passed: what it got us, and what it leads to. Spoken.
     #[serde(default)]
     pub done: String,
@@ -154,10 +182,11 @@ pub struct SideDef {
     pub kind: SideKind,
     /// The name its console shows.
     pub title: String,
-    /// What to do, as plain instructions.
-    pub brief: String,
-    /// Lumen's line when its console is first used. Spoken, so it holds no digits.
-    pub why: String,
+    /// One imperative line for the console's objective.
+    pub task: String,
+    /// Lumen's interactive presentation and clickable Q&A topics when its console opens.
+    #[serde(default)]
+    pub dialogue: Dialogue,
     /// Lumen's line when it wakes. Spoken.
     pub done: String,
 }
@@ -303,11 +332,19 @@ impl Chapter {
                     problems.push(format!("puzzle {} needs page {id}, which is found only later", puzzle.id));
                 }
             }
-            if puzzle.why.trim().is_empty() || puzzle.done.trim().is_empty() {
-                problems.push(format!("puzzle {}: Lumen needs a why and a done line", puzzle.id));
+            if puzzle.dialogue.present.is_empty() || puzzle.done.trim().is_empty() {
+                problems.push(format!("puzzle {}: Lumen needs presentation lines and a done line", puzzle.id));
             }
-            if has_digit(&puzzle.why) || has_digit(&puzzle.done) {
-                problems.push(format!("puzzle {}: the why and done lines are spoken and must hold no digits", puzzle.id));
+            if puzzle.dialogue.spoken_lines().any(|l| l.text.trim().is_empty()) {
+                problems.push(format!("puzzle {}: Lumen's dialogue has an empty line", puzzle.id));
+            }
+            for topic in &puzzle.dialogue.topics {
+                if topic.ask.trim().is_empty() || topic.lines.is_empty() {
+                    problems.push(format!("puzzle {}: each dialogue topic needs a question and at least one reply line", puzzle.id));
+                }
+            }
+            if puzzle.dialogue.spoken_lines().any(|l| has_digit(&l.text)) || has_digit(&puzzle.done) {
+                problems.push(format!("puzzle {}: dialogue and done lines are spoken and must hold no digits", puzzle.id));
             }
             if let Some(demo) = &puzzle.demo {
                 if demo.choices.len() < 2 || demo.answer >= demo.choices.len() {
@@ -325,11 +362,19 @@ impl Chapter {
             if self.puzzle(&side.id).is_some() || self.sides.iter().filter(|s| s.id == side.id).count() > 1 {
                 problems.push(format!("side-machine id {} is used more than once", side.id));
             }
-            if side.why.trim().is_empty() || side.done.trim().is_empty() {
-                problems.push(format!("side-machine {}: Lumen needs a why and a done line", side.id));
+            if side.dialogue.present.is_empty() || side.done.trim().is_empty() {
+                problems.push(format!("side-machine {}: Lumen needs presentation lines and a done line", side.id));
             }
-            if has_digit(&side.why) || has_digit(&side.done) {
-                problems.push(format!("side-machine {}: the why and done lines are spoken and must hold no digits", side.id));
+            if side.dialogue.spoken_lines().any(|l| l.text.trim().is_empty()) {
+                problems.push(format!("side-machine {}: Lumen's dialogue has an empty line", side.id));
+            }
+            for topic in &side.dialogue.topics {
+                if topic.ask.trim().is_empty() || topic.lines.is_empty() {
+                    problems.push(format!("side-machine {}: each dialogue topic needs a question and at least one reply line", side.id));
+                }
+            }
+            if side.dialogue.spoken_lines().any(|l| has_digit(&l.text)) || has_digit(&side.done) {
+                problems.push(format!("side-machine {}: dialogue and done lines are spoken and must hold no digits", side.id));
             }
             if !self.concepts.iter().any(|c| c.found == Found::Side(side.id.clone())) {
                 problems.push(format!("side-machine {} writes no page", side.id));
@@ -393,14 +438,28 @@ impl Chapter {
             spoken.push((format!("remark at {}", remark.near), &remark.line.text));
         }
         for puzzle in &self.puzzles {
-            spoken.push((format!("puzzle {} why", puzzle.id), &puzzle.why));
+            for line in &puzzle.dialogue.present {
+                spoken.push((format!("puzzle {} present", puzzle.id), &line.text));
+            }
+            for topic in &puzzle.dialogue.topics {
+                for line in &topic.lines {
+                    spoken.push((format!("puzzle {} topic \"{}\"", puzzle.id, topic.ask), &line.text));
+                }
+            }
             spoken.push((format!("puzzle {} done", puzzle.id), &puzzle.done));
             if let Some(demo) = &puzzle.demo {
                 spoken.push((format!("puzzle {} reveal", puzzle.id), &demo.reveal));
             }
         }
         for side in &self.sides {
-            spoken.push((format!("side-machine {} why", side.id), &side.why));
+            for line in &side.dialogue.present {
+                spoken.push((format!("side-machine {} present", side.id), &line.text));
+            }
+            for topic in &side.dialogue.topics {
+                for line in &topic.lines {
+                    spoken.push((format!("side-machine {} topic \"{}\"", side.id, topic.ask), &line.text));
+                }
+            }
             spoken.push((format!("side-machine {} done", side.id), &side.done));
         }
 
@@ -408,6 +467,9 @@ impl Chapter {
         for concept in &self.concepts {
             shown.push((format!("page {} title", concept.id), &concept.title));
             shown.push((format!("page {} card", concept.id), &concept.card));
+            if let Some(derivation) = &concept.derivation {
+                shown.push((format!("page {} derivation", concept.id), derivation));
+            }
             shown.push((format!("page {} hint", concept.id), &concept.hint));
             if let Some(illustration) = &concept.illustration {
                 shown.push((format!("page {} caption", concept.id), &illustration.caption));
@@ -422,8 +484,9 @@ impl Chapter {
         }
         for puzzle in &self.puzzles {
             shown.push((format!("puzzle {} task", puzzle.id), &puzzle.task));
-            shown.push((format!("puzzle {} brief", puzzle.id), &puzzle.brief));
-            shown.push((format!("puzzle {} investigate", puzzle.id), &puzzle.investigate));
+            for topic in &puzzle.dialogue.topics {
+                shown.push((format!("puzzle {} topic label", puzzle.id), &topic.ask));
+            }
             if let Some(demo) = &puzzle.demo {
                 shown.push((format!("puzzle {} demo question", puzzle.id), &demo.question));
                 for choice in &demo.choices {
@@ -434,12 +497,18 @@ impl Chapter {
 
         for side in &self.sides {
             shown.push((format!("side-machine {} title", side.id), &side.title));
-            shown.push((format!("side-machine {} brief", side.id), &side.brief));
+            shown.push((format!("side-machine {} task", side.id), &side.task));
+            for topic in &side.dialogue.topics {
+                shown.push((format!("side-machine {} topic label", side.id), &topic.ask));
+            }
         }
 
         let mut problems = Vec::new();
         for puzzle in &self.puzzles {
             problems.extend(task_style(&puzzle.task).into_iter().map(|p| format!("puzzle {} task: {p}", puzzle.id)));
+        }
+        for side in &self.sides {
+            problems.extend(task_style(&side.task).into_iter().map(|p| format!("side-machine {} task: {p}", side.id)));
         }
         for (place, text) in &spoken {
             problems.extend(spoken_style(text).into_iter().map(|p| format!("{place}: {p}")));
@@ -452,7 +521,14 @@ impl Chapter {
 
     /// Every landmark the chapter's lines name, for the game to check against its places.
     pub fn places_named(&self) -> Vec<&str> {
-        let looks = self.opening.iter().chain(&self.closing).chain(self.remarks.iter().map(|r| &r.line)).filter_map(|l| l.look.as_deref());
+        let looks = self
+            .opening
+            .iter()
+            .chain(&self.closing)
+            .chain(self.remarks.iter().map(|r| &r.line))
+            .chain(self.puzzles.iter().flat_map(|p| p.dialogue.spoken_lines()))
+            .chain(self.sides.iter().flat_map(|s| s.dialogue.spoken_lines()))
+            .filter_map(|l| l.look.as_deref());
         looks.chain(self.remarks.iter().map(|r| r.near.as_str())).collect()
     }
 }
@@ -597,7 +673,7 @@ mod tests {
         broken.concepts.last_mut().unwrap().found = Found::Side("1.1.s9".into());
         broken.puzzles[1].concepts.push("a_rule_predicts".into());
         let problems = broken.problems();
-        assert!(problems.iter().any(|p| p.contains("side-machine 1.1.s1: the why and done lines")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("side-machine 1.1.s1: dialogue and done lines")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("unknown side-machine 1.1.s9")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("side-machine 1.1.s1 writes no page")), "{problems:?}");
         let mut needs = chapter.clone();
@@ -638,7 +714,7 @@ mod tests {
         chapter.concepts[2].title = "Range at 45 degrees".into();
         chapter.puzzles[2].demo.as_mut().unwrap().answer = 7;
         chapter.puzzles[3].done = String::new();
-        chapter.puzzles[4].why = "Clear the ridge at 45 degrees.".into();
+        chapter.puzzles[4].dialogue.present[0].text = "Clear the ridge at 45 degrees.".into();
         chapter.remarks[0].line.text = "Only 3 more.".into();
         chapter.remarks[1].when = RemarkWhen::After("1.1.9".into());
         chapter.concepts[3].quiz[0].answer = 9;
@@ -647,8 +723,8 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("found only later")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("must hold no digits")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("an answer among them")), "{problems:?}");
-        assert!(problems.iter().any(|p| p.contains("1.1.3: Lumen needs a why and a done line")), "{problems:?}");
-        assert!(problems.iter().any(|p| p.contains("1.1.4: the why and done lines")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.3: Lumen needs presentation lines and a done line")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.4: dialogue and done lines")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("Only 3 more.")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("unknown puzzle 1.1.9")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("quiz question 1 needs choices")), "{problems:?}");
@@ -703,22 +779,22 @@ mod tests {
     #[test]
     fn style_slips_are_caught() {
         let mut chapter = chapter_1_1();
-        chapter.puzzles[0].why = "That is the cart. I do not know who built it.".into();
+        chapter.puzzles[0].dialogue.present[0].text = "That is the cart. I do not know who built it.".into();
         chapter.puzzles[1].done = "The sight: lifted. The crane: awake. The tower: next.".into();
         chapter.remarks[0].line.text = "word ".repeat(LONGEST_SPOKEN + 1);
         chapter.concepts[0].card = "Units — a crucial idea.".into();
-        chapter.puzzles[2].brief = "Let's delve into the tower.".into();
+        chapter.concepts[1].derivation = Some("Let's delve into velocity.".into());
         let problems = chapter.style_problems();
-        assert!(problems.iter().any(|p| p.contains("1.1.0 why: \"i do not\"")), "{problems:?}");
-        assert!(problems.iter().any(|p| p.contains("1.1.0 why: \"that is\"")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.0 present: \"i do not\"")), "{problems:?}");
+        assert!(problems.iter().any(|p| p.contains("1.1.0 present: \"that is\"")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("1.1.1 done: more than one colon")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("too long for one spoken line")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("page units card: stock phrase \"crucial\"")), "{problems:?}");
         assert!(problems.iter().any(|p| p.contains("page units card: a dash")), "{problems:?}");
-        assert!(problems.iter().any(|p| p.contains("1.1.2 brief: stock phrase \"delve\"")), "{problems:?}");
-        // Contractions are only asked of Lumen: the handbook and the briefs may spell words out.
+        assert!(problems.iter().any(|p| p.contains("page velocity derivation: stock phrase \"delve\"")), "{problems:?}");
+        // Contractions are only asked of Lumen: the handbook may spell words out.
         chapter.concepts[1].card = "It is a speed, and that is all.".into();
-        assert!(!chapter.style_problems().iter().any(|p| p.contains("page velocity")));
+        assert!(!chapter.style_problems().iter().any(|p| p.contains("page velocity card")));
         // A word that only contains a stock word is fine.
         assert!(text_style("The journeyman's showcases").is_empty());
     }
@@ -757,6 +833,9 @@ mod tests {
         // The handbook must not state a value for gravity: measuring it is a puzzle (1.1.2).
         for concept in chapter_1_1().concepts {
             assert!(!concept.card.contains("9.8"), "{} mentions Earth's g", concept.id);
+            if let Some(derivation) = &concept.derivation {
+                assert!(!derivation.contains("9.8"), "{} derivation mentions Earth's g", concept.id);
+            }
         }
     }
 }

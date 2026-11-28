@@ -24,9 +24,8 @@ use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
-use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
-use physics_core::content::{RemarkWhen, Spoken};
-use physics_core::notebook::source;
+use egui::{Align2, Color32, Pos2, RichText, Stroke, Vec2 as EVec2, pos2, vec2};
+use physics_core::content::{Dialogue, RemarkWhen, Spoken, Topic};
 use physics_core::puzzle::PuzzleKind;
 use std::collections::BTreeSet;
 
@@ -146,6 +145,23 @@ pub enum Mood {
     Thinking,
 }
 
+/// Which console currently owns the active interactive dialogue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Console {
+    Station(usize),
+    Beam,
+}
+
+/// Interactive station dialogue shown in Lumen's bubble: presentation beats followed by
+/// clickable Q&A chips. Waits for the player instead of auto-fading.
+#[derive(Clone, Debug)]
+struct StationDialogue {
+    console: Console,
+    topics: Vec<Topic>,
+    lines: Vec<Spoken>,
+    shown: f32,
+}
+
 #[derive(Clone, Debug)]
 struct Line {
     text: String,
@@ -153,8 +169,10 @@ struct Line {
     shown: f32,
     /// A place the eye holds while the line is said.
     look: Option<String>,
-    /// Part of a story (the opening): what is said meanwhile waits its turn instead of cutting it.
+    /// Part of a story (the opening or closing): what is said meanwhile waits its turn instead of cutting it.
     keep: bool,
+    /// Waits for the player to click or press Enter instead of fading out automatically.
+    wait: bool,
     /// The frame it was said in.
     said: u64,
 }
@@ -172,11 +190,16 @@ pub struct Companion {
     held: Option<(String, f32)>,
     mood_left: f32,
     lines: Vec<Line>,
+    /// Active interactive briefing/Q&A dialogue at an open console, if any.
+    dialogue: Option<StationDialogue>,
+    /// Topics the player has already asked this session, so their chips show a subtle tick.
+    asked: BTreeSet<(Console, usize)>,
+    /// Consoles whose automatic presentation has already played this session.
+    presented: BTreeSet<Console>,
     /// Recent lines Lumen has spoken this session, oldest first, shown in Lumen's panel.
     pub history: Vec<String>,
     anim: Animation,
-    /// Stations where Lumen has already suggested trying the experiment, and what to build, this
-    /// session.
+    /// Stations where Lumen has already given a one-time post-miss/recharge nudge this session.
     nudged: BTreeSet<(usize, Nudge)>,
     /// Seconds left of pointing the way to the next station.
     beckon_left: f32,
@@ -190,9 +213,8 @@ pub struct Companion {
     showing: Option<String>,
     /// Whether Lumen has said why the engineer stopped at deep water, this session.
     warned_of_water: bool,
-    /// At the beam, this session: whether Lumen has said why it's worth a look, the releases that
-    /// missed since a load last held, and whether it has suggested looking for a rule.
-    beam_why: bool,
+    /// At the beam, this session: the releases that missed since a load last held, and whether
+    /// Lumen has suggested looking for a rule.
     beam_misses: u32,
     beam_rule: bool,
     /// Last frame's view of the game, stored here so world reloads reset it cleanly.
@@ -200,29 +222,91 @@ pub struct Companion {
 }
 
 impl Companion {
-    /// Say a line. Something new to say cuts short what is being said and drops what was waiting,
-    /// so the line on screen is always about what just happened. Lines said in the same moment are
-    /// kept, in order.
-    ///
-    /// While a story is being told (lines said with `keep`), nothing cuts it short: a new line waits
-    /// behind it, and replaces what was waiting there from an earlier moment, so what is said after
-    /// the story is still about what just happened.
-    /// Whether a story (the opening) is still being told.
+    /// Whether a story (the opening or closing) is still being told.
     pub fn telling(&self) -> bool {
         self.lines.iter().any(|l| l.keep)
     }
 
+    /// Whether the current bubble is waiting for the player to advance it.
+    #[cfg(test)]
+    pub fn waiting_line(&self) -> bool {
+        self.dialogue.is_some() || self.lines.first().is_some_and(|l| l.wait)
+    }
+
+    /// Whether the bubble is waiting and has been up as long as a timed line of its length would
+    /// be, so a script can advance it at a reading pace.
+    pub fn waiting_line_read(&self) -> bool {
+        self.dialogue.is_some() || self.lines.first().is_some_and(|l| l.wait && l.shown >= l.left)
+    }
+
+    /// Seconds until the timed lines waiting to be said have been said.
+    fn talking_for(&self) -> f32 {
+        self.lines.iter().filter(|l| !l.wait).map(|l| l.left).sum()
+    }
+
     fn say(&mut self, text: impl Into<String>) {
-        self.speak(text.into(), None, false);
+        self.dialogue = None;
+        self.speak(text.into(), None, false, false);
     }
 
     /// Say one of the chapter's lines, holding the eye on its place, if it names one.
+    /// Story lines (`keep == true`, opening and closing) wait for click / Enter.
     fn say_spoken(&mut self, line: &Spoken, keep: bool) {
-        self.speak(line.text.clone(), line.look.clone(), keep);
+        self.speak(line.text.clone(), line.look.clone(), keep, keep);
+    }
+
+    /// Open Lumen's interactive station dialogue. On first open (`full_present == true`) every
+    /// presentation beat plays in sequence; on manual Briefing (`full_present == false`) it opens
+    /// directly on the final beat with all topic chips immediately clickable.
+    fn open_dialogue(&mut self, console: Console, dialogue: &Dialogue, full_present: bool) {
+        let lines: Vec<Spoken> = if full_present { dialogue.present.clone() } else { dialogue.present.last().cloned().into_iter().collect() };
+        if lines.is_empty() {
+            return;
+        }
+        // A story still being told is kept: it carries on once the dialogue closes.
+        self.lines.retain(|l| l.keep);
+        self.record_history(&lines[0].text);
+        self.dialogue = Some(StationDialogue { console, topics: dialogue.topics.clone(), lines, shown: 0.0 });
+        self.since_spoke = 0.0;
+    }
+
+    /// Advance the active station dialogue to its next beat, or dismiss it if on the last beat.
+    fn advance_dialogue(&mut self) -> bool {
+        let Some(dialogue) = &mut self.dialogue else { return false };
+        if dialogue.lines.len() > 1 {
+            dialogue.lines.remove(0);
+            dialogue.shown = 0.0;
+            let text = dialogue.lines[0].text.clone();
+            self.record_history(&text);
+            self.since_spoke = 0.0;
+        } else {
+            self.dialogue = None;
+        }
+        true
+    }
+
+    /// Answer a clicked station dialogue topic chip.
+    fn pick_topic(&mut self, index: usize) -> bool {
+        let Some(dialogue) = &mut self.dialogue else { return false };
+        let Some(topic) = dialogue.topics.get(index).cloned() else { return false };
+        if topic.lines.is_empty() {
+            return false;
+        }
+        let console = dialogue.console;
+        let first = topic.lines[0].text.clone();
+        dialogue.lines = topic.lines;
+        dialogue.shown = 0.0;
+        self.asked.insert((console, index));
+        self.record_history(&first);
+        self.since_spoke = 0.0;
+        true
     }
 
     /// Skip straight to the next queued line, or dismiss the bubble if this is the last one.
     pub fn advance_line(&mut self) -> bool {
+        if self.dialogue.is_some() {
+            return self.advance_dialogue();
+        }
         if self.lines.is_empty() {
             return false;
         }
@@ -241,7 +325,7 @@ impl Companion {
         }
     }
 
-    fn speak(&mut self, text: String, look: Option<String>, keep: bool) {
+    fn speak(&mut self, text: String, look: Option<String>, keep: bool, wait: bool) {
         self.record_history(&text);
         let telling = self.lines.iter().any(|l| l.keep);
         if telling {
@@ -254,23 +338,18 @@ impl Companion {
             self.lines.truncate(1);
         }
         let words = text.split_whitespace().count() as f32;
-        // Long enough to read, then out of the way.
-        self.lines.push(Line { text, left: (2.5 + words * 0.32).min(10.0), shown: 0.0, look, keep, said: self.frame });
+        // Timed lines stay long enough to read, then fade out; waiting lines stay until advanced.
+        self.lines.push(Line { text, left: (2.5 + words * 0.32).min(10.0), shown: 0.0, look, keep, wait, said: self.frame });
         self.since_spoke = 0.0;
     }
 
     /// Make a remark, if Lumen is not saying anything else.
     fn remark(&mut self, line: &Spoken) -> bool {
-        if !self.lines.is_empty() {
+        if !self.lines.is_empty() || self.dialogue.is_some() {
             return false;
         }
         self.say_spoken(line, false);
         true
-    }
-
-    /// Seconds until everything waiting to be said has been said.
-    fn talking_for(&self) -> f32 {
-        self.lines.iter().map(|l| l.left).sum()
     }
 
     fn feel(&mut self, mood: Mood, seconds: f32) {
@@ -286,11 +365,6 @@ impl Companion {
 /// What Lumen says once per station per session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Nudge {
-    /// Why the station matters, when it first opens.
-    Why,
-    /// Suggestions when a station opens.
-    Experiment,
-    Build,
     /// After a miss with the player's own g: it held up at the drop tower.
     YourG,
     /// The station has run out of charges.
@@ -354,6 +428,8 @@ struct Facts {
     at_finished_station: bool,
     /// A place the tutor asked Lumen to look at.
     held: Option<String>,
+    /// The place the active station dialogue line is pointing out.
+    dialogue_look: Option<String>,
     /// The place the line being said is about: the eye holds it when nothing is going on.
     line_look: Option<String>,
     /// What the avatar is carrying.
@@ -374,6 +450,9 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     }
     if let Some(held) = &f.held {
         return Some(held.clone());
+    }
+    if let Some(look) = &f.dialogue_look {
+        return Some(look.clone());
     }
     // Only the first station (the supply rail) gets step-by-step beam guidance, to teach the ruler
     // and carrying; later stations leave the screen clear so the player works out what to measure.
@@ -426,7 +505,6 @@ struct Seen {
     quizzes: BTreeSet<String>,
     station: Option<usize>,
     recharging: [bool; PUZZLES],
-    beam_open: bool,
     beam_releases: u32,
     beam_woken: bool,
 }
@@ -454,7 +532,8 @@ fn reset(sites: Res<Sites>, game: Res<Game>, mut landmarks: ResMut<Landmarks>, m
     *companion = Companion::default();
 }
 
-/// Pressing Enter while exploring advances or dismisses Lumen's current speech bubble.
+/// Pressing Enter advances or dismisses Lumen's current speech bubble or station dialogue
+/// whenever no text field has keyboard focus.
 fn advance_speech(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
@@ -462,11 +541,18 @@ fn advance_speech(
     waking: Res<crate::waking::Waking>,
     mut companion: ResMut<Companion>,
 ) {
-    if wants.wants_any_keyboard_input() || ui.at_console() || ui.tutor_open || waking.playing() {
+    if wants.wants_any_keyboard_input() || ui.tutor_open || waking.playing() {
         return;
     }
     if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]) {
-        companion.advance_line();
+        if let Some(dialogue) = &companion.dialogue {
+            // Enter steps through the beats; once the topic chips show, only "Got it" closes them.
+            if dialogue.lines.len() > 1 {
+                companion.advance_dialogue();
+            }
+        } else if !ui.at_console() {
+            companion.advance_line();
+        }
     }
 }
 
@@ -481,7 +567,7 @@ fn follow_sites(sites: Res<Sites>, mut landmarks: ResMut<Landmarks>) {
 fn direct(
     time: Res<Time>,
     game: Res<Game>,
-    ui: Res<Ui>,
+    mut ui: ResMut<Ui>,
     sim: Res<Sim>,
     ruler: Res<Ruler>,
     carry: Res<Carry>,
@@ -525,7 +611,6 @@ fn direct(
         quizzes: game.chapter.concepts.iter().filter(|c| game.save.quiz_done(&game.chapter, &c.id)).map(|c| c.id.clone()).collect(),
         station: ui.station,
         recharging: std::array::from_fn(|i| ui.recharging[i].is_some()),
-        beam_open: ui.beam_open,
         beam_releases: beam.releases,
         beam_woken: crate::beam::woken(&game),
     };
@@ -579,12 +664,6 @@ fn direct(
                     react_to_demo(companion, &game, puzzle);
                 }
             }
-            if now.beam_open && !before.beam_open && !now.beam_woken && !companion.beam_why {
-                companion.beam_why = true;
-                if let Some(side) = game.chapter.side(crate::beam::BEAM_ID) {
-                    companion.say(side.why.clone());
-                }
-            }
             if now.beam_releases > before.beam_releases {
                 react_to_release(companion, &game, &beam);
             }
@@ -609,47 +688,13 @@ fn direct(
             if now.station != before.station && now.station == next {
                 companion.beckon_left = 0.0;
             }
-            if now.station != before.station
-                && let Some(p) = now.station
-                && !game.solved(p)
-            {
-                let kind = game.def(p).kind;
-                let why = &game.def(p).why;
-                if !why.is_empty() && companion.nudged.insert((p, Nudge::Why)) {
-                    companion.say(why.clone());
-                }
-                let nudge = if game.def(p).demo.is_some() && !now.watched[p] {
-                    Some((Nudge::Experiment, "Try the experiment before any numbers. Make a guess first. It doesn't cost anything."))
-                } else {
-                    match kind {
-                        PuzzleKind::Gravity if gate_pending(&game, p) && carry.gate_on_stand() => Some((
-                            Nudge::Build,
-                            "The tower won't time a fall without its light gate. See it on the stand? Clamp it to any notch on the tower, then use the light gate control to drop and time it. I'd try a short drop and a long one.",
-                        )),
-                        PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => Some((
-                            Nudge::Build,
-                            "Looks like the cart won't budge empty. Try that loose stone block beside the rail. Press F to pick it up, and F again to set it on the bed.",
-                        )),
-                        PuzzleKind::Channel if carry.holds(Slot::Frame) == 0 => Some((
-                            Nudge::Build,
-                            "That dial only turns inside a narrow band. See those sockets under the launcher? The stone blocks on the ledge look the exact size to lift it.",
-                        )),
-                        _ => None,
-                    }
-                };
-                if let Some((nudge, line)) = nudge
-                    && companion.nudged.insert((p, nudge))
-                {
-                    companion.say(line);
-                }
-            }
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;
                 match now.next {
                     Some(_) => companion.say("That woke another console further along the road. Follow my beam, let's see what it wants."),
                     None => {
                         for line in &game.chapter.closing {
-                            companion.say_spoken(line, false);
+                            companion.say_spoken(line, true);
                         }
                     }
                 }
@@ -670,29 +715,71 @@ fn direct(
     }
     companion.last_seen = Some(now);
 
-    // Time passes for held looks, moods and lines.
+    if std::mem::take(&mut ui.request_briefing) {
+        if let Some(p) = ui.station {
+            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, false);
+        } else if ui.beam_open
+            && let Some(side) = game.chapter.side(crate::beam::BEAM_ID)
+        {
+            companion.open_dialogue(Console::Beam, &side.dialogue, false);
+        }
+    }
+
+    let testing = sim.testing().map(|p| game.def(p).kind);
+    let running = testing.is_some() || sim.demo().is_some() || sim.measuring().is_some() || beam.animating();
+
+    // Dismiss station dialogue when leaving its console, running a test/experiment, measuring with
+    // the ruler, or opening the full chat panel.
+    let active_console = ui.station.map(Console::Station).or(ui.beam_open.then_some(Console::Beam));
+    if companion.dialogue.as_ref().is_some_and(|d| Some(d.console) != active_console) || running || ruler.active || ui.tutor_open {
+        companion.dialogue = None;
+    }
+
+    // Lumen's briefing plays once per console per session, as soon as nothing else is going on
+    // there: not over a test, the ruler, the chat, a wake or a story still being told.
+    let free = companion.dialogue.is_none() && !running && !ruler.active && !ui.tutor_open && !waking.playing() && !companion.telling();
+    if free {
+        if let Some(p) = ui.station
+            && !game.solved(p)
+            && companion.presented.insert(Console::Station(p))
+        {
+            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, true);
+        } else if ui.beam_open
+            && !crate::beam::woken(&game)
+            && let Some(side) = game.chapter.side(crate::beam::BEAM_ID)
+            && companion.presented.insert(Console::Beam)
+        {
+            companion.open_dialogue(Console::Beam, &side.dialogue, true);
+        }
+    }
+
+    // Time passes for held looks, moods, dialogue fade-in and timed lines.
     if let Some((_, left)) = &mut companion.held {
         *left -= dt;
         if *left <= 0.0 {
             companion.held = None;
         }
     }
-    companion.beckon_left = (companion.beckon_left - dt).max(0.0);
+    if !companion.telling() {
+        companion.beckon_left = (companion.beckon_left - dt).max(0.0);
+    }
     companion.since_spoke += dt;
     companion.mood_left -= dt;
     if companion.mood_left <= 0.0 && companion.mood != Mood::Neutral {
         companion.mood = Mood::Neutral;
     }
+    if let Some(dialogue) = &mut companion.dialogue {
+        dialogue.shown += dt;
+    }
     if let Some(line) = companion.lines.first_mut() {
         line.shown += dt;
-        line.left -= dt;
-        if line.left <= 0.0 {
-            companion.lines.remove(0);
+        if !line.wait {
+            line.left -= dt;
+            if line.left <= 0.0 {
+                companion.lines.remove(0);
+            }
         }
     }
-
-    let testing = sim.testing().map(|p| game.def(p).kind);
-    let running = testing.is_some() || sim.demo().is_some() || sim.measuring().is_some() || beam.animating();
 
     // A remark about where the player is, if nothing else is going on.
     let calm = Quiet {
@@ -701,7 +788,7 @@ fn direct(
         ruler: ruler.active || ruler.in_use(),
         conversation_open: ui.tutor_open,
         carrying: carry.holding.is_some(),
-        speaking: !companion.lines.is_empty(),
+        speaking: !companion.lines.is_empty() || companion.dialogue.is_some(),
         since_spoke: companion.since_spoke,
     };
     if quiet(&calm) {
@@ -733,6 +820,7 @@ fn direct(
         beckon: companion.beckon_left > 0.0,
         at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
         held: companion.held.as_ref().map(|(place, _)| place.clone()),
+        dialogue_look: companion.dialogue.as_ref().and_then(|d| d.lines.first()).and_then(|l| l.look.clone()),
         line_look: companion.lines.first().filter(|l| l.shown > 0.0).and_then(|l| l.look.clone()),
         carrying: carry.holding,
         light_running: waking.light_running(),
@@ -757,11 +845,6 @@ fn direct(
             }
         }
     }
-}
-
-/// Nothing has been timed with the light gate yet (at the drop tower, `puzzle`).
-fn gate_pending(game: &Game, puzzle: usize) -> bool {
-    game.def(puzzle).kind == PuzzleKind::Gravity && !game.save.notebook.entries.iter().any(|e| e.source == source::LIGHT_GATE)
 }
 
 /// After a test: the station's line on a pass; on a miss, where to look, and where to read or ask.
@@ -1107,7 +1190,7 @@ fn draw(
     let hud_hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
     let show_chat = ui_state.tutor_open && !hud_hidden;
     // Forward to the bottom centre while there is something to say, back to the corner after.
-    let speaking = !show_chat && !companion.lines.is_empty();
+    let speaking = !show_chat && (companion.dialogue.is_some() || !companion.lines.is_empty());
     a.linger = if speaking { FORWARD_LINGER } else { (a.linger - dt).max(0.0) };
     let toward = if speaking || (a.linger > 0.0 && !show_chat) { 1.0 } else { 0.0 };
     a.forward += (toward - a.forward).clamp(-dt / FORWARD_SECONDS, dt / FORWARD_SECONDS);
@@ -1218,10 +1301,92 @@ fn draw(
             });
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-panel-tail")));
         paint_tail(&painter, panel.response.rect, centre, BUBBLE_FILL, stroke);
+    } else if !hud_hidden && companion.dialogue.is_some() {
+        // Interactive station briefing and Q&A chips in a bubble above the eye.
+        let (shown, text, more, console, topics) = {
+            let d = companion.dialogue.as_ref().expect("checked above");
+            (d.shown, d.lines[0].text.clone(), d.lines.len() > 1, d.console, d.topics.clone())
+        };
+        let alpha = (shown / 0.25).min(1.0);
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-dialogue-ring")));
+        if shown < RING_SECONDS {
+            let k = shown / RING_SECONDS;
+            painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
+        }
+        let max_w = 380.0_f32.min((right_edge - screen.left() - 24.0).max(240.0));
+        let anchor_x = centre.x.clamp(screen.left() + max_w / 2.0 + 10.0, (right_edge - max_w / 2.0 - 10.0).max(screen.left() + max_w / 2.0 + 10.0));
+        let anchor = pos2(anchor_x, centre.y - EYE - 22.0);
+        let fill = BUBBLE_FILL.gamma_multiply(alpha);
+        let stroke = Stroke::new(1.5, tint(colour, 0.85 * alpha));
+        let mut advance = false;
+        let mut pick: Option<usize> = None;
+        let mut dismiss = false;
+        let mut open_tutor = false;
+        let area =
+            egui::Area::new(egui::Id::new("lumen-dialogue")).order(egui::Order::Foreground).pivot(Align2::CENTER_BOTTOM).fixed_pos(anchor).show(&ctx, |ui| {
+                egui::Frame::new().fill(fill).stroke(stroke).corner_radius(8.0).inner_margin(10.0).show(ui, |ui| {
+                    ui.set_max_width(max_w);
+                    let line_resp =
+                        ui.add(egui::Label::new(RichText::new(&text).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap().sense(if more {
+                            egui::Sense::click()
+                        } else {
+                            egui::Sense::hover()
+                        }));
+                    if more && line_resp.clicked() {
+                        advance = true;
+                    }
+                    ui.add_space(8.0);
+                    if more {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Click or press Enter").small().color(crate::ui::DIM));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button(RichText::new("Next ▸").strong().color(crate::ui::LUMEN)).clicked() {
+                                    advance = true;
+                                }
+                            });
+                        });
+                    } else {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                            for (idx, topic) in topics.iter().enumerate() {
+                                let asked = companion.asked.contains(&(console, idx));
+                                let label = if asked {
+                                    RichText::new(format!("✔ {}", topic.ask)).color(crate::ui::DIM)
+                                } else {
+                                    RichText::new(&topic.ask).color(crate::ui::LUMEN)
+                                };
+                                if ui.button(label).clicked() {
+                                    pick = Some(idx);
+                                }
+                            }
+                            if lumen.tutor.is_online() && ui.button(RichText::new("Ask something else (T)").color(Color32::from_rgb(200, 225, 240))).clicked() {
+                                open_tutor = true;
+                            }
+                            if ui.button(RichText::new("Got it").strong()).clicked() {
+                                dismiss = true;
+                            }
+                        });
+                    }
+                });
+            });
+        let tail_painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-dialogue-tail")));
+        paint_tail(&tail_painter, area.response.rect, centre, fill, stroke);
+        let r = area.response.rect;
+        ui_state.occupied.push([r.min.x, r.min.y, r.max.x, r.max.y]);
+        if open_tutor {
+            companion.dialogue = None;
+            ui_state.tutor_open = true;
+        } else if dismiss {
+            companion.dialogue = None;
+        } else if let Some(idx) = pick {
+            companion.pick_topic(idx);
+        } else if advance {
+            companion.advance_dialogue();
+        }
     } else if let Some(line) = companion.lines.first() {
         // What Lumen is saying, in a clickable bubble over the eye.
         let more = companion.lines.len() > 1;
-        let alpha = (line.shown / 0.25).min(1.0) * (line.left / 0.5).min(1.0);
+        let alpha = if line.wait { (line.shown / 0.25).min(1.0) } else { (line.shown / 0.25).min(1.0) * (line.left / 0.5).min(1.0) };
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-says")));
         // A ring spreads from the eye as a line starts, to catch the eye of the player.
         if line.shown < RING_SECONDS {
@@ -1230,13 +1395,16 @@ fn draw(
         }
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
         let enter_advances = !ui_state.at_console() && !waking.playing();
-        let hint_text = match (orbit.free_look, enter_advances, more) {
-            (true, _, true) => "Press Enter for next",
-            (true, _, false) => "Press Enter to dismiss",
-            (false, true, true) => "Click or press Enter for next",
-            (false, true, false) => "Click or press Enter to dismiss",
-            (false, false, true) => "Click for next",
-            (false, false, false) => "Click to dismiss",
+        let hint_text = match (orbit.free_look, enter_advances, more, line.wait) {
+            (true, _, true, _) => "Press Enter for next",
+            (true, _, false, true) => "Press Enter to continue",
+            (true, _, false, false) => "Press Enter to dismiss",
+            (false, true, true, _) => "Click or press Enter for next",
+            (false, true, false, true) => "Click or press Enter to continue",
+            (false, true, false, false) => "Click or press Enter to dismiss",
+            (false, false, true, _) => "Click for next",
+            (false, false, false, true) => "Click to continue",
+            (false, false, false, false) => "Click to dismiss",
         };
         let hint_galley = painter.layout_no_wrap(hint_text.into(), egui::FontId::proportional(11.0), tint([160.0, 180.0, 200.0], alpha * 0.85));
         let width = galley.size().x.max(hint_galley.size().x);
@@ -1638,5 +1806,51 @@ mod tests {
         let placed = place_label(screen, pos2(180.0, 155.0), vec2(140.0, 22.0), None, &[dock]);
         assert!(!placed.intersects(dock), "label {placed:?} should not overlap dock {dock:?}");
         assert!(screen.contains_rect(placed));
+    }
+
+    #[test]
+    fn station_dialogue_presents_picks_topics_and_points_while_open() {
+        let chapter = physics_core::content::chapter_1_1();
+        let channel = chapter.puzzle("1.1.3").unwrap();
+        let mut companion = Companion::default();
+
+        // First open plays all presentation beats, waiting for advance.
+        companion.open_dialogue(Console::Station(3), &channel.dialogue, true);
+        assert!(companion.waiting_line());
+        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), channel.dialogue.present.len());
+        let first_look = companion.dialogue.as_ref().unwrap().lines[0].look.clone();
+        assert!(first_look.is_some());
+        let gaze = choose_gaze(&Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, dialogue_look: first_look.clone(), ..walking_to(3) });
+        assert_eq!(gaze, first_look, "station dialogue points at what it names");
+
+        // Advance to the final presentation beat, then pick a topic chip.
+        assert!(companion.advance_line());
+        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), 1);
+        assert!(companion.pick_topic(0));
+        assert!(companion.asked.contains(&(Console::Station(3), 0)));
+        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), channel.dialogue.topics[0].lines.len());
+
+        // Advancing through the topic reply dismisses the dialogue.
+        for _ in 0..channel.dialogue.topics[0].lines.len() {
+            assert!(companion.advance_line());
+        }
+        assert!(companion.dialogue.is_none());
+
+        // Re-opening via Briefing jumps directly to the last presentation line so chips show at once.
+        companion.open_dialogue(Console::Station(3), &channel.dialogue, false);
+        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), 1);
+    }
+
+    #[test]
+    fn story_lines_wait_instead_of_fading_out() {
+        let mut companion = Companion::default();
+        companion.say_spoken(&Spoken { text: "Opening line.".into(), look: None }, true);
+        assert!(companion.telling());
+        assert!(companion.waiting_line());
+        assert!(companion.lines[0].wait);
+        // Remarks still auto-fade.
+        let mut remarking = Companion::default();
+        assert!(remarking.remark(&Spoken { text: "Quiet remark.".into(), look: None }));
+        assert!(!remarking.waiting_line());
     }
 }

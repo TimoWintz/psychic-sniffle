@@ -29,9 +29,6 @@ use std::collections::HashSet;
 pub const WORLD_SIZE: IVec3 = IVec3::new(232, 72, 232);
 /// Height of the ground surface over most of the island.
 pub const GROUND: i32 = 20;
-/// Surface height of the dressed tidal stone slab at the base of the sea-cliff quarry (dry, just
-/// above sea level).
-pub const SLAB_Y: i32 = GROUND - Ch1Layout::SLAB_DROP as i32;
 /// The water's surface: as far below the ground as the simulator has the channel's water.
 pub const SEA_LEVEL: f32 = GROUND as f32 - Ch1Layout::WATER_DROP as f32;
 /// The deepest water the castaway wades into: the ground under it at most this far below the
@@ -100,11 +97,12 @@ pub struct Sites {
     /// bench directly below it.
     pub low_drop: Vec3,
     pub low_landing: Vec3,
-    /// Puzzle 2: underside of a stone dropped from the main cliff rim, and the tidal slab below it.
+    /// Puzzle 2: underside of a stone dropped from the main cliff rim, and the cove water surface
+    /// directly below it.
     pub cliff_drop: Vec3,
     pub cliff_landing: Vec3,
-    /// Puzzle 2: underside of the counterweight hanging from the outcrop overhang, and the shutter
-    /// socket on the tidal slab below it.
+    /// Puzzle 2: underside of the counterweight hanging from the outcrop overhang, and the water
+    /// shutter directly below it at sea level.
     pub overhang_release: Vec3,
     pub overhang_socket: Vec3,
     /// Ground at the quarry stone stack beside the console, where loose drop-stones are picked up.
@@ -531,8 +529,8 @@ impl Plan {
             Rect::new(route.rail_x - 22, line - 14, route.rail_x + 4, line + 3),
             // The railway, from the wreck to the buffer past the crane.
             Rect::new(route.rail_x - 3, line - 6, line_end, line + 4),
-            // Sea-cliff quarry: console, stone pile, low step, cliff rim, outcrop spur and return stair.
-            Rect::new(route.quarry.x - 10, channel.origin.y + 8, route.quarry.x + 20, route.quarry.y + 6),
+            // Sea-cliff quarry: console, stone pile, low step, cliff rim and outcrop spur.
+            Rect::new(route.quarry.x - 10, channel.origin.y + 8, route.quarry.x + 12, route.quarry.y + 6),
             // Ramp foot, outcrop, and the ledge launcher's line out past the channel to the end of its
             // level run.
             channel.rect(-LEDGE_DEPTH - 18, -6, Ch1Layout::CHANNEL_RUN as i32 + 10, 6),
@@ -742,22 +740,22 @@ pub fn build(layout: &Ch1Layout) -> (VoxelWorld, Sites) {
     // --- Puzzle 2: sea-cliff quarry, low 1 m step, cliff rim and outcrop overhang ----------------
     let (qx, qz) = (route.quarry.x, route.quarry.y);
     let (low_x, rim_x, overhang_x) = (qx - 2, qx + 2, qx + 6);
-    let rim_y = SLAB_Y + layout.cliff_h as i32;
-    let release_y = SLAB_Y + layout.overhang_h as i32;
+    let rim_y = GROUND - (10 - layout.cliff_h as i32);
+    let release_y = GROUND + layout.ledge_h as i32;
     let (quarry_wake_quartz, quarry_done_quartz) = quarry_cove(&mut world, route.quarry, layout, channel_frame.origin.x, channel_frame.origin.y);
     let low_drop = Vec3::new(low_x as f32 + 0.5, ground, qz as f32 + 1.5);
     let low_landing = Vec3::new(low_x as f32 + 0.5, (GROUND - Ch1Layout::LOW_DROP as i32) as f32, qz as f32 + 1.5);
     let cliff_drop = Vec3::new(rim_x as f32 + 0.5, rim_y as f32, qz as f32 + 1.5);
-    let cliff_landing = Vec3::new(rim_x as f32 + 0.5, SLAB_Y as f32, qz as f32 + 1.5);
+    let cliff_landing = Vec3::new(rim_x as f32 + 0.5, SEA_LEVEL, qz as f32 + 1.5);
     let overhang_release = Vec3::new(overhang_x as f32 + 0.5, release_y as f32, qz as f32 + 1.5);
-    let overhang_socket = Vec3::new(overhang_x as f32 + 0.5, SLAB_Y as f32, qz as f32 + 1.5);
+    let overhang_socket = Vec3::new(overhang_x as f32 + 0.5, SEA_LEVEL, qz as f32 + 1.5);
     // Survey pins sit on the south (+z) edge of each drop line, facing the cove camera with clear
     // sightlines across the water.
     let south_edge = Vec3::Z * 0.55;
     pins.push(Pin { position: cliff_drop + south_edge, label: "Cliff rim: drop lip" });
-    pins.push(Pin { position: cliff_landing + south_edge, label: "Cliff rim: tidal slab" });
+    pins.push(Pin { position: cliff_landing + south_edge, label: "Cliff rim: water surface" });
     pins.push(Pin { position: overhang_release + south_edge, label: "Outcrop overhang: release point" });
-    pins.push(Pin { position: overhang_socket + south_edge, label: "Outcrop overhang: shutter socket" });
+    pins.push(Pin { position: overhang_socket + south_edge, label: "Outcrop overhang: water shutter" });
     let low_step_pins = [
         Pin { position: low_drop + south_edge, label: "Low quarry step: drop lip" },
         Pin { position: low_landing + south_edge, label: "Low quarry step: landing slab" },
@@ -1286,46 +1284,45 @@ fn outcrop(world: &mut VoxelWorld, frame: &Frame, ledge_h: i32) {
 }
 
 /// The sea-cliff quarry for Puzzle 2, carved into the south-east flank of the outcrop and opening
-/// south into a coastal cove:
-/// - a dry dressed-stone tidal slab at [`SLAB_Y`] (just above sea level);
+/// south straight into a deep coastal cove:
+/// - open cove water right up to the sheer cliff face (depth > `WADE_DEPTH`, so falling in rescues
+///   the castaway cleanly back onto dry ground);
 /// - a 1 m low quarry step right beside the console at `GROUND` -> `GROUND - 1`;
-/// - a main cliff rim (`cliff_h` m above the tidal slab, reached by carved quarry steps);
+/// - a main cliff rim (`9.4..=11.4 m` above the water surface, reached by carved quarry steps);
 /// - a sheer rock spur continuing the outcrop mesa (`ledge_h` above `GROUND`, unclimbable) with a
-///   short pale-stone davit overhang holding the verification counterweight `overhang_h` m above
-///   the quartz socket on the tidal slab;
-/// - a stone staircase climbing east off the tidal slab back up to `GROUND`, so jumping down never
-///   traps the player.
+///   short pale-stone davit overhang holding the verification counterweight `14.4..=16.4 m` above
+///   the waterline shutter.
 ///
-/// Returns `(wake_quartz, done_quartz)`: studs around the socket that light when the station wakes,
-/// and the socket floor + vertical quartz vein up the cliff wall that light when gravity is solved.
+/// Returns `(wake_quartz, done_quartz)`: waterline studs on the cliff face flanking the shutter
+/// that light when the station wakes, and a vertical quartz vein climbing the sheer cliff face to
+/// the davit cap that lights when gravity is solved.
 fn quarry_cove(world: &mut VoxelWorld, quarry: IVec2, layout: &Ch1Layout, channel_x: i32, rim_z: i32) -> (Vec<IVec3>, Vec<IVec3>) {
     let (qx, qz) = (quarry.x, quarry.y);
     let (low_x, rim_x, overhang_x) = (qx - 2, qx + 2, qx + 6);
-    let rim_y = SLAB_Y + layout.cliff_h as i32;
+    let rim_y = GROUND - (10 - layout.cliff_h as i32);
     let ledge_top = GROUND + layout.ledge_h as i32;
-    let release_y = SLAB_Y + layout.overhang_h as i32;
+    let release_y = ledge_top;
+    let water_y = SEA_LEVEL.floor() as i32;
 
-    // 1. Open sea cove south of the quarry so the station camera floats over water with a clear
-    //    cross-section view of the cliff, ledges, and tidal slab.
-    for z in (qz + 4)..WORLD_SIZE.z {
+    // 1. Open sea cove south of the quarry, right up to the sheer cliff face (z >= qz + 1 under the
+    //    cliff rim and outcrop spur, z >= qz + 2 south of the low step), so stones and the
+    //    counterweight drop straight into deep water and the station camera floats over the cove.
+    for z in (qz + 1)..WORLD_SIZE.z {
         let zf = z as f32;
-        let taper = ((z - (qz + 4)) as f32 / 14.0).min(1.0);
-        let west_wander = (fbm(0.5, zf / 8.0, 91, 2) * 3.0 * taper).round() as i32;
-        let west = (low_x - 1 - west_wander).max(channel_x + 7);
+        let west = if z >= qz + 4 {
+            let taper = ((z - (qz + 4)) as f32 / 14.0).min(1.0);
+            let west_wander = (fbm(0.5, zf / 8.0, 91, 2) * 3.0 * taper).round() as i32;
+            (low_x - 1 - west_wander).max(channel_x + 7)
+        } else if z >= qz + 2 {
+            low_x - 1
+        } else {
+            rim_x - 1
+        };
         for x in west..WORLD_SIZE.x {
             let bed = CHANNEL_BED - (hash01(IVec3::new(x, 304, z)) < 0.3) as i32;
             if world.surface(x, z) <= bed {
                 continue;
             }
-            world.fill(IVec3::new(x, bed, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
-            world.set(IVec3::new(x, bed - 1, z), Material::Sand);
-        }
-    }
-    // Also open the water immediately south of the low step (z = qz + 2..=qz + 3) so its bench sits
-    // cleanly over the cove edge and nothing blocks its pins.
-    for z in (qz + 2)..=(qz + 3) {
-        for x in (low_x - 1)..=(rim_x - 2) {
-            let bed = CHANNEL_BED;
             world.fill(IVec3::new(x, bed, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
             world.set(IVec3::new(x, bed - 1, z), Material::Sand);
         }
@@ -1345,7 +1342,7 @@ fn quarry_cove(world: &mut VoxelWorld, quarry: IVec2, layout: &Ch1Layout, channe
     }
 
     // 3. Low 1 m quarry step: standing lip at (low_x, GROUND, qz), landing bench 1 m lower at
-    //    (low_x, GROUND - 1, qz + 1).
+    //    (low_x, GROUND - 1, qz + 1), perched right over the cove edge.
     world.set(IVec3::new(low_x, GROUND - 1, qz), Material::Marker);
     for x in (low_x - 1)..=(low_x + 1) {
         world.fill(IVec3::new(x, 0, qz + 1), IVec3::new(x, GROUND - 3, qz + 1), Material::Rock);
@@ -1353,18 +1350,8 @@ fn quarry_cove(world: &mut VoxelWorld, quarry: IVec2, layout: &Ch1Layout, channe
         world.fill(IVec3::new(x, GROUND - 1, qz + 1), IVec3::new(x, WORLD_SIZE.y - 1, qz + 1), Material::Air);
     }
 
-    // 4. Carve the cliff bay and lay the dressed tidal stone slab at SLAB_Y.
-    for z in (qz + 1)..=(qz + 3) {
-        for x in (rim_x - 1)..=(overhang_x + 2) {
-            world.fill(IVec3::new(x, 0, z), IVec3::new(x, SLAB_Y - 2, z), Material::Rock);
-            world.set(IVec3::new(x, SLAB_Y - 1, z), Material::Limestone);
-            world.fill(IVec3::new(x, SLAB_Y, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
-        }
-    }
-    world.set(IVec3::new(rim_x, SLAB_Y - 1, qz + 1), Material::Marker);
-
-    // 5. Main cliff rim (`cliff_h` m above SLAB_Y, so y = 18..=20) with carved limestone steps
-    //    descending smoothly from GROUND.
+    // 4. Main cliff rim (`rim_y` = 18..=20, so `9.4..=11.4 m` above the cove water) with carved
+    //    limestone steps descending smoothly from GROUND.
     let drop_steps = (GROUND - rim_y).max(0);
     for z in (qz - 4)..=qz {
         for x in (rim_x - 2)..=(rim_x + 1) {
@@ -1390,17 +1377,16 @@ fn quarry_cove(world: &mut VoxelWorld, quarry: IVec2, layout: &Ch1Layout, channe
             world.fill(IVec3::new(x, h, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
         }
     }
-    // Clean sheer cleft between the cliff rim (rim_x + 1) and the outcrop spur (overhang_x - 1) so
-    // the two drops read distinctly and nothing bridges them.
+    // Clean water-filled cleft between the cliff rim (rim_x + 1) and the outcrop spur
+    // (overhang_x - 1) so the two drops read distinctly and nothing bridges them.
     for x in (rim_x + 2)..=(overhang_x - 2) {
         for z in qz..=(qz + 3) {
-            world.fill(IVec3::new(x, 0, z), IVec3::new(x, SLAB_Y - 2, z), Material::Rock);
-            world.set(IVec3::new(x, SLAB_Y - 1, z), Material::Limestone);
-            world.fill(IVec3::new(x, SLAB_Y, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+            world.fill(IVec3::new(x, CHANNEL_BED, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
+            world.set(IVec3::new(x, CHANNEL_BED - 1, z), Material::Sand);
         }
     }
 
-    // 6. Sheer outcrop rock spur connected seamlessly to the outcrop mesa (south of the channel's
+    // 5. Sheer outcrop rock spur connected seamlessly to the outcrop mesa (south of the channel's
     //    camera corridor), rising to `ledge_top` (always >= 3 m above GROUND: unclimbable).
     for z in (rim_z + 11)..=qz {
         let min_x = if z <= rim_z + 17 { channel_x + 6 } else { overhang_x - 1 };
@@ -1413,48 +1399,26 @@ fn quarry_cove(world: &mut VoxelWorld, quarry: IVec2, layout: &Ch1Layout, channe
         }
     }
 
-    // 7. Builders' pale-stone davit overhang atop the outcrop spur, holding the counterweight
-    //    `overhang_h` m above the shutter socket on the tidal slab, plus quartz vein down the face.
+    // 6. Builders' pale-stone davit pier atop the outcrop spur (its cantilevered arm over the
+    //    water is spawned as an entity in `sim` so the water column below stays unobstructed for
+    //    deep-water checks), plus quartz vein up the sheer cliff face.
     for z in [qz - 1, qz] {
         world.fill(IVec3::new(overhang_x, ledge_top, z), IVec3::new(overhang_x, release_y + 1, z), Material::Limestone);
     }
-    world.set(IVec3::new(overhang_x, release_y + 1, qz + 1), Material::Limestone);
 
-    // Quartz inlaid in the socket rim (wake) and up the cliff face to the davit cap (done).
-    let wake_quartz = vec![IVec3::new(overhang_x - 1, SLAB_Y - 1, qz + 1), IVec3::new(overhang_x + 1, SLAB_Y - 1, qz + 1)];
+    // Quartz inlaid at the waterline flanking the shutter (wake) and climbing the sheer cliff face
+    // up to the davit cap (done).
+    let wake_quartz = vec![IVec3::new(overhang_x - 1, water_y, qz), IVec3::new(overhang_x + 1, water_y, qz)];
     for &q in &wake_quartz {
         world.set(q, Material::Quartz);
     }
-    let mut done_quartz = vec![IVec3::new(overhang_x, SLAB_Y - 1, qz + 1)];
-    for y in (SLAB_Y + 1..ledge_top).step_by(2) {
+    let mut done_quartz = vec![IVec3::new(overhang_x, water_y, qz)];
+    for y in (water_y + 2..ledge_top).step_by(2) {
         done_quartz.push(IVec3::new(overhang_x, y, qz));
     }
     done_quartz.push(IVec3::new(overhang_x, release_y + 1, qz));
     for &q in &done_quartz {
         world.set(q, Material::Quartz);
-    }
-
-    // 8. Quarry return staircase climbing east off the tidal slab back up to GROUND (10 steps,
-    //    2 blocks wide), well clear of the outcrop spur so it only returns to GROUND.
-    for step in 0..Ch1Layout::SLAB_DROP as i32 {
-        let x = overhang_x + 3 + step;
-        let top = SLAB_Y + 1 + step;
-        for z in (qz + 1)..=(qz + 2) {
-            world.fill(IVec3::new(x, 0, z), IVec3::new(x, top - 2, z), Material::Rock);
-            world.set(IVec3::new(x, top - 1, z), Material::Limestone);
-            world.fill(IVec3::new(x, top, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
-        }
-        // Clear a narrow shelf along z = qz + 3 south of the stair so it opens cleanly to the cove.
-        world.fill(IVec3::new(x, CHANNEL_BED, qz + 3), IVec3::new(x, WORLD_SIZE.y - 1, qz + 3), Material::Air);
-        world.set(IVec3::new(x, CHANNEL_BED - 1, qz + 3), Material::Sand);
-    }
-    // Flat landing at the top of the stair connecting smoothly to GROUND.
-    for x in (overhang_x + 3 + Ch1Layout::SLAB_DROP as i32)..=(overhang_x + 5 + Ch1Layout::SLAB_DROP as i32) {
-        for z in (qz - 1)..=(qz + 2) {
-            world.fill(IVec3::new(x, 0, z), IVec3::new(x, GROUND - 2, z), Material::Rock);
-            world.set(IVec3::new(x, GROUND - 1, z), Material::Grass);
-            world.fill(IVec3::new(x, GROUND, z), IVec3::new(x, WORLD_SIZE.y - 1, z), Material::Air);
-        }
     }
 
     (wake_quartz, done_quartz)
@@ -1935,16 +1899,20 @@ mod tests {
             let ridge = Instance::new(PuzzleKind::Ridge, &layout).profile().unwrap();
             assert_eq!(columns(&world, &sites.ridge_launch, ridge.heights.len()), ridge.heights, "seed {seed}: ridge");
 
-            // The three quarry drops are clear all the way down and exactly as tall as the layout says.
-            for (release, plate, height, mat) in [
-                (sites.low_drop, sites.low_landing, Ch1Layout::LOW_DROP, Material::Marker),
-                (sites.cliff_drop, sites.cliff_landing, layout.cliff_h, Material::Marker),
-                (sites.overhang_release, sites.overhang_socket, layout.overhang_h, Material::Quartz),
-            ] {
-                assert_eq!(release.y - plate.y, height as f32);
+            // The low quarry step hits its orange landing block; the cliff rim and outcrop overhang
+            // drop cleanly all the way down into deep cove water at SEA_LEVEL.
+            assert_eq!(sites.low_drop.y - sites.low_landing.y, Ch1Layout::LOW_DROP as f32);
+            let low_hit = world.raycast(sites.low_drop + Vec3::Y * 0.5, Vec3::NEG_Y, 80.0).unwrap();
+            assert!((low_hit.point.y - sites.low_landing.y).abs() < 1e-4, "seed {seed}: something blocks the low step");
+            assert_eq!(world.get(low_hit.cell), Material::Marker);
+
+            for (release, water_hit, height) in
+                [(sites.cliff_drop, sites.cliff_landing, layout.cliff_drop_h()), (sites.overhang_release, sites.overhang_socket, layout.overhang_drop_h())]
+            {
+                assert!((release.y - water_hit.y - height as f32).abs() < 1e-4, "seed {seed}");
+                assert!((water_hit.y - SEA_LEVEL).abs() < 1e-5, "seed {seed}");
                 let hit = world.raycast(release + Vec3::Y * 0.5, Vec3::NEG_Y, 80.0).unwrap();
-                assert!((hit.point.y - plate.y).abs() < 1e-4, "seed {seed}: something is in the way of the drop");
-                assert_eq!(world.get(hit.cell), mat);
+                assert!(too_deep(hit.point.y.round() as i32), "seed {seed}: drop does not reach deep water (hit y={})", hit.point.y);
             }
         }
     }
@@ -2250,7 +2218,7 @@ mod tests {
     }
 
     #[test]
-    fn the_quarry_has_drop_stones_and_a_return_stair() {
+    fn the_quarry_drops_into_deep_cove_water() {
         for seed in 0..200 {
             let layout = Ch1Layout::generate(seed);
             let (world, sites) = build(&layout);
@@ -2259,17 +2227,12 @@ mod tests {
             assert!(!world.is_solid(pile) && !world.is_solid(pile + IVec3::Y), "seed {seed}: the stone pile is buried");
             // Every pin is present when the island is built.
             assert!(sites.pins.iter().all(Pin::present), "seed {seed}");
-            // The quarry return stair climbs one block per step from the tidal slab back to GROUND.
-            let slab_x = sites.overhang_socket.x.floor() as i32;
-            let slab_z = sites.overhang_socket.z.floor() as i32;
-            let mut last = world.surface(slab_x + 2, slab_z);
-            assert_eq!(last, SLAB_Y, "seed {seed}");
-            for step in 0..Ch1Layout::SLAB_DROP as i32 {
-                let here = world.surface(slab_x + 3 + step, slab_z);
-                assert_eq!(here, last + 1, "seed {seed}: stair step {step} jumped {last} -> {here}");
-                last = here;
+            // Both the cliff rim and the counterweight shutter sit over deep cove water, so falling
+            // off triggers deep-water rescue cleanly back to dry ground.
+            for target in [sites.cliff_landing, sites.overhang_socket] {
+                let col = target.floor().as_ivec3();
+                assert!(too_deep(world.surface(col.x, col.z)), "seed {seed}: cove column ({}, {}) is not deep water", col.x, col.z);
             }
-            assert_eq!(last, GROUND, "seed {seed}");
         }
     }
 

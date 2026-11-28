@@ -998,10 +998,10 @@ fn direct(
                 companion.feel(Mood::Pleased, 4.0);
                 if now.cliff_drops == 1 {
                     companion.say(
-                        "Timed the cliff drop, and it's in your notebook. Measure the drop height with the ruler and we're ready to work out local gravity.",
+                        "Timed the splash from the cliff rim, and it's in your notebook. Measure the drop down to the water with the ruler and we're ready to work out local gravity.",
                     );
                 } else {
-                    companion.say("Timed the cliff drop again. Same reading.");
+                    companion.say("Timed the cliff splash again. Same reading.");
                 }
             }
             if now.beam_woken && !before.beam_woken {

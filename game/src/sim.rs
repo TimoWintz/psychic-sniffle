@@ -604,8 +604,52 @@ pub(crate) fn setup(
         }
     }
 
-    // The two sliding pale-stone shutter leaves over the tidal slab's quartz socket. They slide
-    // apart along +/-X at the player's predicted arrival time during the verification drop.
+    // The pale-stone davit arm projecting south off the outcrop pier above the counterweight, plus
+    // a short stone suspension stem down to its top face (kept as entities so the cove water column
+    // underneath stays unobstructed for deep-water rescue).
+    commands.spawn((
+        WorldEntity,
+        Mesh3d(meshes.add(Cuboid::new(0.84, 0.62, 1.45))),
+        MeshMaterial3d(stone.clone()),
+        Transform::from_xyz(sites.overhang_release.x, sites.overhang_release.y + 1.35, sites.overhang_release.z - 0.35),
+    ));
+    commands.spawn((
+        WorldEntity,
+        Mesh3d(meshes.add(Cuboid::new(0.18, 0.45, 0.18))),
+        MeshMaterial3d(stone.clone()),
+        Transform::from_xyz(sites.overhang_release.x, sites.overhang_release.y + MASS_SIZE.y + 0.16, sites.overhang_release.z),
+    ));
+
+    // The waterline pale-stone shutter collar anchored to the sheer cliff face at SEA_LEVEL,
+    // framing the open water well beneath the counterweight, plus the two sliding stone shutter
+    // leaves that part at the player's predicted arrival time during the verification drop.
+    let frame_fb = meshes.add(Cuboid::new(1.36, 0.22, 0.16));
+    let frame_lr = meshes.add(Cuboid::new(0.16, 0.22, 1.36));
+    let tie_beam = meshes.add(Cuboid::new(0.16, 0.20, 0.55));
+    let collar_y = sites.overhang_socket.y - 0.04;
+    for dz in [-0.62f32, 0.62] {
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(frame_fb.clone()),
+            MeshMaterial3d(stone.clone()),
+            Transform::from_xyz(sites.overhang_socket.x, collar_y, sites.overhang_socket.z + dz),
+        ));
+    }
+    for dx in [-0.62f32, 0.62] {
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(frame_lr.clone()),
+            MeshMaterial3d(stone.clone()),
+            Transform::from_xyz(sites.overhang_socket.x + dx, collar_y, sites.overhang_socket.z),
+        ));
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(tie_beam.clone()),
+            MeshMaterial3d(stone.clone()),
+            Transform::from_xyz(sites.overhang_socket.x + dx, collar_y, sites.overhang_socket.z - 0.78),
+        ));
+    }
+
     let leaf_mesh = meshes.add(Cuboid::new(SHUTTER_WIDTH, SHUTTER_HEIGHT, 1.08));
     let leaf_trim = meshes.add(Cuboid::new(0.08, SHUTTER_HEIGHT + 0.02, 1.1));
     let solved_gravity = game.kind_solved(PuzzleKind::Gravity);
@@ -901,6 +945,12 @@ fn handle_requests(
             let verdict = Verdict { outcome: outcome.clone() };
             match outcome.playback {
                 Playback::Drop { predicted_time, actual_time, .. } => {
+                    for (prop, mut transform, mut visibility) in &mut props {
+                        if *prop == Prop::Counterweight {
+                            transform.translation = rest_pose(Prop::Counterweight, &sites, &game);
+                            *visibility = Visibility::Visible;
+                        }
+                    }
                     orbit.frame_side_view(sites.overhang_socket, sites.overhang_release, Vec3::X, false);
                     Running::OverhangDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, landed: false, verdict }
                 }
@@ -1103,7 +1153,7 @@ fn advance(
     match &mut running {
         Running::Strobe { puzzle, t, flashes, shown, guess } => {
             *t += dt;
-            let height = game.layout.cliff_h as f32;
+            let height = game.layout.cliff_drop_h() as f32;
             let fall_time = (2.0 * height / g).sqrt();
             let start = sites.cliff_drop + Vec3::Y * STONE_SIZE.y / 2.0;
             // Each flash leaves an afterimage of the quarry stone and a tick beside its path.
@@ -1128,7 +1178,7 @@ fn advance(
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
-                    crate::particles::burst(&mut commands, crate::particles::Kind::Dust, sites.cliff_landing, 0.8);
+                    splash(&mut commands, &assets, sites.cliff_landing);
                     hand_over(
                         &mut commands,
                         assets.quarry_stone.clone(),
@@ -1163,7 +1213,10 @@ fn advance(
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
-                    crate::particles::burst(&mut commands, crate::particles::Kind::Dust, landing, 0.9);
+                    match ledge {
+                        DropLedge::Low => crate::particles::burst(&mut commands, crate::particles::Kind::Dust, landing, 0.9),
+                        DropLedge::Cliff => splash(&mut commands, &assets, landing),
+                    }
                     hand_over(
                         &mut commands,
                         assets.quarry_stone.clone(),
@@ -1294,22 +1347,33 @@ fn advance(
         }
         Running::OverhangDrop { puzzle, t, predicted, actual, landed, verdict } => {
             *t += dt;
-            let height = game.layout.overhang_h as f32;
+            let height = game.layout.overhang_drop_h() as f32;
             let pass = verdict.outcome.pass;
-            let end_t = if pass { *actual + 0.35 } else { (*actual).max((*predicted).min(*actual + 1.2)) + 0.45 };
+            let end_t = if pass { *actual + 0.45 } else { (*actual).max((*predicted).min(*actual + 1.2)) + 0.45 };
             for (prop, mut transform, mut visibility, material) in &mut props {
                 if *prop != Prop::Counterweight {
                     continue;
                 }
                 let start = rest_pose(Prop::Counterweight, &sites, &game);
-                let stop_drop = if pass { height + 0.15 } else { height - SHUTTER_HEIGHT };
+                let stop_drop = if pass { height + 0.25 } else { height - SHUTTER_HEIGHT };
                 transform.translation = start - Vec3::Y * fallen(g, *t, stop_drop);
                 sim.action = Some(transform.translation);
                 if *t >= *actual && !*landed {
                     *landed = true;
-                    crate::particles::burst(&mut commands, crate::particles::Kind::Dust, sites.overhang_socket, 1.2);
-                    if !pass {
-                        *visibility = Visibility::Hidden;
+                    *visibility = Visibility::Hidden;
+                    if pass {
+                        splash(&mut commands, &assets, sites.overhang_socket);
+                        hand_over(
+                            &mut commands,
+                            assets.mass.clone(),
+                            MASS_SIZE,
+                            transform.translation,
+                            Vec3::NEG_Y * g * *actual * 0.45,
+                            material.0.clone(),
+                            AfterSettling::Vanish,
+                        );
+                    } else {
+                        crate::particles::burst(&mut commands, crate::particles::Kind::Dust, sites.overhang_socket, 1.2);
                         hand_over(
                             &mut commands,
                             assets.mass.clone(),

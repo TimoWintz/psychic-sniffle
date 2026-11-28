@@ -155,30 +155,31 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
 - **Story.** The launchers do exactly what they are told and work nothing out, and Lumen's backup only
   knows home's gravity: Lumen would rather have the player's number than its guess. Pass: the
   player's g is in Lumen, and every later shot is worked out with it.
-- **Wakes.** The counterweight drops cleanly into the stone shutter socket on the tidal slab, a vein
+- **Wakes.** The counterweight plunges cleanly through the stone water shutter into the cove, a vein
   of quartz lights up the cliff face to the outcrop, the ramp onto the outcrop surfaces, and the
   sight is set on the ledge launcher.
 - **Brief.** The launchers need this planet's gravitational acceleration.
 - **Investigate.** Pick up a quarry drop-stone (`F`) from the stack beside the console, walk to either
-  orange drop lip (the 1 m low quarry step right beside the console or the deep sea-cliff rim, 8 to
-  10 m above the dressed tidal slab), and press `F` to release it straight down from rest (free,
-  repeatable). Lumen's stopwatch times release to impact and logs `t` only into the notebook; measure
-  the drop height `h` yourself with the ruler (`R`). A quarry return staircase climbs back up from the
-  tidal slab so jumping down never traps the player.
+  orange drop lip (the 1 m low quarry step right beside the console or the deep sea-cliff rim, 9.4 to
+  11.4 m straight above the cove water), and press `F` to release it straight down from rest (free,
+  repeatable). Lumen's stopwatch times release to impact (or splash) and logs `t` only into the
+  notebook; measure the drop height `h` yourself with the ruler (`R`). The cove below is deep water,
+  so jumping off splashes the castaway cleanly back onto dry ground.
 - **Short drops are worth less.** Readings are rounded to 0.01 s, so at the 1 m low step (about 0.38
   to 0.55 s) the rounding alone is up to about 2.6 % of `g`, rough enough to push high-g worlds past
-  the 2 % pass. The deep cliff rim (8 to 10 m, always over a second) gives `g` to within 1 %.
+  the 2 % pass. The deep cliff rim (9.4 to 11.4 m straight into the cove water, always over a second)
+  gives `g` to within 1 %.
 - **Try it first.** "How will flashes at equal moments be spaced?" Evenly / further apart lower down /
-  closer together. A quarry stone falls down the dark slate-violet cliff face with amber afterimages
-  and ticks whose gaps grow. Writes the pages *Acceleration* and *Free fall*.
+  closer together. A quarry stone falls down the dark slate-violet cliff face into the sea with amber
+  afterimages and ticks whose gaps grow. Writes the pages *Acceleration* and *Free fall*.
 - **Predict.** Enter `g`.
 - **Test.** A heavy builders' counterweight hangs from a stone davit overhanging the sheer,
-  unclimbable outcrop spur (`14` to `16 m` above the tidal slab). Two sliding pale-stone shutter
-  leaves cover a recessed quartz socket on the slab directly beneath it. When `g` is committed, the
+  unclimbable outcrop spur (`14.4` to `16.4 m` above the cove water). Two sliding pale-stone shutter
+  leaves set in a waterline collar frame the water directly beneath it. When `g` is committed, the
   counterweight releases and the shutters slide open at the predicted arrival time
-  `t_pred = sqrt(2 H / g)`. Within 2 %, the counterweight drops cleanly into the open socket; outside
-  2 %, it visibly strikes the closed stone shutter (before it opens if `g` is too low, or after it
-  snaps shut if `g` is too high).
+  `t_pred = sqrt(2 H / g)`. Within 2 %, the counterweight plunges cleanly through the open shutter
+  into the cove; outside 2 %, it visibly strikes the closed stone shutter (before it opens if `g` is
+  too low, or after it snaps shut if `g` is too high).
 - **Pass.** Within 2 % of the true value. The player's `g` is then written to the notebook and used by
   the later puzzles — their own measurement, not the game's number.
 - **Relation.** `h = ½ g t²`.

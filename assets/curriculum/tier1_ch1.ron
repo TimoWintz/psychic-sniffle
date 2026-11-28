@@ -411,7 +411,7 @@ Chapter(
             dialogue: Dialogue(
                 present: [
                     Spoken(text: "This pedestal won't take a distance or a speed. It wants local gravity, and my tables are only good for home.", look: Some("Outcrop overhang: release point")),
-                    Spoken(text: "See that heavy counterweight hanging off the outcrop above the cove? When you enter a value, those stone shutters on the tidal slab open right when it should arrive.", look: Some("Outcrop overhang: shutter socket")),
+                    Spoken(text: "See that heavy counterweight hanging off the outcrop above the cove? When you enter a value, those stone shutters on the water open right when it should arrive.", look: Some("Outcrop overhang: water shutter")),
                 ],
                 topics: [
                     Topic(
@@ -424,13 +424,13 @@ Chapter(
                     Topic(
                         ask: "Which ledge should I drop from?",
                         lines: [
-                            Spoken(text: "There's a short step right beside us and a much deeper cliff rim just past it. Both are marked with orange lips and pins down to their landing slabs.", look: Some("Low quarry step: drop lip")),
-                            Spoken(text: "My stopwatch rounds to hundredths of a second, so a short drop only gives a rough number. Try both ledges and see how much cleaner the tall cliff is.", look: Some("Cliff rim: tidal slab")),
+                            Spoken(text: "There's a short step right beside us and a much deeper cliff rim hanging straight over the cove water. Both have orange lips and pins to measure.", look: Some("Low quarry step: drop lip")),
+                            Spoken(text: "My stopwatch rounds to hundredths of a second, so a short drop only gives a rough number. Try both ledges and see how much cleaner the splash from the cliff is.", look: Some("Cliff rim: water surface")),
                         ],
                     ),
                 ],
             ),
-            done: "The counterweight dropped straight into the socket, the cliff lit all the way to the outcrop, and stone steps just rose out of the ground! I've logged your g too. Let's climb up and see what's waiting on that ledge.",
+            done: "The counterweight plunged straight through the water shutter, the cliff lit all the way to the outcrop, and stone steps just rose out of the ground! I've logged your g too. Let's climb up and see what's waiting on that ledge.",
             concepts: ["acceleration", "free_fall"],
             requires: ["1.1.1"],
             charges: 3,

@@ -54,7 +54,7 @@ pub enum Yard {
 pub enum DropLedge {
     /// The 1 m step right beside the console.
     Low,
-    /// The deep sea-cliff rim above the tidal slab.
+    /// The deep sea-cliff rim straight above the cove water.
     Cliff,
 }
 

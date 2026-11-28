@@ -51,7 +51,7 @@ const READINGS: [(&str, &str, &str, bool); 8] = [
     ("d2", "Haul cart: front coupler", "Crawler: rear coupler", false),
     ("d3", "Haul cart: front coupler", "Transfer marker: centre", false),
     ("d4", "Timing post A", "Timing post B", false),
-    ("h1", "Cliff rim: drop lip", "Cliff rim: tidal slab", true),
+    ("h1", "Cliff rim: drop lip", "Cliff rim: water surface", true),
     ("d5", "Ledge launcher: release point", "Platform: centre", false),
     ("h2", "Ledge launcher: release point", "Platform: centre", true),
     ("d6", "Tilting launcher: release point", "Landing circle: centre", false),

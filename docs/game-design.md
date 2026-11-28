@@ -85,8 +85,8 @@ Two hands built what stands at the puzzle sites, and they should never be confus
 
 - **The way.** A road of dressed pale stone runs from the south coast to a gate on the north shore,
   and its builders' machines stand along it: a cart in a groove sunk in stone, a crawler that walks
-  on six stone legs, a sea-cliff quarry with a counterweight davit overhanging a stone shutter on a
-  tidal slab, two launchers (one in a stone jack frame on a ledge over the channel, one that
+  on six stone legs, a sea-cliff quarry with a counterweight davit overhanging a waterline stone
+  shutter in the cove, two launchers (one in a stone jack frame on a ledge over the channel, one that
   tilts), a crane arm, a suspension bridge over the channel, and a quay with a slipway down to the
   strait, where their skiff lies. The bridge's deck hangs from cables of the same light as the road's
   quartz, and while it sleeps there is no bridge at all. Beside each machine
@@ -267,7 +267,7 @@ spine, and nothing goes round it. The castaway reaches the skiff only once its h
 |---|---|---|
 | The supply rail | their cart, and the one console that still glows; the cart will not run empty, so a block of theirs goes on it (and how every station works) | the marker's quartz lights and the stone gate grinds open; the cart rolls on through and becomes the haul cart |
 | Catch the crawler | the builders' crawler, still walking its rounds, carries the sight: the piece the launchers aim with | the crane arm wakes and lifts the sight off; the light runs to the sea-cliff quarry |
-| Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the counterweight drops cleanly into the shutter socket, the quartz vein lights up the cliff face to the outcrop, and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
+| Local gravity | the launchers work nothing out, and Lumen's backup only knows home's gravity | the counterweight plunges cleanly through the water shutter into the cove, the quartz vein lights up the cliff face to the outcrop, and the ramp onto the outcrop surfaces; the player's g is in the notebook and Lumen uses it; the sight is set on the ledge launcher |
 | Across the channel | the helm, in its casket, has to cross the channel to the north island; the first real shot with the player's g | both banks light and the bridge rises across the channel; the casket stays on the platform and the tiller waits on the tilting launcher |
 | Over the ridge | the tiller itself, on to the skiff | the tiller lands in the landing circle and the north gate wakes, its light pointing at the main hull; the skiff takes its helm, which settles into the socket at the stern, and the helm's quartz lights (the rest of the skiff stays dark); Lumen hears the core for the first time; the seal in the pass through the spine sinks, and the castaway can walk to the skiff (the seal only ever stood in the castaway's way, not the helm's) |
 

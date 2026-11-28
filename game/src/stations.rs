@@ -603,9 +603,9 @@ mod tests {
                             ("Low quarry step: drop lip", pin(&sites, "Low quarry step: drop lip")),
                             ("Low quarry step: landing slab", pin(&sites, "Low quarry step: landing slab")),
                             ("Cliff rim: drop lip", pin(&sites, "Cliff rim: drop lip")),
-                            ("Cliff rim: tidal slab", pin(&sites, "Cliff rim: tidal slab")),
+                            ("Cliff rim: water surface", pin(&sites, "Cliff rim: water surface")),
                             ("Outcrop overhang: release point", pin(&sites, "Outcrop overhang: release point")),
-                            ("Outcrop overhang: shutter socket", pin(&sites, "Outcrop overhang: shutter socket")),
+                            ("Outcrop overhang: water shutter", pin(&sites, "Outcrop overhang: water shutter")),
                         ];
                         check_view(&world, &sites, &[], &pins, &mut note);
                     }

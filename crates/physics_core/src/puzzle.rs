@@ -58,10 +58,11 @@ pub struct Ch1Layout {
     /// Puzzle 1: distance between the two timing posts the stopwatch times the crawler between.
     pub post_gap: u32,
 
-    /// Puzzle 2: height of the quarry cliff rim above the tidal stone slab.
+    /// Puzzle 2: step height of the quarry cliff rim (`8..=10`), placing its lip `10 - cliff_h` m
+    /// below `GROUND` (`9.4..=11.4 m` above the cove water surface; see [`Ch1Layout::cliff_drop_h`]).
     pub cliff_h: u32,
-    /// Puzzle 2: height of the outcrop overhang's counterweight above the shutter socket on the
-    /// tidal slab, used for the verification drop.
+    /// Puzzle 2: integer clearance of the outcrop overhang above `GROUND - 10` (actual drop to the
+    /// water shutter at sea level is [`Ch1Layout::overhang_drop_h`], `14.4..=16.4 m`).
     pub overhang_h: u32,
 
     /// Puzzle 3: height of the ledge above the far plateau, before any blocks raise the launcher.
@@ -129,9 +130,6 @@ impl Ch1Layout {
     /// that 0.01 s stopwatch rounding makes its g reading noticeably rough (and can push it past 2%
     /// on high-g worlds).
     pub const LOW_DROP: u32 = 1;
-    /// Puzzle 2: how many whole metres the dressed tidal stone slab sits below `GROUND` (dry, just
-    /// above sea level).
-    pub const SLAB_DROP: u32 = 10;
     /// Puzzle 3: how many blocks the jack frame under the ledge launcher holds (and how many lie in
     /// the pile of blocks on the ledge). Each raises the launcher one metre.
     pub const MAX_STACK: u32 = 8;
@@ -204,7 +202,7 @@ impl Ch1Layout {
                 transfer_at: 0,
                 post_gap: 0,
                 cliff_h,
-                overhang_h: Self::SLAB_DROP + ledge_h + 1,
+                overhang_h: 10 + ledge_h,
                 ledge_h,
                 channel_width,
                 platform_centre,
@@ -234,7 +232,7 @@ impl Ch1Layout {
             }
         };
 
-        let overhang_h = Self::SLAB_DROP + ledge_h + 1;
+        let overhang_h = 10 + ledge_h;
 
         Ch1Layout {
             g,
@@ -350,20 +348,33 @@ impl Ch1Layout {
         stopwatch(self.post_gap as f64 / self.crawler_speed)
     }
 
+    /// Puzzle 2: exact vertical drop from the main cliff rim straight down to the cove water
+    /// surface (`9.4..=11.4 m`).
+    pub fn cliff_drop_h(&self) -> f64 {
+        Self::WATER_DROP - (10 - self.cliff_h) as f64
+    }
+
+    /// Puzzle 2: exact vertical drop from the outcrop overhang counterweight to the water shutter
+    /// at sea level (`14.4..=16.4 m`).
+    pub fn overhang_drop_h(&self) -> f64 {
+        Self::WATER_DROP + self.ledge_h as f64
+    }
+
     /// Puzzle 2: fall time for a stone dropped `drop` metres from rest, as Lumen's stopwatch shows
     /// it (hundredths of a second).
-    pub fn drop_time(&self, drop: u32) -> f64 {
-        stopwatch(fall_time(drop as f64, self.g))
+    pub fn drop_time(&self, drop: f64) -> f64 {
+        stopwatch(fall_time(drop, self.g))
     }
 
     /// Puzzle 2: fall time from the 1 m low quarry step, as the stopwatch shows it.
     pub fn low_fall_time(&self) -> f64 {
-        self.drop_time(Self::LOW_DROP)
+        self.drop_time(Self::LOW_DROP as f64)
     }
 
-    /// Puzzle 2: fall time from the main cliff rim to the tidal slab, as the stopwatch shows it.
+    /// Puzzle 2: fall time from the main cliff rim to the cove water surface, as the stopwatch
+    /// shows it.
     pub fn cliff_fall_time(&self) -> f64 {
-        self.drop_time(self.cliff_h)
+        self.drop_time(self.cliff_drop_h())
     }
 
     /// Launch angles (radians) between which a shot aimed at the centre of the circle clears the ridge and
@@ -586,9 +597,9 @@ impl Instance {
             PuzzleKind::Gravity => vec![
                 given("height of the low quarry step", Quantity::metres(Ch1Layout::LOW_DROP as f64)),
                 given("fall time from the low quarry step", Quantity::seconds(l.low_fall_time())),
-                given("height of the cliff rim", Quantity::metres(l.cliff_h as f64)),
-                given("fall time from the cliff rim", Quantity::seconds(l.cliff_fall_time())),
-                given("height of the outcrop overhang", Quantity::metres(l.overhang_h as f64)),
+                given("height of the cliff rim above the cove water", Quantity::metres(l.cliff_drop_h())),
+                given("fall time from the cliff rim to the water", Quantity::seconds(l.cliff_fall_time())),
+                given("height of the outcrop overhang above the water shutter", Quantity::metres(l.overhang_drop_h())),
             ],
             PuzzleKind::Channel => vec![
                 given("drop from the ledge to the platform, with no blocks under the launcher", Quantity::metres(l.ledge_h as f64)),
@@ -806,21 +817,20 @@ impl Instance {
             }
             PuzzleKind::Gravity => {
                 let g_player = value("g");
-                let height = l.overhang_h as f64;
+                let height = l.overhang_drop_h();
                 let predicted_time = fall_time(height, g_player);
                 let actual_time = fall_time(height, l.g);
                 let pass = ((g_player - l.g) / l.g).abs() <= GRAVITY_TOLERANCE;
                 let (headline, detail, comparisons) = if pass {
                     (
-                        "Socket caught it".to_string(),
+                        "Water shutter caught it".to_string(),
                         format!(
-                            "The counterweight fell {} m from the outcrop in {} s and dropped cleanly into the open socket (your value predicted {} s).",
-                            l.overhang_h,
+                            "The counterweight fell {height:.1} m from the outcrop in {} s and plunged cleanly through the open water shutter (your value predicted {} s).",
                             sig(actual_time, 3),
                             sig(predicted_time, 3)
                         ),
                         vec![Comparison {
-                            label: format!("Fall time from the overhang ({} m)", l.overhang_h),
+                            label: format!("Fall time from the overhang ({height:.1} m)"),
                             expected: Quantity::seconds(predicted_time),
                             observed: Quantity::seconds(actual_time),
                         }],
@@ -834,9 +844,8 @@ impl Instance {
                     (
                         "Shutter missed it".to_string(),
                         format!(
-                            "Your value predicted {} s for the {} m overhang, so the stone shutter {shutter_line}. Gravity here is {strength_word} than your value.",
+                            "Your value predicted {} s for the {height:.1} m overhang, so the water shutter {shutter_line}. Gravity here is {strength_word} than your value.",
                             sig(predicted_time, 3),
-                            l.overhang_h,
                         ),
                         Vec::new(),
                     )
@@ -990,13 +999,13 @@ impl Instance {
                 }
             }
             PuzzleKind::Gravity => {
-                let (h, t) = (l.cliff_h as f64, l.cliff_fall_time());
+                let (h, t) = (l.cliff_drop_h(), l.cliff_fall_time());
                 Solution {
                     steps: vec![
                         "A stone released from rest falls a height h in a time t with h = (1/2) g t^2.".into(),
                         "Rearranged: g = 2 h / t^2.".into(),
                         format!(
-                            "From the cliff rim, h = {h} m (measured with the ruler down to the tidal slab) and the timed fall t = {t} s: g = 2 x {h} / {t}^2 = {} m/s^2.",
+                            "From the cliff rim, h = {h:.1} m (measured with the ruler down to the cove water) and the timed fall t = {t} s: g = 2 x {h:.1} / {t}^2 = {} m/s^2.",
                             sig(2.0 * h / (t * t), 4)
                         ),
                     ],
@@ -1122,8 +1131,8 @@ mod tests {
             assert!((6.5..=13.5).contains(&l.g), "g {}", l.g);
             assert!(!(9.3..10.3).contains(&l.g), "g {} is too close to Earth's", l.g);
             assert!((8..=10).contains(&l.cliff_h), "seed {seed}: cliff {}", l.cliff_h);
-            assert_eq!(l.overhang_h, Ch1Layout::SLAB_DROP + l.ledge_h + 1, "seed {seed}");
-            assert!(l.overhang_h > l.cliff_h);
+            assert_eq!(l.overhang_h, 10 + l.ledge_h, "seed {seed}");
+            assert!(l.overhang_drop_h() > l.cliff_drop_h());
             assert!(l.platform_centre - l.platform_half >= l.channel_width as f64 + 2.0);
             assert!((l.ridge_x as f64) < l.pad_centre / 2.0);
             let (min, max) = l.ridge_angle_window();
@@ -1274,7 +1283,7 @@ mod tests {
         for seed in 0..SEEDS {
             let layout = Ch1Layout::generate(seed);
             let t = layout.cliff_fall_time();
-            let g_measured = 2.0 * layout.cliff_h as f64 / (t * t);
+            let g_measured = 2.0 * layout.cliff_drop_h() / (t * t);
             let gravity = Instance::new(PuzzleKind::Gravity, &layout);
             assert!(gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_measured))])).unwrap().pass);
 
@@ -1314,14 +1323,15 @@ mod tests {
             a_short_drop_failed |= !low_passes;
 
             let t_cliff = layout.cliff_fall_time();
+            let h_cliff = layout.cliff_drop_h();
             assert!(t_cliff >= 1.0, "seed {seed}: cliff drop timed {t_cliff} s");
-            assert!((t_cliff - fall_time(layout.cliff_h as f64, layout.g)).abs() <= 0.005 + 1e-12);
-            let g_cliff = 2.0 * layout.cliff_h as f64 / (t_cliff * t_cliff);
+            assert!((t_cliff - fall_time(h_cliff, layout.g)).abs() <= 0.005 + 1e-12);
+            let g_cliff = 2.0 * h_cliff / (t_cliff * t_cliff);
             assert!(((g_cliff - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: cliff gives {g_cliff}, true {}", layout.g);
             assert!(gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_cliff))])).unwrap().pass, "seed {seed}");
 
-            // An 8–10x taller drop takes far less than 8–10x as long.
-            assert!(t_cliff < 0.5 * layout.cliff_h as f64 * t_low, "seed {seed}");
+            // A ~10x taller drop takes far less than 10x as long.
+            assert!(t_cliff < 0.5 * h_cliff * t_low, "seed {seed}");
         }
         assert!(a_short_drop_failed, "a one-metre drop should sometimes be too short to pass");
     }

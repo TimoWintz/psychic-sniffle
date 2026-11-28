@@ -157,15 +157,26 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
         let _ = writeln!(w, "The chapter's goal: {}", ctx.chapter_goal);
     }
     let _ = writeln!(w, "Puzzle: {}", ctx.puzzle_title);
-    if !ctx.why.is_empty() {
-        let _ = writeln!(w, "Why this station matters (you told the player so): {}", ctx.why);
+    if !ctx.task.is_empty() {
+        let _ = writeln!(w, "Objective on the console: {}", ctx.task);
     }
     if ctx.solved {
         let _ = writeln!(w, "Status: already solved. The player may be reviewing; you may discuss it freely, but still do not hand out the numbers.");
     } else {
         let _ = writeln!(w, "Status: unsolved. Tests left before the station must recharge: {}.", ctx.charges_left);
     }
-    let _ = write!(w, "\nBrief shown to the player:\n{}\n\nHow to measure:\n{}\n", ctx.brief, ctx.how_to_measure);
+    if !ctx.presentation.is_empty() {
+        let _ = writeln!(w, "\nWhat you presented when the station opened:");
+        for line in &ctx.presentation {
+            let _ = writeln!(w, "- {line}");
+        }
+    }
+    if !ctx.topics.is_empty() {
+        let _ = writeln!(w, "\nStation details you can explain when asked:");
+        for (ask, reply) in &ctx.topics {
+            let _ = writeln!(w, "- {ask}: {reply}");
+        }
+    }
 
     if let Some(placed) = &ctx.placed {
         let _ = writeln!(w, "\nIn the world at this station now: {placed}.");
@@ -188,6 +199,9 @@ pub fn system_prompt(ctx: &TutorContext, help: HelpLevel) -> String {
             let _ = writeln!(w, "## {} (in the player's handbook)\n{}", concept.title, concept.card);
         } else {
             let _ = writeln!(w, "## {} (not found yet: {})\n{}", concept.title, concept.hint, concept.card);
+        }
+        if let Some(derivation) = &concept.derivation {
+            let _ = writeln!(w, "\nWhere this comes from:\n{derivation}");
         }
     }
 

@@ -522,7 +522,9 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
         .show(ctx, |ui| {
             ui.set_width(400.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("You'll stay at the console while this is open.").small().color(DIM));
+                if ui.button(RichText::new("Briefing").color(LUMEN)).on_hover_text("Talk through this station with Lumen").clicked() {
+                    ui_state.request_briefing = true;
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Leave (E)").clicked() {
                         ui_state.station = None;
@@ -531,42 +533,29 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
             });
             ui.separator();
             egui::ScrollArea::vertical().max_height(ctx.content_rect().height() - 110.0).show(ui, |ui| {
-                if !def.why.is_empty() {
-                    ui.label(RichText::new(format!("Lumen: {}", def.why)).italics().color(LUMEN));
-                    ui.add_space(4.0);
-                }
+                ui.label(RichText::new(&def.task).strong());
                 if def.kind == PuzzleKind::Ridge {
-                    ui.label(RichText::new(format!("Launcher rating: {} maximum.", Quantity::speed(game.layout.v_max).display())).strong());
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(format!("Launcher rating: {} maximum.", Quantity::speed(game.layout.v_max).display())).color(DIM));
                 }
                 if def.kind == PuzzleKind::Chase {
-                    ui.label(RichText::new(format!("Haul cart rating: {} top speed.", Quantity::speed(Ch1Layout::CART_TOP_SPEED).display())).strong());
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(format!("Haul cart rating: {} top speed.", Quantity::speed(Ch1Layout::CART_TOP_SPEED).display())).color(DIM));
                 }
                 if def.kind == PuzzleKind::Channel {
+                    ui.add_space(4.0);
                     rating_plate(ui, game);
                 }
-                ui.add_space(4.0);
-                egui::CollapsingHeader::new(RichText::new("Brief and how to measure").strong())
-                    .id_salt(("station-brief", puzzle))
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.label(&def.brief);
-                        ui.add_space(6.0);
-                        ui.label(RichText::new("Investigate").strong());
-                        ui.label(RichText::new(&def.investigate).color(DIM));
-                    });
 
                 if let Some(demo) = &def.demo {
-                    ui.add_space(4.0);
+                    ui.add_space(6.0);
                     let watched = game.save.demo_watched(&def.id);
                     let heading = if watched { "Try it first (watched)" } else { "Try it first" };
-                    egui::CollapsingHeader::new(RichText::new(heading).strong())
-                        .id_salt(("station-demo", puzzle))
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            experiment_section(ui, game, ui_state, sim, puzzle, demo);
-                        });
+                    egui::CollapsingHeader::new(RichText::new(heading).strong()).id_salt(("station-demo", puzzle)).default_open(!watched).show(ui, |ui| {
+                        experiment_section(ui, game, ui_state, sim, puzzle, demo);
+                    });
                 }
-                ui.add_space(4.0);
+                ui.add_space(6.0);
                 pages_row(ui, game, ui_state, &def);
 
                 if matches!(def.kind, PuzzleKind::Chase | PuzzleKind::Gravity) {
@@ -600,11 +589,9 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         });
                         let plural = if blocks == 1 { "" } else { "s" };
                         ui.label(
-                            RichText::new(format!(
-                                "    {blocks} block{plural} in the jack frame at the edge of the ledge. Leave the console and carry blocks there (F) to change it."
-                            ))
-                            .small()
-                            .color(DIM),
+                            RichText::new(format!("    {blocks} block{plural} in the jack frame (+1 m each). Carry blocks there (F) to change."))
+                                .small()
+                                .color(DIM),
                         );
                         continue;
                     }
@@ -640,11 +627,8 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
 
                 let charges = game.charges_left(puzzle);
                 let ready = !sim.busy() && charges > 0;
-                let all_typed_filled = specs
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, s)| s.source == InputSource::Typed)
-                    .all(|(i, _)| !ui_state.drafts[puzzle][i].trim().is_empty());
+                let all_typed_filled =
+                    specs.iter().enumerate().filter(|(_, s)| s.source == InputSource::Typed).all(|(i, _)| !ui_state.drafts[puzzle][i].trim().is_empty());
                 if enter_commit && ready && all_typed_filled {
                     sim.request = Some(Request::Commit(puzzle));
                 }

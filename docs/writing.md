@@ -83,8 +83,7 @@ Lumen is warm and human. It's a friend working beside the player.
 
 ## The handbook
 
-The handbook pages (`card`), their picture captions and their quizzes read like a clear, friendly
-physics textbook. Lumen doesn't speak them.
+The handbook pages (`card`), their collapsible derivations (`derivation`), their picture captions and their quizzes read like a clear, friendly physics textbook. Lumen doesn't speak them.
 
 - Write in the second person and the present tense ("If you launch something at speed v…").
 - Use short paragraphs and connected sentences. Say why one thing follows from another ("so",
@@ -93,14 +92,17 @@ physics textbook. Lumen doesn't speak them.
   pulling away from traffic lights, photographed once a second.").
 - Keep every formula on its own indented line, the way the existing cards do. A colon before a formula
   is fine.
+- Keep the main `card` concise and scannable; put step-by-step symbolic derivations in `derivation`
+  (shown under a collapsible "Where this comes from" header).
 - Contractions are allowed but not required. Keep the tone plain.
-- Never state a value for the island's own constants. Earth's are fine in a quiz, never on a card.
+- Never state a value for the island's own constants. Earth's are fine in a quiz, never on a card or
+  in a derivation.
 
-## Briefs, tasks and hints
+## Tasks, topics and hints
 
-The `task`, `brief` and `investigate` fields, the experiments' questions and choices, the
-interface's hints, and the station's refusals and results are instructions or reports. Write them as
-plain, friendly sentences.
+Each puzzle's and side-machine's `task`, the station dialogue topic labels (`ask`), the experiments'
+questions and choices, the interface's hints, and the station's refusals and results are short
+instructions, prompts or reports. Write them as plain, friendly sentences.
 
 - Say what to do, in the order the player does it ("Use the ruler (R). Click the cart's starting
   point, then…").
@@ -137,16 +139,17 @@ it:
 
 1. **Fields that Lumen speaks:**
    - `opening`, `closing` and each remark's `line`
-   - each puzzle's `why` and `done`
+   - each puzzle's and side-machine's `dialogue` (`present` beats and each topic's `lines`) and `done`
    - each experiment's `reveal`
 
    Write these in Lumen's voice, with contractions, no digits and short lines. Lumen says only the
    first sentence of a `reveal` aloud, so that sentence must stand on its own.
-2. **Handbook fields:** each concept's `card`, `caption`, quiz `question`, `choices` and `explain`.
-   Write these in the textbook voice. A concept's `title` is spoken as well, so it holds no digits.
-3. **Instruction fields:** `intro`, `goal`, each puzzle's `task`, `brief` and `investigate`, each
-   experiment's `question` and `choices`, and each concept's `hint`. Write these as plain
-   instructions.
+2. **Handbook fields:** each concept's `card`, `derivation`, `caption`, quiz `question`, `choices`
+   and `explain`. Write these in the textbook voice. A concept's `title` is spoken as well, so it
+   holds no digits.
+3. **Instruction fields:** `intro`, `goal`, each puzzle's and side-machine's `task`, each dialogue
+   topic's `ask` label, each experiment's `question` and `choices`, and each concept's `hint`. Write
+   these as plain instructions or short prompts.
 4. **Place names:** every `look:` and remark `near:` must be a landmark the game knows. Copy them
    exactly.
 5. **Check:** run `cargo test -p physics_core content`, then read Lumen's lines aloud. If a line sounds

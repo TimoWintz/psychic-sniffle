@@ -241,6 +241,15 @@ fn page(ui: &mut egui::Ui, game: &mut Game, ui_state: &mut Ui, concept: &Concept
     if let Some(title) = place {
         ui.label(RichText::new(format!("Found at: {title}")).small().color(DIM));
     }
+    if let Some(derivation) = &concept.derivation {
+        ui.add_space(4.0);
+        egui::CollapsingHeader::new(RichText::new("Where this comes from").color(Color32::from_rgb(180, 215, 240)))
+            .id_salt(("derivation", &concept.id))
+            .default_open(false)
+            .show(ui, |ui| {
+                page_text(ui, derivation);
+            });
+    }
     if !concept.quiz.is_empty() {
         quiz(ui, game, ui_state, concept);
     }
@@ -1039,6 +1048,10 @@ mod tests {
             let method = matches!(concept.found, physics_core::content::Found::Side(_));
             if concept.id != "units" && !method {
                 assert!(formulas >= 1, "{} sets its relation apart", concept.id);
+                let derivation = concept.derivation.as_deref().unwrap_or_else(|| panic!("{} has a derivation", concept.id));
+                let d_formulas = derivation.split("\n\n").filter(|p| p.starts_with("    ")).count();
+                let d_words = derivation.split("\n\n").filter(|p| !p.starts_with("    ")).count();
+                assert!(d_words >= 1 && d_formulas >= 1, "{} derivation has words and formulas", concept.id);
             }
         }
     }

@@ -504,6 +504,8 @@ pub struct Ui {
     /// Whether the beam's console is open, and whether the avatar stands at it (see `beam`).
     pub beam_open: bool,
     pub near_beam: bool,
+    /// Set by a console's "Briefing" button to reopen Lumen's station dialogue chips.
+    pub request_briefing: bool,
     /// Text typed into the blueprint, per puzzle and input.
     pub drafts: [Vec<String>; PUZZLES],
     /// Why the last commit was refused (costs no charge).

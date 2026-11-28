@@ -390,7 +390,7 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Key(KeyCode::KeyE, false),
         UntilWakeAt { stage: 1, at: 0.8, within: 30.0 },
         Shot("06_wake_marker_lights"),
-        UntilWakeAt { stage: 1, at: 1.0 + wakes[0].wake_starts() * 0.5, within: 30.0 },
+        UntilWakeAt { stage: 1, at: (wakes[0].run_starts() + wakes[0].wake_starts()) / 2.0, within: 30.0 },
         Shot("06_wake_light_runs"),
         UntilWakeAt { stage: 1, at: wakes[0].wake_starts() + 1.8, within: 30.0 },
         Shot("06_wake_stone_gate_opens"),
@@ -411,7 +411,6 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Look { yaw: HAUL_YAW, pitch: 0.5, distance: 34.0 },
         Wait(1.0),
         Station(Some(1)),
-        expect_gaze("Crawler: rear coupler"),
         Shot("06c_haul_track"),
         // The crawler carries the launchers' sight on its back.
         Watch(Some(sites.haul_at(game.layout.head_start as f64 + 0.7))),
@@ -499,7 +498,6 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Wait(1.0),
         Station(Some(2)),
         // First, the conceptual strobe experiment (no light gate required).
-        expect_gaze("Drop tower: release point"),
         Wait(1.2),
         Shot("07a_try_it_first"),
         Guess(2, 1),
@@ -530,7 +528,6 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         Shot("08h_quiz_done"),
         closed_step(),
         // Now measure: ruler on the tower, then clamp the light gate at a short drop and a long one.
-        expect_gaze("Light gate on its stand"),
         RulerPin(0),
         RulerPin(1),
         Wait(0.3),
@@ -539,7 +536,6 @@ fn tour(game: &Game, sites: &Sites) -> Vec<Step> {
         RulerOff,
         Station(None),
         carry_at(at_stand, Vec3::X, Expect::TakeGate),
-        expect_gaze("Notches on the drop tower"),
         clamp(short),
         Look { yaw: 0.6, pitch: 0.25, distance: 12.0 },
         Wait(0.8),

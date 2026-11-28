@@ -238,7 +238,32 @@ pub struct IntroPlugin;
 
 impl Plugin for IntroPlugin {
     fn build(&self, app: &mut App) {
+        let intro = {
+            let world = app.world().resource::<VoxelWorld>();
+            let sites = app.world().resource::<Sites>();
+            let game = app.world().resource::<Game>();
+            let orbit = OrbitCamera::default();
+            let focus = sites.spawn + Vec3::Y * 1.5;
+            let sets = Sets::new(world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
+            let slots = inspect_slots(&game.chapter, &saves_dir());
+            Intro {
+                frame: cinematic::frame_at(&sets, 0.0),
+                sets,
+                clock: 0.0,
+                phase: Phase::Attract,
+                start: false,
+                sky: None,
+                in_space: None,
+                puff_clock: 0.0,
+                dice: 0,
+                saves_open: false,
+                confirm_delete: None,
+                slots,
+                menu_error: None,
+            }
+        };
         app.init_state::<Mode>()
+            .insert_resource(intro)
             .add_systems(Startup, setup_permanent)
             .add_systems(BuildWorld, refresh_sets.after(crate::player::reset))
             .add_systems(OnEnter(Mode::Menu), enter_menu)
@@ -248,20 +273,14 @@ impl Plugin for IntroPlugin {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn setup_permanent(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut block_materials: ResMut<Assets<crate::graphics::BlockMaterial>>,
-    world: Res<VoxelWorld>,
     sites: Res<Sites>,
-    orbit: Res<OrbitCamera>,
-    game: Res<Game>,
 ) {
     let mainland = Mainland::new(sites.wreck);
-    let focus = sites.spawn + Vec3::Y * 1.5;
-    let sets = Sets::new(&world, sites.wreck, sites.spawn, Mainland::wreck(), (orbit.eye(focus), focus));
 
     // The mainland, lit and coloured as the island is. Stays in the world after Start.
     commands.spawn((
@@ -277,23 +296,6 @@ fn setup_permanent(
         fire: materials.add(translucent(Color::srgba(1.0, 0.62, 0.22, 0.85), true)),
         smoke: materials.add(translucent(Color::srgba(0.30, 0.29, 0.32, 0.55), false)),
         dust: materials.add(translucent(Color::srgba(0.62, 0.56, 0.48, 0.6), false)),
-    });
-
-    let slots = inspect_slots(&game.chapter, &saves_dir());
-    commands.insert_resource(Intro {
-        frame: cinematic::frame_at(&sets, 0.0),
-        sets,
-        clock: 0.0,
-        phase: Phase::Attract,
-        start: false,
-        sky: None,
-        in_space: None,
-        puff_clock: 0.0,
-        dice: 0,
-        saves_open: false,
-        confirm_delete: None,
-        slots,
-        menu_error: None,
     });
 }
 

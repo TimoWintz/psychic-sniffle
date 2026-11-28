@@ -163,8 +163,8 @@ builders give no numbers; every orange mark is the castaway's. Each puzzle's **W
 - **Place to measure: the light gate.** A gate on a stand by the station, carried (`F`) and clamped on
   the drop tower at any whole-metre notch (painted orange by the castaway), from 1 m below the
   release down to the plate: the notch the pointer marks on the tower, or the one at hand height. The
-  experiment needs it, like the rail cart needs its block: until a gate is clamped the station's Run
-  button is off and says why, and Lumen points at the stand. Each release times the fall from the
+  light gate measurement needs it, like the rail cart needs its block: until a gate is clamped the
+  station's Drop and time button is off and says why, and Lumen mentions the stand. Each release times the fall from the
   release to the gate and notes the pair under one number (`h2`, `t2`, then `h3`, `t3`, ...), so the
   player designs their own measurement and can see that doubling the drop does not double the time.
   The notch at the plate times the whole drop. The gate's notch is kept in the save; a ruler pin rides

@@ -6,8 +6,9 @@
 //!
 //! What it looks at comes from the state of the game (the director below), or for a while from a
 //! `[look: NAME]` tag in a tutor reply. Either way it is only a gaze: nothing here changes the game.
-//! It points only where it helps: at the next station for a while when one opens, at the job of an
-//! unsolved puzzle, at a running test. Nothing about a solved puzzle draws the beam.
+//! It points only where it helps: at the next station for a while when one opens, at places named
+//! in the story, along the waking light, and to teach carrying and the ruler at the first station.
+//! At later stations, during experiments and tests, and on solved puzzles the beam stays off.
 //! The scripted lines never contain a number, so they cannot give an answer away.
 //!
 //! Lumen also carries the story: an opening in a fresh game, why each station matters when it first
@@ -31,8 +32,6 @@ use std::collections::BTreeSet;
 
 /// How long Lumen keeps looking where the tutor pointed, in seconds.
 const MODEL_LOOK_SECONDS: f32 = 9.0;
-/// How long Lumen keeps looking at the target after a test.
-const RESULT_LOOK_SECONDS: f32 = 6.0;
 /// How long Lumen points the way to the next station once it opens (and at the start).
 const BECKON_SECONDS: f32 = 12.0;
 /// How long Lumen keeps quiet after saying anything before it makes a remark of its own, in seconds.
@@ -135,59 +134,8 @@ pub fn station_name(game: &Game, puzzle: usize) -> String {
     format!("Station: {}", game.def(puzzle).title)
 }
 
-/// The survey pins that matter for each kind of puzzle, by their labels on the island.
-struct Guide {
-    /// What the ruler should be taken between, in order.
-    measure: [&'static str; 2],
-    /// Where to look while the station is open.
-    study: &'static str,
-    /// Where the test is judged.
-    target: &'static str,
-    /// Where the station's experiment happens, to look at before it has been watched.
-    demo: Option<&'static str>,
-    /// Where to look while the experiment runs.
-    demo_watch: Option<&'static str>,
-}
-
-fn guide(kind: PuzzleKind) -> Guide {
-    match kind {
-        PuzzleKind::Rail => Guide {
-            measure: ["Rail cart: starting point", "Rail marker: centre"],
-            study: "Rail marker: centre",
-            target: "Rail marker: centre",
-            demo: None,
-            demo_watch: None,
-        },
-        PuzzleKind::Chase => Guide {
-            measure: ["Haul cart: front coupler", "Transfer marker: centre"],
-            study: "Transfer marker: centre",
-            target: "Transfer marker: centre",
-            demo: Some("Crawler: rear coupler"),
-            demo_watch: Some("Timing post B"),
-        },
-        PuzzleKind::Gravity => Guide {
-            measure: ["Drop tower: release point", "Drop tower: landing plate"],
-            study: "Drop tower: release point",
-            target: "Survey mast: landing plate",
-            demo: Some("Drop tower: release point"),
-            demo_watch: Some("Drop tower: landing plate"),
-        },
-        PuzzleKind::Channel => Guide {
-            measure: ["Ledge launcher: release point", "Platform: centre"],
-            study: "Platform: centre",
-            target: "Platform: centre",
-            demo: Some("Ledge launcher: release point"),
-            demo_watch: Some("Ledge launcher: release point"),
-        },
-        PuzzleKind::Ridge => Guide {
-            measure: ["Tilting launcher: release point", "Landing circle: centre"],
-            study: "Ridge: top, near edge",
-            target: "Landing circle: centre",
-            demo: Some("Tilting launcher: release point"),
-            demo_watch: Some("Ridge: foot, near side"),
-        },
-    }
-}
+/// The two survey pins Lumen guides the ruler between at the first station (the supply rail).
+const RAIL_MEASURE: [&str; 2] = ["Rail cart: starting point", "Rail marker: centre"];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mood {
@@ -220,8 +168,8 @@ pub struct Companion {
     /// Name of the place Lumen is looking at, if any (one of the [`Landmarks`]).
     pub gaze: Option<String>,
     pub mood: Mood,
-    /// A gaze that outranks the scripted one for a while: (place, seconds left, from the tutor).
-    held: Option<(String, f32, bool)>,
+    /// A gaze from the tutor (`[look: NAME]`) that outranks the scripted one for a while.
+    held: Option<(String, f32)>,
     mood_left: f32,
     lines: Vec<Line>,
     /// Recent lines Lumen has spoken this session, oldest first, shown in Lumen's panel.
@@ -330,8 +278,8 @@ impl Companion {
         self.mood_left = seconds;
     }
 
-    fn hold(&mut self, place: &str, seconds: f32, from_tutor: bool) {
-        self.held = Some((place.to_string(), seconds, from_tutor));
+    fn hold(&mut self, place: &str, seconds: f32) {
+        self.held = Some((place.to_string(), seconds));
     }
 }
 
@@ -386,19 +334,16 @@ fn remark_due(when: &RemarkWhen, game: &Game) -> bool {
 /// be tested without the engine.
 #[derive(Clone, Debug, Default)]
 struct Facts {
-    /// Kind of the puzzle the player is working on.
+    /// Kind of the puzzle the player is working on (`None` at a side-machine).
     focus_kind: Option<PuzzleKind>,
+    /// A station or side-machine console is open.
     station_open: bool,
     focus_solved: bool,
     /// The next puzzle not yet solved, if any.
     next: Option<usize>,
     next_station: Option<String>,
-    /// A test of this kind of puzzle is running.
-    testing: Option<PuzzleKind>,
-    /// The experiment of this kind of puzzle is running.
-    demo_running: Option<PuzzleKind>,
-    /// The focused puzzle has an experiment that has not been watched, and is not solved.
-    demo_pending: bool,
+    /// A test, experiment, measurement or beam release is running.
+    running: bool,
     /// The ruler is taking points.
     ruler_active: bool,
     /// Label of the ruler's first point, while it waits for the second.
@@ -407,7 +352,7 @@ struct Facts {
     beckon: bool,
     /// The avatar stands at a station that is solved or still locked: the way on is elsewhere.
     at_finished_station: bool,
-    /// A place that outranks the rest for now.
+    /// A place the tutor asked Lumen to look at.
     held: Option<String>,
     /// The place the line being said is about: the eye holds it when nothing is going on.
     line_look: Option<String>,
@@ -415,11 +360,8 @@ struct Facts {
     carrying: Option<Item>,
     /// The light is running up the road to wake a machine.
     light_running: bool,
-    /// Nothing is placed at the focused puzzle's station: no block in the jack frame, no cargo on
-    /// the cart, no gate on the tower.
+    /// The rail cart has no cargo yet (first station tutorial).
     slot_empty: bool,
-    /// Nothing has been timed with the light gate yet.
-    gate_pending: bool,
 }
 
 /// Where Lumen should look, in priority order.
@@ -427,53 +369,33 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     if f.light_running {
         return Some(crate::waking::LIGHT_ON_THE_ROAD.into());
     }
+    if f.running {
+        return None;
+    }
     if let Some(held) = &f.held {
         return Some(held.clone());
     }
-    if let Some(kind) = f.testing {
-        return Some(guide(kind).target.into());
-    }
-    if let Some(kind) = f.demo_running
-        && let Some(place) = guide(kind).demo_watch
-    {
-        return Some(place.into());
-    }
-    // The job of a puzzle still to solve; a solved one has nothing left to show.
-    let unsolved = f.focus_kind.filter(|_| !f.focus_solved);
-    if f.ruler_active
-        && let Some(kind) = unsolved
-    {
-        let [a, b] = guide(kind).measure;
-        return Some(match &f.ruler_first {
-            None => a.into(),
-            // Whichever of the two has not been clicked yet.
-            Some(first) => if first == b { a } else { b }.into(),
-        });
-    }
-    // Something in hand goes where the puzzle at hand reads it.
-    match (f.carrying, unsolved) {
-        (Some(Item::Block(Yard::Ledge)), Some(PuzzleKind::Channel)) => return Some(JACK_FRAME.into()),
-        (Some(Item::Block(Yard::Rail)), Some(PuzzleKind::Rail)) => return Some(RAIL_CART.into()),
-        (Some(Item::Gate), Some(PuzzleKind::Gravity)) => return Some(TOWER_NOTCHES.into()),
-        _ => {}
-    }
-    if f.station_open
-        && let Some(kind) = unsolved
-    {
-        if f.demo_pending
-            && let Some(place) = guide(kind).demo
-        {
-            return Some(place.into());
+    // Only the first station (the supply rail) gets step-by-step beam guidance, to teach the ruler
+    // and carrying; later stations leave the screen clear so the player works out what to measure.
+    let tutorial = !f.focus_solved && f.focus_kind == Some(PuzzleKind::Rail);
+    if tutorial {
+        if f.ruler_active {
+            let [a, b] = RAIL_MEASURE;
+            return Some(match &f.ruler_first {
+                None => a.into(),
+                // Whichever of the two has not been clicked yet.
+                Some(first) => if first == b { a } else { b }.into(),
+            });
         }
-        match kind {
-            PuzzleKind::Gravity if f.slot_empty && f.gate_pending => return Some(LIGHT_GATE.into()),
-            PuzzleKind::Channel if f.slot_empty => return Some(LEDGE_BLOCKS.into()),
-            PuzzleKind::Rail if f.slot_empty => return Some(CART_BLOCK.into()),
-            // A gate on the tower and nothing timed with it yet: drop and time it.
-            PuzzleKind::Gravity if f.gate_pending => return guide(kind).demo.map(Into::into),
-            _ => {}
+        if f.carrying == Some(Item::Block(Yard::Rail)) {
+            return Some(RAIL_CART.into());
         }
-        return Some(guide(kind).study.into());
+        if f.station_open && f.slot_empty {
+            return Some(CART_BLOCK.into());
+        }
+    }
+    if f.station_open {
+        return None;
     }
     if let Some(look) = &f.line_look {
         return Some(look.clone());
@@ -586,7 +508,7 @@ fn direct(
         if let Some(place) = conversation.take_look()
             && landmarks.position(&place).is_some()
         {
-            companion.hold(&place, MODEL_LOOK_SECONDS, true);
+            companion.hold(&place, MODEL_LOOK_SECONDS);
         }
     }
     let asking = lumen.conversations.iter().any(|c| c.is_waiting());
@@ -667,7 +589,6 @@ fn direct(
                 react_to_release(companion, &game, &beam);
             }
             if now.beam_woken && !before.beam_woken {
-                companion.hold(BEAM, RESULT_LOOK_SECONDS, false);
                 companion.feel(Mood::Pleased, 6.0);
                 if let Some(side) = game.chapter.side(crate::beam::BEAM_ID) {
                     companion.say(side.done.clone());
@@ -684,6 +605,9 @@ fn direct(
                     companion.feel(Mood::Pleased, 4.0);
                     companion.say(format!("You got every question on {} right. I'm impressed.", page.title));
                 }
+            }
+            if now.station != before.station && now.station == next {
+                companion.beckon_left = 0.0;
             }
             if now.station != before.station
                 && let Some(p) = now.station
@@ -730,10 +654,12 @@ fn direct(
                     }
                 }
             }
-            if now.ruler_active && !before.ruler_active {
-                companion.say("Click the yellow pin I'm pointing at.");
-            } else if now.ruler_active && now.ruler_first && !before.ruler_first && ruler.second.is_none() {
-                companion.say("And now this one.");
+            if !ui.beam_open && focus_kind == PuzzleKind::Rail && !game.solved(focus) {
+                if now.ruler_active && !before.ruler_active {
+                    companion.say("Click the yellow pin I'm pointing at.");
+                } else if now.ruler_active && now.ruler_first && !before.ruler_first && ruler.second.is_none() {
+                    companion.say("And now this one.");
+                }
             }
             if now.asking && !before.asking {
                 companion.feel(Mood::Thinking, f32::INFINITY);
@@ -745,7 +671,7 @@ fn direct(
     companion.last_seen = Some(now);
 
     // Time passes for held looks, moods and lines.
-    if let Some((_, left, _)) = &mut companion.held {
+    if let Some((_, left)) = &mut companion.held {
         *left -= dt;
         if *left <= 0.0 {
             companion.held = None;
@@ -766,11 +692,12 @@ fn direct(
     }
 
     let testing = sim.testing().map(|p| game.def(p).kind);
+    let running = testing.is_some() || sim.demo().is_some() || sim.measuring().is_some() || beam.animating();
 
     // A remark about where the player is, if nothing else is going on.
     let calm = Quiet {
         station_open: ui.at_console(),
-        running: testing.is_some() || sim.demo().is_some() || sim.measuring().is_some(),
+        running,
         ruler: ruler.active || ruler.in_use(),
         conversation_open: ui.tutor_open,
         carrying: carry.holding.is_some(),
@@ -791,29 +718,25 @@ fn direct(
         }
     }
 
-    let focus_def = game.def(focus);
     if testing.is_some() && !asking {
         companion.feel(Mood::Thinking, 0.3);
     }
     let facts = Facts {
-        focus_kind: Some(focus_kind),
-        station_open: ui.station.is_some(),
+        focus_kind: (!ui.beam_open).then_some(focus_kind),
+        station_open: ui.at_console(),
         focus_solved: game.solved(focus),
         next,
         next_station: next.map(|n| station_name(&game, n)),
-        testing,
-        demo_running: sim.demo().or(sim.measuring()).map(|p| game.def(p).kind),
-        demo_pending: focus_def.demo.is_some() && !game.save.demo_watched(&focus_def.id) && !game.solved(focus),
+        running,
         ruler_active: ruler.active,
         ruler_first: ruler.first.as_ref().filter(|_| ruler.second.is_none()).map(|p| p.label.clone()),
         beckon: companion.beckon_left > 0.0,
         at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
-        held: companion.held.as_ref().map(|(place, _, _)| place.clone()),
+        held: companion.held.as_ref().map(|(place, _)| place.clone()),
         line_look: companion.lines.first().filter(|l| l.shown > 0.0).and_then(|l| l.look.clone()),
         carrying: carry.holding,
         light_running: waking.light_running(),
-        slot_empty: crate::carry::SLOTS.iter().find(|s| s.puzzle() == focus_kind).is_some_and(|s| carry.holds(*s) == 0),
-        gate_pending: focus_kind == PuzzleKind::Gravity && gate_pending(&game, focus),
+        slot_empty: carry.holds(Slot::Cart) == 0,
     };
     companion.gaze = choose_gaze(&facts).filter(|place| landmarks.position(place).is_some());
 
@@ -846,8 +769,6 @@ fn gate_pending(game: &Game, puzzle: usize) -> bool {
 fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usize, ask_me: bool) {
     let Some(outcome) = &ui.results[puzzle] else { return };
     let kind = game.def(puzzle).kind;
-    let target = guide(kind).target;
-    companion.hold(target, RESULT_LOOK_SECONDS, false);
     if outcome.pass {
         companion.feel(Mood::Pleased, 5.0);
         let done = &game.def(puzzle).done;
@@ -887,7 +808,6 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
 /// hold is answered by the wake instead, and a run of misses by a suggestion to look for a rule.
 fn react_to_release(companion: &mut Companion, game: &Game, beam: &crate::beam::Beam) {
     let Some(swing) = beam.last else { return };
-    companion.hold(BEAM, RESULT_LOOK_SECONDS, false);
     let held = crate::beam::held(game) as usize;
     if swing.holds() {
         companion.beam_misses = 0;
@@ -1441,45 +1361,30 @@ mod tests {
     }
 
     #[test]
-    fn at_the_channel_the_beam_shows_the_blocks_and_then_the_frame() {
-        let open = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, slot_empty: true, beckon: false, ..walking_to(2) };
-        assert_eq!(choose_gaze(&open).as_deref(), Some(LEDGE_BLOCKS));
-        let built = Facts { slot_empty: false, ..open.clone() };
-        assert_eq!(choose_gaze(&built).as_deref(), Some("Platform: centre"));
-        let carrying = Facts { station_open: false, carrying: Some(Item::Block(Yard::Ledge)), ..open.clone() };
-        assert_eq!(choose_gaze(&carrying).as_deref(), Some(JACK_FRAME));
-        // The experiment comes first, before any blocks.
-        let fresh = Facts { demo_pending: true, ..open };
-        assert_eq!(choose_gaze(&fresh).as_deref(), Some("Ledge launcher: release point"));
-    }
-
-    #[test]
     fn at_the_rail_the_beam_shows_the_cargo_and_then_the_cart() {
         let open = Facts { focus_kind: Some(PuzzleKind::Rail), station_open: true, slot_empty: true, beckon: false, ..walking_to(0) };
         assert_eq!(choose_gaze(&open).as_deref(), Some(CART_BLOCK));
         let carrying = Facts { station_open: false, carrying: Some(Item::Block(Yard::Rail)), ..open.clone() };
         assert_eq!(choose_gaze(&carrying).as_deref(), Some(RAIL_CART));
         let loaded = Facts { slot_empty: false, ..open };
-        assert_eq!(choose_gaze(&loaded).as_deref(), Some("Rail marker: centre"));
+        assert_eq!(choose_gaze(&loaded), None, "once loaded, the beam rests unless the ruler is out");
     }
 
     #[test]
-    fn at_the_drop_tower_the_beam_shows_the_experiment_then_the_light_gate() {
-        let open = Facts { focus_kind: Some(PuzzleKind::Gravity), station_open: true, slot_empty: true, beckon: false, ..walking_to(1) };
-        // Before the conceptual experiment is watched, Lumen points at the drop tower first.
-        let fresh = Facts { demo_pending: true, gate_pending: true, ..open.clone() };
-        assert_eq!(choose_gaze(&fresh).as_deref(), Some("Drop tower: release point"));
-        // Once watched, if nothing has been timed yet and the gate is still on its stand, Lumen points to the gate.
-        let pending = Facts { gate_pending: true, ..open.clone() };
-        assert_eq!(choose_gaze(&pending).as_deref(), Some(LIGHT_GATE));
-        let carrying = Facts { station_open: false, carrying: Some(Item::Gate), ..pending.clone() };
-        assert_eq!(choose_gaze(&carrying).as_deref(), Some(TOWER_NOTCHES));
-        let fitted = Facts { slot_empty: false, ..pending };
-        assert_eq!(choose_gaze(&fitted).as_deref(), Some("Drop tower: release point"));
-        assert_eq!(choose_gaze(&open).as_deref(), Some("Drop tower: release point"), "with a gate reading, the job");
-        // A block in hand at the drop tower is not the gate.
-        let wrong = Facts { station_open: false, carrying: Some(Item::Block(Yard::Rail)), ..open };
-        assert_ne!(choose_gaze(&wrong).as_deref(), Some(TOWER_NOTCHES));
+    fn later_stations_leave_the_screen_clear() {
+        for kind in [PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Channel, PuzzleKind::Ridge] {
+            let base = Facts { focus_kind: Some(kind), beckon: false, ..walking_to(2) };
+            assert_eq!(choose_gaze(&Facts { station_open: true, slot_empty: true, beckon: true, ..base.clone() }), None, "{kind:?}: open console");
+            assert_eq!(choose_gaze(&Facts { ruler_active: true, station_open: true, ..base.clone() }), None, "{kind:?}: ruler at console");
+            assert_eq!(choose_gaze(&Facts { ruler_active: true, ..base.clone() }), None, "{kind:?}: ruler while exploring");
+        }
+        let carrying_gate = Facts { focus_kind: Some(PuzzleKind::Gravity), carrying: Some(Item::Gate), beckon: false, ..walking_to(2) };
+        assert_eq!(choose_gaze(&carrying_gate), None);
+        let carrying_ledge = Facts { focus_kind: Some(PuzzleKind::Channel), carrying: Some(Item::Block(Yard::Ledge)), beckon: false, ..walking_to(3) };
+        assert_eq!(choose_gaze(&carrying_ledge), None);
+        // The tutor can still point on demand via [look: NAME] when a station is open.
+        let asked = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, held: Some("Platform: centre".into()), ..walking_to(3) };
+        assert_eq!(choose_gaze(&asked).as_deref(), Some("Platform: centre"));
     }
 
     #[test]
@@ -1575,12 +1480,14 @@ mod tests {
     }
 
     #[test]
-    fn a_line_about_a_place_looks_at_it_unless_there_is_work_to_show() {
+    fn a_line_about_a_place_looks_at_it_unless_at_a_console_or_running() {
         let telling = Facts { line_look: Some(MAIN_HULL.into()), ..walking_to(0) };
         assert_eq!(choose_gaze(&telling).as_deref(), Some(MAIN_HULL));
-        let at_work = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, slot_empty: true, ..telling.clone() };
-        assert_eq!(choose_gaze(&at_work).as_deref(), Some(LEDGE_BLOCKS));
-        assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Rail), ..telling }).as_deref(), Some("Rail marker: centre"));
+        let at_rail = Facts { focus_kind: Some(PuzzleKind::Rail), station_open: true, slot_empty: true, ..telling.clone() };
+        assert_eq!(choose_gaze(&at_rail).as_deref(), Some(CART_BLOCK));
+        let at_channel = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, ..telling.clone() };
+        assert_eq!(choose_gaze(&at_channel), None);
+        assert_eq!(choose_gaze(&Facts { running: true, ..telling }), None);
     }
 
     #[test]
@@ -1601,15 +1508,14 @@ mod tests {
 
     #[test]
     fn nothing_about_a_solved_puzzle_draws_the_beam() {
-        let solved = Facts { focus_kind: Some(PuzzleKind::Channel), focus_solved: true, beckon: false, ..walking_to(3) };
-        assert_eq!(choose_gaze(&Facts { station_open: true, ..solved.clone() }), None);
+        let solved = Facts { focus_kind: Some(PuzzleKind::Rail), focus_solved: true, beckon: false, ..walking_to(1) };
+        assert_eq!(choose_gaze(&Facts { station_open: true, slot_empty: true, ..solved.clone() }), None);
         assert_eq!(choose_gaze(&Facts { ruler_active: true, ..solved.clone() }), None);
-        // A test or an experiment still running there is still watched.
-        assert_eq!(choose_gaze(&Facts { testing: Some(PuzzleKind::Channel), ..solved }).as_deref(), Some("Platform: centre"));
+        assert_eq!(choose_gaze(&Facts { running: true, ..solved }), None);
     }
 
     #[test]
-    fn the_ruler_is_led_from_one_pin_to_the_other() {
+    fn the_ruler_is_led_between_pins_at_the_first_station_only() {
         let mut f = Facts { ruler_active: true, station_open: true, beckon: false, ..walking_to(0) };
         assert_eq!(choose_gaze(&f).as_deref(), Some("Rail cart: starting point"));
         f.ruler_first = Some("Rail cart: starting point".into());
@@ -1617,29 +1523,20 @@ mod tests {
         // Measured the other way round: point back at the start.
         f.ruler_first = Some("Rail marker: centre".into());
         assert_eq!(choose_gaze(&f).as_deref(), Some("Rail cart: starting point"));
+        // At a later station, the player chooses what to measure without a beam.
+        f.focus_kind = Some(PuzzleKind::Chase);
+        assert_eq!(choose_gaze(&f), None);
     }
 
     #[test]
-    fn a_running_test_and_a_held_look_come_first() {
-        let mut f = Facts { ruler_active: true, testing: Some(PuzzleKind::Channel), ..walking_to(2) };
-        assert_eq!(choose_gaze(&f).as_deref(), Some("Platform: centre"));
-        f.held = Some("The wreck".into());
+    fn running_experiments_and_tests_keep_the_beam_off() {
+        let mut f = Facts { ruler_active: true, held: Some("The wreck".into()), ..walking_to(0) };
         assert_eq!(choose_gaze(&f).as_deref(), Some("The wreck"));
-    }
-
-    #[test]
-    fn an_open_station_points_at_its_experiment_until_it_has_been_watched() {
-        let mut f = Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, demo_pending: true, ..walking_to(2) };
-        assert_eq!(choose_gaze(&f).as_deref(), Some("Ledge launcher: release point"));
-        f.demo_pending = false;
-        assert_eq!(choose_gaze(&f).as_deref(), Some("Platform: centre"));
-        // The tutorial has no experiment: nothing pending changes where Lumen looks.
-        let rail = Facts { focus_kind: Some(PuzzleKind::Rail), station_open: true, demo_pending: true, ..walking_to(0) };
-        assert_eq!(choose_gaze(&rail).as_deref(), Some("Rail marker: centre"));
-        let running = Facts { demo_running: Some(PuzzleKind::Ridge), ..walking_to(3) };
-        assert_eq!(choose_gaze(&running).as_deref(), Some("Ridge: foot, near side"));
-        let dropping = Facts { demo_running: Some(PuzzleKind::Gravity), ruler_active: true, ..walking_to(1) };
-        assert_eq!(choose_gaze(&dropping).as_deref(), Some("Drop tower: landing plate"));
+        f.running = true;
+        assert_eq!(choose_gaze(&f), None);
+        // The waking light still takes priority over everything else.
+        f.light_running = true;
+        assert_eq!(choose_gaze(&f).as_deref(), Some(crate::waking::LIGHT_ON_THE_ROAD));
     }
 
     #[test]
@@ -1653,13 +1550,9 @@ mod tests {
         let layout = Ch1Layout::generate(7);
         let (_, sites) = island::build(&layout);
         let labels: Vec<&str> = sites.pins.iter().map(|p| p.label).collect();
-        for kind in [PuzzleKind::Rail, PuzzleKind::Gravity, PuzzleKind::Channel, PuzzleKind::Ridge] {
-            let g = guide(kind);
-            for label in g.measure.iter().chain([&g.study, &g.target]).chain(g.demo.iter()).chain(g.demo_watch.iter()) {
-                assert!(labels.contains(label), "{kind:?}: no pin labelled '{label}'");
-            }
+        for label in RAIL_MEASURE {
+            assert!(labels.contains(&label), "no pin labelled '{label}'");
         }
-        assert!(labels.contains(&"Drop tower: landing plate"));
     }
 
     #[test]

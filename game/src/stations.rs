@@ -4,7 +4,7 @@
 use crate::island::{GROUND, MACHINES, Sites};
 use crate::player::{OrbitCamera, Player};
 use crate::sim::Sim;
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, WorldEntity, not_paused};
 use crate::waking::{MachineTrim, Waking};
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
@@ -20,18 +20,26 @@ pub struct StationsPlugin;
 
 impl Plugin for StationsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn)
-            .add_systems(Update, ((proximity, frame_station).chain().run_if(in_state(Mode::Playing)), colour_beacons, light_consoles));
+        app.add_systems(BuildWorld, spawn).add_systems(
+            Update,
+            ((proximity, frame_station).chain().run_if(in_state(Mode::Playing)).run_if(not_paused), colour_beacons, light_consoles.run_if(not_paused)),
+        );
     }
 }
 
 /// The quartz in each machine's console face and lamps: dark while it sleeps, lit once it wakes.
 #[derive(Resource)]
-struct ConsoleQuartz([Handle<StandardMaterial>; MACHINES]);
+struct ConsoleQuartz {
+    materials: [Handle<StandardMaterial>; MACHINES],
+    fade_shown: Option<[f32; MACHINES]>,
+    frame_shown: Option<usize>,
+    beacons_shown: Option<usize>,
+}
 
 fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>, sites: Res<Sites>) {
     let stone = crate::waking::stone(&mut materials);
-    let quartz = ConsoleQuartz(std::array::from_fn(|_| materials.add(MachineTrim::look(false))));
+    let quartz =
+        ConsoleQuartz { materials: std::array::from_fn(|_| materials.add(MachineTrim::look(false))), fade_shown: None, frame_shown: None, beacons_shown: None };
 
     // Each machine's console: a pillar of the builders' stone with a sloping top, and a quartz face
     // set into it.
@@ -42,13 +50,18 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let slope = Quat::from_rotation_x(-0.4);
     for (i, console) in sites.stations.iter().enumerate() {
         let foot = console.as_vec3() + Vec3::new(0.5, 0.0, 0.5);
-        commands.spawn((Mesh3d(pillar.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(foot + Vec3::Y * 0.5)));
+        commands.spawn((WorldEntity, Mesh3d(pillar.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(foot + Vec3::Y * 0.5)));
         let slab = Transform::from_translation(foot + Vec3::Y * 1.05).with_rotation(slope);
-        commands.spawn((Mesh3d(top.clone()), MeshMaterial3d(stone.clone()), slab));
-        commands.spawn((Mesh3d(face.clone()), MeshMaterial3d(quartz.0[i].clone()), slab.with_translation(slab.translation + slab.rotation * Vec3::Y * 0.08)));
+        commands.spawn((WorldEntity, Mesh3d(top.clone()), MeshMaterial3d(stone.clone()), slab));
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(face.clone()),
+            MeshMaterial3d(quartz.materials[i].clone()),
+            slab.with_translation(slab.translation + slab.rotation * Vec3::Y * 0.08),
+        ));
         // A thin column of light, once it is awake, so stations can be found from across the island.
         let material = materials.add(StandardMaterial { unlit: true, ..default() });
-        commands.spawn((Beacon(i), Mesh3d(beam.clone()), MeshMaterial3d(material), Transform::from_translation(foot + Vec3::Y * 9.0)));
+        commands.spawn((WorldEntity, Beacon(i), Mesh3d(beam.clone()), MeshMaterial3d(material), Transform::from_translation(foot + Vec3::Y * 9.0)));
     }
 
     // Survey stakes at the corners of each target: a dark post with an orange pennant.
@@ -57,8 +70,13 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let post_material = materials.add(StandardMaterial { base_color: Color::srgb(0.20, 0.21, 0.25), perceptual_roughness: 0.6, ..default() });
     let pennant_material = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.56, 0.10), unlit: true, ..default() });
     for foot in &sites.stakes {
-        commands.spawn((Mesh3d(post.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 0.7)));
-        commands.spawn((Mesh3d(pennant.clone()), MeshMaterial3d(pennant_material.clone()), Transform::from_translation(*foot + Vec3::new(0.0, 1.28, 0.2))));
+        commands.spawn((WorldEntity, Mesh3d(post.clone()), MeshMaterial3d(post_material.clone()), Transform::from_translation(*foot + Vec3::Y * 0.7)));
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(pennant.clone()),
+            MeshMaterial3d(pennant_material.clone()),
+            Transform::from_translation(*foot + Vec3::new(0.0, 1.28, 0.2)),
+        ));
     }
 
     // The builders' lamps: a stone post, a block of quartz and a stone cap. Each lights as its
@@ -67,24 +85,24 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let lamp = meshes.add(Cuboid::new(0.3, 0.38, 0.3));
     let cap = meshes.add(Cuboid::new(0.46, 0.1, 0.46));
     for (foot, &machine) in sites.lanterns.iter().zip(&sites.lantern_machine) {
-        commands.spawn((Mesh3d(pole.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(*foot + Vec3::Y * 1.15)));
-        commands.spawn((Mesh3d(lamp.clone()), MeshMaterial3d(quartz.0[machine].clone()), Transform::from_translation(*foot + Vec3::Y * 2.49)));
-        commands.spawn((Mesh3d(cap.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(*foot + Vec3::Y * 2.73)));
+        commands.spawn((WorldEntity, Mesh3d(pole.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(*foot + Vec3::Y * 1.15)));
+        commands.spawn((
+            WorldEntity,
+            Mesh3d(lamp.clone()),
+            MeshMaterial3d(quartz.materials[machine].clone()),
+            Transform::from_translation(*foot + Vec3::Y * 2.49),
+        ));
+        commands.spawn((WorldEntity, Mesh3d(cap.clone()), MeshMaterial3d(stone.clone()), Transform::from_translation(*foot + Vec3::Y * 2.73)));
     }
     commands.insert_resource(quartz);
 }
 
 /// Light each machine's console face and lamps as it wakes.
-fn light_consoles(
-    time: Res<Time>,
-    waking: Res<Waking>,
-    quartz: Res<ConsoleQuartz>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut shown: Local<Option<[f32; MACHINES]>>,
-) {
+fn light_consoles(time: Res<Time>, waking: Res<Waking>, mut quartz: ResMut<ConsoleQuartz>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let lit: [bool; MACHINES] = std::array::from_fn(|machine| waking.console_awake(machine));
-    for (machine, f) in crate::waking::fade_towards(&mut shown, lit, time.delta_secs()) {
-        if let Some(mut material) = materials.get_mut(&quartz.0[machine]) {
+    let quartz = &mut *quartz;
+    for (machine, f) in crate::waking::fade_towards(&mut quartz.fade_shown, lit, time.delta_secs()) {
+        if let Some(mut material) = materials.get_mut(&quartz.materials[machine]) {
             *material = MachineTrim::look_at(f);
         }
     }
@@ -107,11 +125,14 @@ pub fn machine_name(kind: PuzzleKind) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn proximity(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     sites: Res<Sites>,
     game: Res<Game>,
+    sim: Res<Sim>,
+    beam: Res<crate::beam::Beam>,
     waking: Res<Waking>,
     mut ui: ResMut<Ui>,
     player: Single<&Transform, With<Player>>,
@@ -122,8 +143,8 @@ fn proximity(
     if ui.station.is_some() && ui.station != ui.near_station {
         ui.station = None;
     }
-    // While the way wakes, E skips the wake (see `waking`) rather than opening a station.
-    if wants.wants_any_keyboard_input() || waking.playing() {
+    // While the HUD is hidden (wake, station run, or beam swing), E cannot open or close a station.
+    if wants.wants_any_keyboard_input() || crate::ui::hud_hidden(&waking, &sim, &beam) {
         return;
     }
     if keys.just_pressed(KeyCode::KeyE)
@@ -193,14 +214,14 @@ fn frame_station(
     sim: Res<Sim>,
     waking: Res<Waking>,
     mut orbit: ResMut<OrbitCamera>,
-    mut shown: Local<Option<usize>>,
+    mut quartz: ResMut<ConsoleQuartz>,
 ) {
-    if ui.station == *shown {
+    if ui.station == quartz.frame_shown {
         return;
     }
     if sim.busy() || sim.watching() {
         // The test keeps the camera; `sim` brings it back to the station, or home, when it is done.
-        *shown = ui.station;
+        quartz.frame_shown = ui.station;
         return;
     }
     match ui.station {
@@ -208,7 +229,7 @@ fn frame_station(
         None if !waking.playing() => orbit.ease_home(),
         None => {}
     }
-    *shown = ui.station;
+    quartz.frame_shown = ui.station;
 }
 
 /// A console's column of light is there once its machine has woken: green once its job is done,
@@ -218,14 +239,14 @@ fn colour_beacons(
     waking: Res<Waking>,
     mut beacons: Query<(&Beacon, &MeshMaterial3d<StandardMaterial>, &mut Visibility)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut shown: Local<Option<usize>>,
+    mut quartz: ResMut<ConsoleQuartz>,
 ) {
     // A wake changes the way every frame; the columns only when a console wakes.
     let awake = (0..PUZZLES).filter(|&i| waking.console_awake(i)).count();
-    if !game.is_changed() && *shown == Some(awake) {
+    if !game.is_changed() && quartz.beacons_shown == Some(awake) {
         return;
     }
-    *shown = Some(awake);
+    quartz.beacons_shown = Some(awake);
     for (beacon, handle, mut visibility) in &mut beacons {
         visibility.set_if_neq(if waking.console_awake(beacon.0) { Visibility::Inherited } else { Visibility::Hidden });
         let colour = if game.solved(beacon.0) {

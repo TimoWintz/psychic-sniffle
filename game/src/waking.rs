@@ -26,7 +26,7 @@ use crate::companion::Landmarks;
 use crate::island::{Cable, MACHINES, Sites, Stonework, Way};
 use crate::player::{OrbitCamera, back, follow_blend, reach};
 use crate::sim::{Sim, TerrainReshaped};
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, WorldEntity, not_paused};
 use crate::vessel::{SIGHT_SIZE, Sight};
 use crate::voxel::{DARK_QUARTZ, VoxelWorld};
 use bevy::prelude::*;
@@ -558,6 +558,21 @@ pub fn lit_quartz(materials: &mut Assets<StandardMaterial>) -> Handle<StandardMa
 /// The place Lumen's eye follows while the light runs (a landmark that moves).
 pub const LIGHT_ON_THE_ROAD: &str = "The light on the road";
 
+/// Fade state for each machine's quartz trim, stored as a resource so world reloads reset it.
+#[derive(Resource, Default)]
+pub struct TrimFade(pub Option<[f32; MACHINES]>);
+
+/// Reset `Waking`, `MachineTrim`, and `TrimFade` for a newly loaded save's stage.
+pub fn reset_resources(world: &mut World, shown: usize) {
+    let trim = {
+        let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+        MachineTrim(std::array::from_fn(|machine| materials.add(MachineTrim::look(wake_lit(machine, shown)))))
+    };
+    world.insert_resource(Waking::new(shown));
+    world.insert_resource(trim);
+    world.insert_resource(TrimFade::default());
+}
+
 pub struct WakingPlugin;
 
 impl Plugin for WakingPlugin {
@@ -569,8 +584,9 @@ impl Plugin for WakingPlugin {
         };
         app.insert_resource(Waking::new(shown))
             .insert_resource(trim)
-            .add_systems(Startup, spawn)
-            .add_systems(Update, (play.run_if(in_state(Mode::Playing)), pose_parts, light_trim).chain())
+            .init_resource::<TrimFade>()
+            .add_systems(BuildWorld, spawn)
+            .add_systems(Update, (play.run_if(in_state(Mode::Playing)).run_if(not_paused), pose_parts, light_trim.run_if(not_paused)).chain())
             .add_systems(EguiPrimaryContextPass, letterbox.after(crate::ui::style).run_if(in_state(Mode::Playing)));
     }
 }
@@ -589,6 +605,7 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     let towards = (crate::intro::Mainland::wreck() - way.keystone).with_y(0.0).normalize() + Vec3::Y * 0.08;
     let rotation = Quat::from_rotation_arc(Vec3::Y, towards.normalize());
     commands.spawn((
+        WorldEntity,
         Part::NorthBeam,
         Mesh3d(meshes.add(Cylinder::new(0.35, BEAM_LENGTH))),
         MeshMaterial3d(light),
@@ -597,15 +614,23 @@ fn spawn(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
     ));
     // The transfer crane's arm: a stone boom on the mast's top, which turns about the mast.
     let arm = Mesh::from(Cuboid::new(0.3, 0.3, ARM_REACH + ARM_TAIL)).translated_by(Vec3::Z * (ARM_REACH - ARM_TAIL) / 2.0);
-    commands.spawn((Part::CraneArm, Mesh3d(meshes.add(arm)), MeshMaterial3d(stone.clone()), Transform::from_translation(way.crane_pivot)));
+    commands.spawn((WorldEntity, Part::CraneArm, Mesh3d(meshes.add(arm)), MeshMaterial3d(stone.clone()), Transform::from_translation(way.crane_pivot)));
     // The line from the arm down to the sight while it hangs there.
-    commands.spawn((Part::HookLine, Mesh3d(meshes.add(Cylinder::new(0.02, 1.0))), MeshMaterial3d(stone), Transform::default(), Visibility::Hidden));
+    commands.spawn((
+        WorldEntity,
+        Part::HookLine,
+        Mesh3d(meshes.add(Cylinder::new(0.02, 1.0))),
+        MeshMaterial3d(stone),
+        Transform::default(),
+        Visibility::Hidden,
+    ));
     // The bridge's cables, a chain of glowing segments each, which come with the deck.
     let glowing = lit_quartz(&mut materials);
     let segment = meshes.add(Cylinder::new(CABLE_RADIUS, 1.0));
     for (c, cable) in way.cables.iter().enumerate() {
         for (i, ends) in cable.points.windows(2).enumerate() {
             commands.spawn((
+                WorldEntity,
                 Part::Cable { cable: c, segment: i },
                 Mesh3d(segment.clone()),
                 MeshMaterial3d(glowing.clone()),
@@ -777,26 +802,33 @@ fn play(
     }
 }
 
-/// The letterbox while a wake plays.
+/// The letterbox while a wake plays, with a quiet skip cue on the lower bar.
 fn letterbox(mut contexts: EguiContexts, waking: Res<Waking>) -> Result {
     let Some(play) = waking.play else { return Ok(()) };
     let ctx = contexts.ctx_mut()?.clone();
     let screen = ctx.content_rect();
+    let bars = play.timeline.bars(play.t);
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("waking")));
-    crate::cinematic::paint_letterbox(&painter, screen, play.timeline.bars(play.t), None, None, 0.0);
+    crate::cinematic::paint_letterbox(&painter, screen, bars, None, None, 0.0);
+    if bars > 0.3 {
+        let bar_h = crate::cinematic::letterbox_height(screen, bars);
+        let alpha = (((bars - 0.3) / 0.7).clamp(0.0, 1.0) * 185.0) as u8;
+        let colour = egui::Color32::from_rgba_unmultiplied(190, 200, 215, alpha);
+        painter.text(
+            egui::pos2(screen.right() - 18.0, screen.bottom() - bar_h / 2.0),
+            egui::Align2::RIGHT_CENTER,
+            "Press E or Esc to skip",
+            egui::FontId::proportional(13.0),
+            colour,
+        );
+    }
     Ok(())
 }
 
 /// Light the quartz on each machine's moving parts as the machine wakes.
-fn light_trim(
-    time: Res<Time>,
-    waking: Res<Waking>,
-    trim: Res<MachineTrim>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut shown: Local<Option<[f32; MACHINES]>>,
-) {
+fn light_trim(time: Res<Time>, waking: Res<Waking>, trim: Res<MachineTrim>, mut materials: ResMut<Assets<StandardMaterial>>, mut shown: ResMut<TrimFade>) {
     let lit: [bool; MACHINES] = std::array::from_fn(|machine| waking.glows(machine));
-    for (machine, f) in fade_towards(&mut shown, lit, time.delta_secs()) {
+    for (machine, f) in fade_towards(&mut shown.0, lit, time.delta_secs()) {
         if let Some(mut material) = materials.get_mut(&trim.0[machine]) {
             *material = MachineTrim::look_at(f);
         }

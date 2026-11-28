@@ -1,11 +1,15 @@
 //! The avatar and the camera that follows it.
 
 use crate::island::Sites;
-use crate::state::{Game, Mode, Ui};
+use crate::ruler::Ruler;
+use crate::state::{BuildWorld, Game, Mode, Ui, not_paused};
 use crate::voxel::VoxelWorld;
+use crate::waking::Waking;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
+use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 use bevy_egui::input::EguiWantsInput;
+use std::sync::OnceLock;
 
 /// Half-width and height of the avatar's collision box. Its transform is at its feet.
 const HALF_WIDTH: f32 = 0.3;
@@ -16,11 +20,23 @@ pub(crate) const WALK_SPEED: f32 = 5.0;
 pub(crate) const RUN_SPEED: f32 = 9.0;
 /// Take-off speed of a jump. The height reached depends on the planet: v^2 / (2 g).
 pub(crate) const JUMP_SPEED: f32 = 6.0;
+/// Grace period after stepping off a ledge during which jumping still works.
+const COYOTE_SECONDS: f32 = 0.12;
+/// Window before landing during which a Space press is remembered and fires on touchdown.
+const JUMP_BUFFER_SECONDS: f32 = 0.12;
 
 #[derive(Component, Default)]
 pub struct Player {
     pub velocity: Vec3,
     pub grounded: bool,
+    /// Seconds left of coyote time after walking off an edge.
+    coyote: f32,
+    /// Seconds left of a buffered jump press.
+    jump_buffer: f32,
+    /// Negative vertical offset after a 1-block step-up, decayed smoothly so the camera glides up.
+    pub step_offset: f32,
+    /// Space also starts the game from the menu: a press still held from there is not a jump.
+    jump_armed: bool,
 }
 
 #[derive(Resource)]
@@ -35,12 +51,21 @@ pub struct OrbitCamera {
     saved: Option<(f32, f32, f32)>,
     /// The player's yaw, pitch and distance the camera is easing back to, after a wake or a station.
     returning: Option<(f32, f32, f32)>,
+    /// Remaining distance glide after manual rotation cancels a return glide (e.g. zooming back in
+    /// from a wide station view while the player is already turning to walk away).
+    returning_distance: Option<f32>,
     /// The yaw, pitch and distance the camera is turning to: to show something past the avatar, or a
     /// station's puzzle.
     turning: Option<(f32, f32, f32)>,
     /// The camera is on a side view (a test, or a station's puzzle), which may stand further back
     /// than the player zooms out.
     side_view: bool,
+    /// Whether the cursor is hidden and grabbed for button-free mouse look while exploring.
+    pub free_look: bool,
+    /// Frames left to ignore mouse motion after entering `free_look` (avoids OS grab spikes).
+    lock_settle: u8,
+    /// Accumulated mouse movement in pixels while resisting micro-jitter during a story camera pan.
+    turn_cancel_drag: f32,
     /// A wake has the camera (see [`OrbitCamera::borrow`]): it keeps its distance.
     held: bool,
 }
@@ -55,11 +80,31 @@ impl Default for OrbitCamera {
             focus: Vec3::ZERO,
             saved: None,
             returning: None,
+            returning_distance: None,
             turning: None,
             side_view: false,
+            free_look: false,
+            lock_settle: 0,
+            turn_cancel_drag: 0.0,
             held: false,
         }
     }
+}
+
+/// Mouse movement (pixels) needed in free-look before manual input cancels an automatic story pan.
+const STORY_PAN_CANCEL_PX: f32 = 18.0;
+
+/// Whether button-free mouse look may engage: focused window, exploring with no panel, ruler,
+/// hidden HUD (wake/test/swing), or pause menu active.
+pub fn can_free_look(window_focused: bool, at_console: bool, panel_open: bool, ruler_in_use: bool, hud_hidden: bool, paused: bool) -> bool {
+    window_focused && !at_console && !panel_open && !ruler_in_use && !hud_hidden && !paused
+}
+
+/// Automated screenshot/test scripts drive the camera themselves and should not lock the OS cursor.
+/// `prefill` is played by hand and behaves like a normal game.
+fn scripted_run() -> bool {
+    static SCRIPTED: OnceLock<bool> = OnceLock::new();
+    *SCRIPTED.get_or_init(|| std::env::var("GAME_SCRIPT").is_ok_and(|s| s != "prefill"))
 }
 
 /// The camera's nearest and furthest distance from what it looks at.
@@ -127,9 +172,12 @@ impl OrbitCamera {
     fn keep_view(&mut self) {
         self.held = false;
         if self.saved.is_none() {
-            self.saved = Some(self.returning.take().unwrap_or((self.yaw, self.pitch, self.distance)));
+            let fallback = (self.yaw, self.pitch, self.returning_distance.unwrap_or(self.distance));
+            self.saved = Some(self.returning.take().unwrap_or(fallback));
         }
+        self.returning_distance = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
     }
 
     /// Set the yaw, pitch and distance outright, cancelling any glide (the scripts' `Look`).
@@ -137,14 +185,18 @@ impl OrbitCamera {
         (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
         self.held = false;
         self.returning = None;
+        self.returning_distance = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
     }
 
     pub fn release_view(&mut self) {
         self.watch = None;
         self.held = false;
         self.returning = None;
+        self.returning_distance = None;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
         self.side_view = false;
         if let Some((yaw, pitch, distance)) = self.saved.take() {
             (self.yaw, self.pitch, self.distance) = (yaw, pitch, distance);
@@ -157,8 +209,48 @@ impl OrbitCamera {
         self.watch = None;
         self.held = false;
         self.turning = None;
+        self.turn_cancel_drag = 0.0;
+        self.returning_distance = None;
         self.side_view = false;
         self.returning = self.saved.take();
+    }
+
+    /// Filter raw free-look mouse motion: during an automatic story pan (`turning.is_some()` while
+    /// exploring), ignore tiny sensor/desk jitter until the player deliberately moves the mouse.
+    fn free_look_delta(&mut self, delta: Vec2) -> Option<Vec2> {
+        if self.turning.is_some() && self.watch.is_none() {
+            self.turn_cancel_drag += delta.length();
+            if self.turn_cancel_drag < STORY_PAN_CANCEL_PX {
+                return None;
+            }
+        }
+        Some(delta)
+    }
+
+    /// The player rotated the camera manually: stop any yaw/pitch glide so the camera never fights
+    /// input. A return glide's zoom still finishes smoothly unless the player also scrolls. While
+    /// exploring (`watch.is_none()`), also drop any saved return angle so a finished story cue does
+    /// not yank the camera back later.
+    fn manual_rotate(&mut self) {
+        if let Some((_, _, distance)) = self.returning.take() {
+            self.returning_distance = Some(distance);
+        }
+        self.turning = None;
+        self.turn_cancel_drag = 0.0;
+        if self.watch.is_none() {
+            self.saved = None;
+        }
+    }
+
+    /// The player zoomed manually: stop any distance glide so zoom stays where it was set.
+    fn manual_zoom(&mut self) {
+        self.returning_distance = None;
+        if let Some((_, _, distance)) = &mut self.returning {
+            *distance = self.distance;
+        }
+        if let Some((_, _, distance)) = &mut self.turning {
+            *distance = self.distance;
+        }
     }
 
     /// Where the camera stands to look at `focus` with this yaw, pitch and distance, when nothing is
@@ -230,7 +322,8 @@ impl Plugin for PlayerPlugin {
         app.init_resource::<OrbitCamera>()
             .init_resource::<Shore>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (move_player, orbit_camera).chain().run_if(in_state(Mode::Playing)));
+            .add_systems(BuildWorld, reset)
+            .add_systems(Update, (move_player.run_if(not_paused), orbit_camera).chain().run_if(in_state(Mode::Playing)));
     }
 }
 
@@ -246,6 +339,15 @@ fn spawn(
     let player = commands.spawn((Player::default(), Transform::from_translation(sites.spawn), Visibility::default())).id();
     crate::avatar::attach(&mut commands, player, &mut meshes, &mut materials);
     camera.focus = sites.spawn + Vec3::Y * 1.5;
+}
+
+/// Place the avatar and camera back at the current island's landing site.
+pub(crate) fn reset(sites: Res<Sites>, mut camera: ResMut<OrbitCamera>, mut shore: ResMut<Shore>, mut player: Single<(&mut Player, &mut Transform)>) {
+    let (player, transform) = &mut *player;
+    **player = Player::default();
+    **transform = Transform::from_translation(sites.spawn);
+    *shore = Shore { dry: sites.spawn, ..Shore::default() };
+    *camera = OrbitCamera { focus: sites.spawn + Vec3::Y * 1.5, ..OrbitCamera::default() };
 }
 
 fn collides(world: &VoxelWorld, feet: Vec3) -> bool {
@@ -298,7 +400,6 @@ pub(crate) fn move_player(
     camera: Res<OrbitCamera>,
     mut shore: ResMut<Shore>,
     mut player: Single<(&mut Player, &mut Transform)>,
-    mut jump_armed: Local<bool>,
 ) {
     let (player, transform) = &mut *player;
     let dt = time.delta_secs().min(1.0 / 20.0);
@@ -330,10 +431,30 @@ pub(crate) fn move_player(
     player.velocity.y = (player.velocity.y - game.layout.g as f32 * dt).max(-40.0);
     // Space also starts the game from the menu: a press still held from there is not a jump.
     if !keys.pressed(KeyCode::Space) {
-        *jump_armed = true;
+        player.jump_armed = true;
     }
-    if player.grounded && !still && *jump_armed && keys.pressed(KeyCode::Space) {
+    if player.grounded {
+        player.coyote = COYOTE_SECONDS;
+    } else {
+        player.coyote = (player.coyote - dt).max(0.0);
+    }
+    if !still && player.jump_armed && keys.just_pressed(KeyCode::Space) {
+        player.jump_buffer = JUMP_BUFFER_SECONDS;
+    } else {
+        player.jump_buffer = (player.jump_buffer - dt).max(0.0);
+    }
+    let can_jump = player.grounded || player.coyote > 0.0;
+    let wants_jump = player.jump_buffer > 0.0 || (player.grounded && keys.pressed(KeyCode::Space));
+    if can_jump && wants_jump && !still && player.jump_armed {
         player.velocity.y = JUMP_SPEED;
+        player.grounded = false;
+        player.coyote = 0.0;
+        player.jump_buffer = 0.0;
+    }
+
+    player.step_offset *= (-14.0 * dt).exp();
+    if player.step_offset.abs() < 1e-4 {
+        player.step_offset = 0.0;
     }
 
     let mut feet = transform.translation;
@@ -351,6 +472,7 @@ pub(crate) fn move_player(
         let mut stepped = next;
         stepped.y = (feet.y + 1e-3).floor() + 1.0;
         if player.grounded && !collides(&world, stepped) && !collides(&world, feet.with_y(stepped.y)) {
+            player.step_offset = (player.step_offset - (stepped.y - feet.y)).clamp(-1.5, 0.0);
             feet = stepped;
         }
     }
@@ -386,11 +508,17 @@ pub(crate) fn move_player(
         shore.splash = Some(feet);
         feet = shore.dry;
         player.velocity = Vec3::ZERO;
+        player.step_offset = 0.0;
+        player.coyote = 0.0;
+        player.jump_buffer = 0.0;
     }
     // Out of the world, or walled in: back to the start.
     if feet.y < 1.0 || collides(&world, feet) {
         feet = sites.spawn;
         player.velocity = Vec3::ZERO;
+        player.step_offset = 0.0;
+        player.coyote = 0.0;
+        player.jump_buffer = 0.0;
     }
     if player.grounded && !over_deep_water(&world, feet) {
         shore.dry = feet;
@@ -407,14 +535,108 @@ fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     wants: Res<EguiWantsInput>,
     world: Res<VoxelWorld>,
+    ui: Res<Ui>,
+    sim: Res<crate::sim::Sim>,
+    beam: Res<crate::beam::Beam>,
+    ruler: Res<Ruler>,
+    waking: Res<Waking>,
     mut orbit: ResMut<OrbitCamera>,
-    player: Single<&Transform, (With<Player>, Without<Camera3d>)>,
+    window: Single<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
+    player: Single<(&Player, &Transform), Without<Camera3d>>,
     mut camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let dt = time.delta_secs();
+    #[allow(unused_mut)]
+    let (mut win, mut cursor) = window.into_inner();
+    let panel_open = ui.notebook_open || ui.handbook_open || ui.tutor_open || ui.controls_open;
+    let hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
+    let want_free_look = !scripted_run() && can_free_look(win.focused, ui.at_console(), panel_open, ruler.in_use(), hidden, ui.paused);
+    let entering = want_free_look && !orbit.free_look;
+    if entering {
+        orbit.lock_settle = 2;
+    } else if !want_free_look {
+        orbit.lock_settle = 0;
+    }
+    orbit.free_look = want_free_look;
+
+    let locked_grab = if cfg!(target_os = "windows") { CursorGrabMode::Confined } else { CursorGrabMode::Locked };
+    let want_grab = if orbit.free_look { locked_grab } else { CursorGrabMode::None };
+    let want_visible = !orbit.free_look;
+    if cursor.grab_mode != want_grab {
+        cursor.grab_mode = want_grab;
+    }
+    if cursor.visible != want_visible {
+        cursor.visible = want_visible;
+    }
+    if ui.paused {
+        return;
+    }
+    let settling = orbit.lock_settle > 0;
+    if orbit.lock_settle > 0 {
+        orbit.lock_settle -= 1;
+    }
+    #[cfg(target_os = "windows")]
+    if orbit.free_look {
+        // On Windows, `winit` confines rather than locks the cursor; pin the hidden pointer to the
+        // window centre immediately on entry (inside `lock_settle`) and whenever it drifts, so it
+        // never hovers HUD widgets and starts centered when a panel opens.
+        let center = win.size() / 2.0;
+        if entering || win.cursor_position().is_none_or(|p| (p - center).length_squared() > 16.0) {
+            win.set_cursor_position(Some(center));
+        }
+    }
+
+    // A side view may stand further back than the player zooms out, to fit its whole test.
+    let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
+    let mut rotated = false;
+    let mut zoomed = false;
+    if orbit.turning.is_none() {
+        orbit.turn_cancel_drag = 0.0;
+    }
+    if orbit.free_look {
+        if !settling
+            && motion.delta != Vec2::ZERO
+            && let Some(delta) = orbit.free_look_delta(motion.delta)
+        {
+            orbit.yaw -= delta.x * 0.0035;
+            orbit.pitch += delta.y * 0.0035;
+            rotated = true;
+        }
+        if scroll.delta.y != 0.0 {
+            orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
+            zoomed = true;
+        }
+    } else if !wants.wants_any_pointer_input() {
+        let left_orbit = !ruler.active && buttons.pressed(MouseButton::Left);
+        if (left_orbit || buttons.pressed(MouseButton::Right) || buttons.pressed(MouseButton::Middle)) && motion.delta != Vec2::ZERO {
+            orbit.yaw -= motion.delta.x * 0.005;
+            orbit.pitch += motion.delta.y * 0.005;
+            rotated = true;
+        }
+        if scroll.delta.y != 0.0 {
+            orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
+            zoomed = true;
+        }
+    }
+    if !wants.wants_any_keyboard_input() {
+        let turn = keys.pressed(KeyCode::ArrowLeft) as i32 - keys.pressed(KeyCode::ArrowRight) as i32;
+        let tilt = keys.pressed(KeyCode::ArrowUp) as i32 - keys.pressed(KeyCode::ArrowDown) as i32;
+        if turn != 0 || tilt != 0 {
+            orbit.yaw += turn as f32 * 1.8 * dt;
+            orbit.pitch += tilt as f32 * 1.2 * dt;
+            rotated = true;
+        }
+    }
+    if rotated {
+        orbit.manual_rotate();
+    }
+    if zoomed {
+        orbit.manual_zoom();
+    }
+
     let blend = follow_blend(dt);
     // Back to the player's view, or round to show something or a station's puzzle: slower, so the
-    // eye can follow.
+    // eye can follow. Yielded immediately above whenever the player turns the camera themselves.
     let easing = orbit.returning.map(|view| (view, blend)).or(orbit.turning.map(|view| (view, (dt * 2.5).min(1.0))));
     if let Some(((yaw, pitch, distance), blend)) = easing {
         // The shorter way round.
@@ -427,25 +649,17 @@ fn orbit_camera(
             orbit.returning = None;
             orbit.turning = None;
         }
-    }
-    if !wants.wants_any_pointer_input() {
-        if buttons.pressed(MouseButton::Right) || buttons.pressed(MouseButton::Middle) {
-            orbit.yaw -= motion.delta.x * 0.005;
-            orbit.pitch += motion.delta.y * 0.005;
+    } else if let Some(distance) = orbit.returning_distance {
+        orbit.distance += (distance - orbit.distance) * blend;
+        if (distance - orbit.distance).abs() < 1e-2 {
+            orbit.distance = distance;
+            orbit.returning_distance = None;
         }
-        // A side view may stand further back than the player zooms out, to fit its whole test.
-        let furthest = if orbit.side_view && orbit.watch.is_some() { SIDE_VIEW_FURTHEST } else { FURTHEST };
-        orbit.distance = (orbit.distance * (1.0 - scroll.delta.y * 0.1)).clamp(NEAREST, furthest);
-    }
-    if !wants.wants_any_keyboard_input() {
-        let turn = keys.pressed(KeyCode::ArrowLeft) as i32 - keys.pressed(KeyCode::ArrowRight) as i32;
-        let tilt = keys.pressed(KeyCode::ArrowUp) as i32 - keys.pressed(KeyCode::ArrowDown) as i32;
-        orbit.yaw += turn as f32 * 1.8 * dt;
-        orbit.pitch += tilt as f32 * 1.2 * dt;
     }
     orbit.pitch = orbit.pitch.clamp(-0.3, 1.45);
 
-    let target = orbit.watch.unwrap_or(player.translation + Vec3::Y * 1.5);
+    let (player_state, player_transform) = *player;
+    let target = orbit.watch.unwrap_or(player_transform.translation + Vec3::Y * (1.5 + player_state.step_offset));
     orbit.follow(target, blend);
     // Pull the camera in if terrain is between it and what it looks at.
     camera.translation = orbit.focus + orbit.back() * orbit.reach(&world);
@@ -518,5 +732,57 @@ mod tests {
         orbit.ease_home();
         assert_eq!(orbit.returning, Some(own));
         assert_eq!(orbit.turning, None);
+    }
+
+    #[test]
+    fn free_look_engages_only_when_exploring_with_focus() {
+        assert!(can_free_look(true, false, false, false, false, false));
+        assert!(!can_free_look(false, false, false, false, false, false), "unfocused window releases cursor");
+        assert!(!can_free_look(true, true, false, false, false, false), "open station releases cursor");
+        assert!(!can_free_look(true, false, true, false, false, false), "open dock panel releases cursor");
+        assert!(!can_free_look(true, false, false, true, false, false), "ruler in use releases cursor");
+        assert!(!can_free_look(true, false, false, false, true, false), "hidden HUD (wake/run/swing) releases cursor");
+        assert!(!can_free_look(true, false, false, false, false, true), "pause menu releases cursor");
+    }
+
+    #[test]
+    fn story_pan_ignores_tiny_jitter_but_yields_to_deliberate_mouse_movement() {
+        let mut orbit = OrbitCamera::default();
+        orbit.face(Vec3::ZERO, Vec3::new(20.0, 0.0, 0.0), 0.12, 9.0);
+        // Tiny 1-2 px jitter does not cancel the story pan.
+        assert_eq!(orbit.free_look_delta(Vec2::new(1.0, 0.0)), None);
+        assert_eq!(orbit.free_look_delta(Vec2::new(0.0, 2.0)), None);
+        assert!(orbit.turning.is_some());
+        // Deliberate movement breaks through and yields control.
+        assert!(orbit.free_look_delta(Vec2::new(20.0, 0.0)).is_some());
+    }
+
+    #[test]
+    fn manual_rotation_cancels_camera_glides_without_fighting_input() {
+        // During a story look (exploring, no watch), manual rotation stops both the turn and any
+        // delayed snap-back to the old saved angle.
+        let mut orbit = OrbitCamera::default();
+        orbit.face(Vec3::ZERO, Vec3::new(20.0, 0.0, 0.0), 0.12, 9.0);
+        assert!(orbit.turning.is_some());
+        assert!(orbit.saved.is_some());
+        orbit.manual_rotate();
+        assert_eq!(orbit.turning, None);
+        assert_eq!(orbit.saved, None);
+
+        // Leaving a wide station side view: manual rotation cancels yaw/pitch snap-back while
+        // keeping the distance return glide until the player scrolls.
+        let mut orbit = OrbitCamera { distance: 14.0, ..OrbitCamera::default() };
+        orbit.frame_side_view(Vec3::ZERO, Vec3::new(30.0, 10.0, 0.0), Vec3::X, true);
+        // Rotating while the station is open stops the side-view turn but keeps `saved` for exit.
+        orbit.manual_rotate();
+        assert_eq!(orbit.turning, None);
+        assert!(orbit.saved.is_some());
+        orbit.ease_home();
+        assert!(orbit.returning.is_some());
+        orbit.manual_rotate();
+        assert_eq!(orbit.returning, None);
+        assert_eq!(orbit.returning_distance, Some(14.0));
+        orbit.manual_zoom();
+        assert_eq!(orbit.returning_distance, None);
     }
 }

@@ -18,9 +18,10 @@ use crate::carry::{Carry, Item, Slot, Yard};
 use crate::island::Sites;
 use crate::ruler::Ruler;
 use crate::sim::Sim;
-use crate::state::{Game, Mode, PUZZLES, Ui};
+use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, not_paused};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
+use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Color32, Pos2, Stroke, Vec2 as EVec2, pos2, vec2};
 use physics_core::content::{RemarkWhen, Spoken};
@@ -62,7 +63,7 @@ impl Landmarks {
         places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
         places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
-        places.push(("The skiff on the slipway".into(), sites.slipway + Vec3::Y * 1.0));
+        places.push(("The boat on the slipway".into(), sites.slipway + Vec3::Y * 1.0));
         places.push((MAIN_HULL.into(), crate::intro::Mainland::wreck() + Vec3::Y * 6.0));
         places.push((SHORE.into(), sites.shore + Vec3::Y * 1.0));
         // The way: its gates and the ramp, and the light that runs along it while a machine wakes.
@@ -210,6 +211,9 @@ struct Line {
     said: u64,
 }
 
+/// How many recent spoken lines Lumen keeps in its log for the player to reread.
+const MAX_HISTORY: usize = 40;
+
 /// Lumen's state: where it looks, how it feels, what it is saying, and its animation.
 #[derive(Resource, Default)]
 pub struct Companion {
@@ -220,6 +224,8 @@ pub struct Companion {
     held: Option<(String, f32, bool)>,
     mood_left: f32,
     lines: Vec<Line>,
+    /// Recent lines Lumen has spoken this session, oldest first, shown in Lumen's panel.
+    pub history: Vec<String>,
     anim: Animation,
     /// Stations where Lumen has already suggested trying the experiment, and what to build, this
     /// session.
@@ -241,6 +247,8 @@ pub struct Companion {
     beam_why: bool,
     beam_misses: u32,
     beam_rule: bool,
+    /// Last frame's view of the game, stored here so world reloads reset it cleanly.
+    last_seen: Option<Seen>,
 }
 
 impl Companion {
@@ -265,7 +273,28 @@ impl Companion {
         self.speak(line.text.clone(), line.look.clone(), keep);
     }
 
+    /// Skip straight to the next queued line, or dismiss the bubble if this is the last one.
+    pub fn advance_line(&mut self) -> bool {
+        if self.lines.is_empty() {
+            return false;
+        }
+        self.lines.remove(0);
+        true
+    }
+
+    fn record_history(&mut self, text: &str) {
+        if self.history.last().map(String::as_str) == Some(text) {
+            return;
+        }
+        self.history.push(text.to_string());
+        if self.history.len() > MAX_HISTORY {
+            let drop = self.history.len() - MAX_HISTORY;
+            self.history.drain(..drop);
+        }
+    }
+
     fn speak(&mut self, text: String, look: Option<String>, keep: bool) {
+        self.record_history(&text);
         let telling = self.lines.iter().any(|l| l.keep);
         if telling {
             let now = self.frame;
@@ -431,19 +460,16 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     if f.station_open
         && let Some(kind) = unsolved
     {
-        // The drop tower's experiment waits for the light gate, so the gate comes before it.
-        if kind == PuzzleKind::Gravity && f.slot_empty && (f.demo_pending || f.gate_pending) {
-            return Some(LIGHT_GATE.into());
-        }
         if f.demo_pending
             && let Some(place) = guide(kind).demo
         {
             return Some(place.into());
         }
         match kind {
+            PuzzleKind::Gravity if f.slot_empty && f.gate_pending => return Some(LIGHT_GATE.into()),
             PuzzleKind::Channel if f.slot_empty => return Some(LEDGE_BLOCKS.into()),
             PuzzleKind::Rail if f.slot_empty => return Some(CART_BLOCK.into()),
-            // A gate on the tower and nothing timed with it yet: run the experiment.
+            // A gate on the tower and nothing timed with it yet: drop and time it.
             PuzzleKind::Gravity if f.gate_pending => return guide(kind).demo.map(Into::into),
             _ => {}
         }
@@ -457,7 +483,7 @@ fn choose_gaze(f: &Facts) -> Option<String> {
     }
     match &f.next_station {
         Some(station) => Some(station.clone()),
-        None if f.next.is_none() => Some("The skiff on the slipway".into()),
+        None if f.next.is_none() => Some("The boat on the slipway".into()),
         None => None,
     }
 }
@@ -490,9 +516,35 @@ impl Plugin for CompanionPlugin {
         let landmarks = Landmarks::new(app.world().resource::<Sites>(), app.world().resource::<Game>());
         app.insert_resource(landmarks)
             .init_resource::<Companion>()
+            .add_systems(BuildWorld, reset)
             // The greeting comes with the first frame of the game, after Start.
-            .add_systems(Update, (follow_sites, direct.run_if(in_state(Mode::Playing))).chain())
-            .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).run_if(in_state(Mode::Playing)));
+            .add_systems(
+                Update,
+                (follow_sites, advance_speech.run_if(in_state(Mode::Playing)).run_if(not_paused), direct.run_if(in_state(Mode::Playing)).run_if(not_paused))
+                    .chain(),
+            )
+            .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).after(crate::beam::panel).run_if(in_state(Mode::Playing)));
+    }
+}
+
+fn reset(sites: Res<Sites>, game: Res<Game>, mut landmarks: ResMut<Landmarks>, mut companion: ResMut<Companion>) {
+    *landmarks = Landmarks::new(&sites, &game);
+    *companion = Companion::default();
+}
+
+/// Pressing Enter while exploring advances or dismisses Lumen's current speech bubble.
+fn advance_speech(
+    keys: Res<ButtonInput<KeyCode>>,
+    wants: Res<EguiWantsInput>,
+    ui: Res<Ui>,
+    waking: Res<crate::waking::Waking>,
+    mut companion: ResMut<Companion>,
+) {
+    if wants.wants_any_keyboard_input() || ui.at_console() || ui.tutor_open || waking.playing() {
+        return;
+    }
+    if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]) {
+        companion.advance_line();
     }
 }
 
@@ -519,7 +571,6 @@ fn direct(
     mut lumen: ResMut<Lumen>,
     mut companion: ResMut<Companion>,
     beam: Res<crate::beam::Beam>,
-    mut last: Local<Option<Seen>>,
 ) {
     let dt = time.delta_secs();
     let companion = &mut *companion;
@@ -556,7 +607,7 @@ fn direct(
         beam_releases: beam.releases,
         beam_woken: crate::beam::woken(&game),
     };
-    match last.as_ref() {
+    match companion.last_seen.clone() {
         None => {
             // The first frame: a greeting. The opening plays until the player has done anything at
             // all, so it isn't heard again by someone who has already been measuring.
@@ -643,17 +694,14 @@ fn direct(
                 if !why.is_empty() && companion.nudged.insert((p, Nudge::Why)) {
                     companion.say(why.clone());
                 }
-                // The drop tower's experiment times nothing without the light gate, so the gate comes first.
-                let gate_first = kind == PuzzleKind::Gravity && gate_pending(&game, p) && carry.gate_on_stand();
-                let nudge = if gate_first {
-                    Some((
-                        Nudge::Build,
-                        "The tower won't time anything without its light gate. See it on the stand? Clamp it to any notch on the tower and it'll time the fall that far. I'd try a short drop and a long one.",
-                    ))
-                } else if game.def(p).demo.is_some() && !now.watched[p] {
+                let nudge = if game.def(p).demo.is_some() && !now.watched[p] {
                     Some((Nudge::Experiment, "Try the experiment before any numbers. Make a guess first. It doesn't cost anything."))
                 } else {
                     match kind {
+                        PuzzleKind::Gravity if gate_pending(&game, p) && carry.gate_on_stand() => Some((
+                            Nudge::Build,
+                            "The tower won't time a fall without its light gate. See it on the stand? Clamp it to any notch on the tower, then use the light gate control to drop and time it. I'd try a short drop and a long one.",
+                        )),
                         PuzzleKind::Rail if carry.holds(Slot::Cart) == 0 => Some((
                             Nudge::Build,
                             "Looks like the cart won't budge empty. Try that loose stone block beside the rail. Press F to pick it up, and F again to set it on the bed.",
@@ -694,7 +742,7 @@ fn direct(
             }
         }
     }
-    *last = Some(now);
+    companion.last_seen = Some(now);
 
     // Time passes for held looks, moods and lines.
     if let Some((_, left, _)) = &mut companion.held {
@@ -722,7 +770,7 @@ fn direct(
     // A remark about where the player is, if nothing else is going on.
     let calm = Quiet {
         station_open: ui.at_console(),
-        running: testing.is_some() || sim.demo().is_some(),
+        running: testing.is_some() || sim.demo().is_some() || sim.measuring().is_some(),
         ruler: ruler.active || ruler.in_use(),
         conversation_open: ui.tutor_open,
         carrying: carry.holding.is_some(),
@@ -754,7 +802,7 @@ fn direct(
         next,
         next_station: next.map(|n| station_name(&game, n)),
         testing,
-        demo_running: sim.demo().map(|p| game.def(p).kind),
+        demo_running: sim.demo().or(sim.measuring()).map(|p| game.def(p).kind),
         demo_pending: focus_def.demo.is_some() && !game.save.demo_watched(&focus_def.id) && !game.solved(focus),
         ruler_active: ruler.active,
         ruler_first: ruler.first.as_ref().filter(|_| ruler.second.is_none()).map(|p| p.label.clone()),
@@ -1020,6 +1068,62 @@ fn edge_point(rect: egui::Rect, d: EVec2) -> Pos2 {
     rect.center() + d * sx.min(sy)
 }
 
+/// Clamp `rect` inside `bounds` by translating it without changing its size.
+fn clamp_inside(rect: egui::Rect, bounds: egui::Rect) -> egui::Rect {
+    rect.translate(vec2(
+        (bounds.left() - rect.left()).max(0.0) - (rect.right() - bounds.right()).max(0.0),
+        (bounds.top() - rect.top()).max(0.0) - (rect.bottom() - bounds.bottom()).max(0.0),
+    ))
+}
+
+/// Total area of `rect` overlapping any of `occupied` (padded by a small margin).
+fn overlap_area(rect: egui::Rect, occupied: &[egui::Rect]) -> f32 {
+    occupied
+        .iter()
+        .map(|panel| {
+            let inter = rect.intersect(panel.expand(4.0));
+            if inter.is_positive() { inter.width() * inter.height() } else { 0.0 }
+        })
+        .sum()
+}
+
+/// Place a floating landmark label near `end`, keeping it on screen and clear of open UI panels.
+fn place_label(screen: egui::Rect, end: Pos2, size: EVec2, edge: Option<EVec2>, occupied: &[egui::Rect]) -> egui::Rect {
+    let bounds = screen.shrink(4.0);
+    let mut candidates = Vec::new();
+    match edge {
+        Some(d) => {
+            let side = vec2(-d.y, d.x);
+            candidates.push(clamp_inside(egui::Rect::from_center_size(end - d * 34.0, size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_center_size(end - d * 28.0 + side * (size.x / 2.0 + 14.0), size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_center_size(end - d * 28.0 - side * (size.x / 2.0 + 14.0), size), bounds));
+        }
+        None => {
+            for offset in [
+                vec2(0.0, -26.0),
+                vec2(0.0, 26.0),
+                vec2(size.x / 2.0 + 18.0, 0.0),
+                vec2(-(size.x / 2.0 + 18.0), 0.0),
+                vec2(size.x / 2.0 + 18.0, -26.0),
+                vec2(size.x / 2.0 + 18.0, 26.0),
+            ] {
+                candidates.push(clamp_inside(egui::Rect::from_center_size(end + offset, size), bounds));
+            }
+        }
+    }
+    let first = candidates[0];
+    // If the preferred position hits a panel (such as the top-left dock), also consider sliding
+    // just below or beside that panel.
+    for panel in occupied {
+        if first.intersects(panel.expand(4.0)) {
+            candidates.push(clamp_inside(egui::Rect::from_min_size(pos2(first.left(), panel.bottom() + 8.0), size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_min_size(pos2(panel.right() + 8.0, first.top()), size), bounds));
+            candidates.push(clamp_inside(egui::Rect::from_min_size(pos2(panel.left() - 8.0 - size.x, first.top()), size), bounds));
+        }
+    }
+    candidates.into_iter().min_by(|a, b| overlap_area(*a, occupied).total_cmp(&overlap_area(*b, occupied))).unwrap_or(first)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw(
     mut contexts: EguiContexts,
@@ -1030,10 +1134,16 @@ fn draw(
     mut companion: ResMut<Companion>,
     mut ui_state: ResMut<Ui>,
     ruler: Res<Ruler>,
+    sim: Res<Sim>,
+    beam: Res<crate::beam::Beam>,
     waking: Res<crate::waking::Waking>,
+    orbit: Res<crate::player::OrbitCamera>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
+    if ui_state.paused {
+        return Ok(());
+    }
     let dt = time.delta_secs().min(0.1);
     let companion = &mut *companion;
     let mood = companion.mood;
@@ -1074,10 +1184,12 @@ fn draw(
     a.lift += (lift - a.lift) * (dt * 6.0).min(1.0);
     // The bars come in fast: the eye keeps up with them, so it is never under one.
     a.lift = a.lift.max(lift_for(bar, false));
+    let hud_hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
+    let show_chat = ui_state.tutor_open && !hud_hidden;
     // Forward to the bottom centre while there is something to say, back to the corner after.
-    let speaking = !ui_state.tutor_open && !companion.lines.is_empty();
+    let speaking = !show_chat && !companion.lines.is_empty();
     a.linger = if speaking { FORWARD_LINGER } else { (a.linger - dt).max(0.0) };
-    let toward = if speaking || (a.linger > 0.0 && !ui_state.tutor_open) { 1.0 } else { 0.0 };
+    let toward = if speaking || (a.linger > 0.0 && !show_chat) { 1.0 } else { 0.0 };
     a.forward += (toward - a.forward).clamp(-dt / FORWARD_SECONDS, dt / FORWARD_SECONDS);
     let forward = crate::voxel::smoothstep(0.0, 1.0, a.forward);
     let right_edge = if ui_state.at_console() { screen.right() - STATION_PANEL } else { screen.right() };
@@ -1147,30 +1259,28 @@ fn draw(
         if let Some((place, _, d)) = aim {
             let galley = painter.layout_no_wrap(place.to_string(), egui::FontId::proportional(12.0), tint([235.0, 245.0, 255.0], a.beam));
             let size = galley.size() + vec2(12.0, 6.0);
-            let toward_middle = d.map_or(vec2(0.0, -26.0), |d| -d * 34.0);
-            let mut rect = egui::Rect::from_center_size(end + toward_middle, size);
-            rect = rect.translate(vec2(
-                (screen.left() + 4.0 - rect.left()).max(0.0) - (rect.right() - screen.right() + 4.0).max(0.0),
-                (screen.top() + 4.0 - rect.top()).max(0.0) - (rect.bottom() - screen.bottom() + 4.0).max(0.0),
-            ));
+            let occupied: Vec<egui::Rect> = ui_state.occupied.iter().map(|r| egui::Rect::from_min_max(pos2(r[0], r[1]), pos2(r[2], r[3]))).collect();
+            let rect = place_label(screen, end, size, d, &occupied);
             painter.rect_filled(rect, 4.0, Color32::from_rgba_unmultiplied(12, 22, 34, (200.0 * a.beam) as u8));
             painter.rect_stroke(rect, 4.0, Stroke::new(1.0, tint(colour, 0.6 * a.beam)), egui::StrokeKind::Inside);
             painter.galley(rect.min + vec2(6.0, 3.0), galley, Color32::WHITE);
         }
     }
 
-    // The eye itself, which can be clicked to talk.
+    // The eye itself, which can be clicked to talk when the cursor is visible and HUD is shown.
+    let interactive = !orbit.free_look && !hud_hidden;
     let reach = EYE + 16.0;
     let area = egui::Area::new(egui::Id::new("lumen-eye")).order(egui::Order::Foreground).fixed_pos(centre - vec2(reach, reach)).show(&ctx, |ui| {
-        let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, egui::Sense::click());
-        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, response.hovered());
-        response.on_hover_text("Lumen. Click here or press T to talk to me.")
+        let sense = if interactive { egui::Sense::click() } else { egui::Sense::empty() };
+        let (rect, response) = ui.allocate_exact_size(vec2(reach, reach) * 2.0, sense);
+        paint_eye(ui.painter(), rect.center(), colour, mood, closure, a.iris, t, interactive && response.hovered());
+        if interactive { response.on_hover_text("Lumen. Click here or press T to talk to me.") } else { response }
     });
-    if area.inner.clicked() {
+    if interactive && area.inner.clicked() {
         ui_state.tutor_open = !ui_state.tutor_open;
     }
 
-    if ui_state.tutor_open {
+    if show_chat {
         // The conversation, in a panel that grows out of the eye where its lines appear. It moves
         // with the eye and cannot be dragged away from it.
         let anchor = bubble_anchor(rest);
@@ -1183,13 +1293,14 @@ fn draw(
                         ui_state.tutor_open = false;
                     }
                     ui.separator();
-                    crate::ui::tutor_body(ui, &game, &mut ui_state, &mut lumen, &landmarks, room);
+                    crate::ui::tutor_body(ui, &game, &mut ui_state, &mut lumen, &landmarks, &companion.history, room);
                 });
             });
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-panel-tail")));
         paint_tail(&painter, panel.response.rect, centre, BUBBLE_FILL, stroke);
     } else if let Some(line) = companion.lines.first() {
-        // What Lumen is saying, in a bubble over the eye.
+        // What Lumen is saying, in a clickable bubble over the eye.
+        let more = companion.lines.len() > 1;
         let alpha = (line.shown / 0.25).min(1.0) * (line.left / 0.5).min(1.0);
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-says")));
         // A ring spreads from the eye as a line starts, to catch the eye of the player.
@@ -1198,14 +1309,35 @@ fn draw(
             painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
         }
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
-        let size = galley.size() + vec2(20.0, 14.0);
+        let enter_advances = !ui_state.at_console() && !waking.playing();
+        let hint_text = match (orbit.free_look, enter_advances, more) {
+            (true, _, true) => "Press Enter for next",
+            (true, _, false) => "Press Enter to dismiss",
+            (false, true, true) => "Click or press Enter for next",
+            (false, true, false) => "Click or press Enter to dismiss",
+            (false, false, true) => "Click for next",
+            (false, false, false) => "Click to dismiss",
+        };
+        let hint_galley = painter.layout_no_wrap(hint_text.into(), egui::FontId::proportional(11.0), tint([160.0, 180.0, 200.0], alpha * 0.85));
+        let width = galley.size().x.max(hint_galley.size().x);
+        let size = vec2(width + 20.0, galley.size().y + hint_galley.size().y + 18.0);
         let rect = bubble_rect(screen, centre, size, forward);
+        let hit = egui::Area::new(egui::Id::new("lumen-bubble")).order(egui::Order::Foreground).fixed_pos(rect.min).show(&ctx, |ui| {
+            let sense = if orbit.free_look { egui::Sense::empty() } else { egui::Sense::click() };
+            let (_, response) = ui.allocate_exact_size(rect.size(), sense);
+            response
+        });
+        let hovered = !orbit.free_look && hit.inner.hovered();
         let fill = BUBBLE_FILL.gamma_multiply(alpha);
-        let stroke = Stroke::new(1.5, tint(colour, 0.8 * alpha));
+        let stroke = Stroke::new(if hovered { 2.0 } else { 1.5 }, tint(colour, (if hovered { 1.0 } else { 0.8 }) * alpha));
         painter.rect_filled(rect, 8.0, fill);
         painter.rect_stroke(rect, 8.0, stroke, egui::StrokeKind::Inside);
         paint_tail(&painter, rect, centre, fill, stroke);
         painter.galley(rect.min + vec2(10.0, 7.0), galley, Color32::WHITE);
+        painter.galley(pos2(rect.right() - 10.0 - hint_galley.size().x, rect.bottom() - 6.0 - hint_galley.size().y), hint_galley, Color32::WHITE);
+        if !orbit.free_look && hit.inner.clicked() {
+            companion.advance_line();
+        }
     }
     Ok(())
 }
@@ -1332,13 +1464,12 @@ mod tests {
     }
 
     #[test]
-    fn at_the_drop_tower_the_beam_shows_the_light_gate_first() {
+    fn at_the_drop_tower_the_beam_shows_the_experiment_then_the_light_gate() {
         let open = Facts { focus_kind: Some(PuzzleKind::Gravity), station_open: true, slot_empty: true, beckon: false, ..walking_to(1) };
-        // The experiment needs the gate: first the gate on its stand, then, once it is on the tower,
-        // the experiment.
+        // Before the conceptual experiment is watched, Lumen points at the drop tower first.
         let fresh = Facts { demo_pending: true, gate_pending: true, ..open.clone() };
-        assert_eq!(choose_gaze(&fresh).as_deref(), Some(LIGHT_GATE));
-        assert_eq!(choose_gaze(&Facts { slot_empty: false, ..fresh }).as_deref(), Some("Drop tower: release point"));
+        assert_eq!(choose_gaze(&fresh).as_deref(), Some("Drop tower: release point"));
+        // Once watched, if nothing has been timed yet and the gate is still on its stand, Lumen points to the gate.
         let pending = Facts { gate_pending: true, ..open.clone() };
         assert_eq!(choose_gaze(&pending).as_deref(), Some(LIGHT_GATE));
         let carrying = Facts { station_open: false, carrying: Some(Item::Gate), ..pending.clone() };
@@ -1456,7 +1587,7 @@ mod tests {
     fn walking_looks_at_the_next_station_and_the_end_at_the_skiff() {
         assert_eq!(choose_gaze(&walking_to(2)).as_deref(), Some("Station 2"));
         let done = Facts { next: None, next_station: None, beckon: true, ..Facts::default() };
-        assert_eq!(choose_gaze(&done).as_deref(), Some("The skiff on the slipway"));
+        assert_eq!(choose_gaze(&done).as_deref(), Some("The boat on the slipway"));
     }
 
     #[test]
@@ -1583,5 +1714,36 @@ mod tests {
         let corner = eye_place(screen, 0.0, 0.0, screen.right());
         let rect = bubble_rect(screen, corner, size, 1.0);
         assert!(rect.left() >= 8.0, "centred over the corner it would run off the screen");
+    }
+
+    #[test]
+    fn spoken_lines_can_be_advanced_and_are_kept_in_history() {
+        let mut companion = Companion::default();
+        companion.say("First line.");
+        companion.say("Second line.");
+        assert_eq!(companion.history, ["First line.", "Second line."]);
+        assert!(companion.advance_line());
+        assert_eq!(companion.lines.len(), 1);
+        assert_eq!(companion.lines[0].text, "Second line.");
+        assert!(companion.advance_line());
+        assert!(companion.lines.is_empty());
+        assert!(!companion.advance_line());
+        // Consecutive duplicates are not logged twice, and history is capped.
+        companion.say("Second line.");
+        assert_eq!(companion.history.len(), 2);
+        for i in 0..50 {
+            companion.say(format!("Line {i}."));
+        }
+        assert_eq!(companion.history.len(), MAX_HISTORY);
+        assert_eq!(companion.history.last().unwrap(), "Line 49.");
+    }
+
+    #[test]
+    fn landmark_labels_move_clear_of_open_panels() {
+        let screen = egui::Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
+        let dock = egui::Rect::from_min_max(pos2(10.0, 10.0), pos2(270.0, 150.0));
+        let placed = place_label(screen, pos2(180.0, 155.0), vec2(140.0, 22.0), None, &[dock]);
+        assert!(!placed.intersects(dock), "label {placed:?} should not overlap dock {dock:?}");
+        assert!(screen.contains_rect(placed));
     }
 }

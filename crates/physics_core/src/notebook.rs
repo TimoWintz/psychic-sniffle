@@ -73,6 +73,20 @@ impl Notebook {
     pub fn remove(&mut self, name: &str) {
         self.entries.retain(|e| e.name != name);
     }
+
+    /// Rename `old` to `new` in place. Returns `false` if `old` does not exist or `new` is already
+    /// taken by another entry.
+    pub fn rename(&mut self, old: &str, new: &str) -> bool {
+        if old == new {
+            return self.get(old).is_some();
+        }
+        if self.get(new).is_some() {
+            return false;
+        }
+        let Some(entry) = self.entries.iter_mut().find(|e| e.name == old) else { return false };
+        entry.name = new.into();
+        true
+    }
 }
 
 impl Env for Notebook {
@@ -125,5 +139,19 @@ mod tests {
         nb.set("g", "gravity", Quantity::acceleration(8.1), "calculated");
         assert_eq!(nb.entries.len(), 1);
         assert_eq!(nb.get("g").unwrap().quantity.value, 8.1);
+    }
+
+    #[test]
+    fn rename_keeps_order_and_refuses_collisions() {
+        let mut nb = Notebook::default();
+        nb.add_numbered("d", "first", Quantity::metres(10.0), "ruler");
+        nb.add_numbered("d", "second", Quantity::metres(20.0), "ruler");
+        assert!(nb.rename("d1", "span"));
+        assert_eq!(nb.entries[0].name, "span");
+        assert_eq!(nb.get("span").unwrap().quantity, Quantity::metres(10.0));
+        assert!(nb.get("d1").is_none());
+        assert!(!nb.rename("span", "d2"), "cannot overwrite another entry");
+        assert!(!nb.rename("missing", "other"));
+        assert!(nb.rename("span", "span"));
     }
 }

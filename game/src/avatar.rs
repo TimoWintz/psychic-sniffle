@@ -13,7 +13,7 @@ use crate::companion::{Companion, Landmarks};
 use crate::island::Sites;
 use crate::player::{Player, RUN_SPEED, WALK_SPEED};
 use crate::sim::Sim;
-use crate::state::{Mode, Ui};
+use crate::state::{BuildWorld, Mode, Ui, not_paused};
 use bevy::prelude::*;
 use std::f32::consts::{PI, TAU};
 
@@ -153,7 +153,21 @@ pub struct AvatarPlugin;
 
 impl Plugin for AvatarPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, animate.after(crate::player::move_player).run_if(in_state(Mode::Playing)));
+        app.add_systems(BuildWorld, reset).add_systems(Update, animate.after(crate::player::move_player).run_if(in_state(Mode::Playing)).run_if(not_paused));
+    }
+}
+
+/// Reset animation state and joint transforms to rest when the world reloads.
+fn reset(mut avatar: Single<(&mut AvatarState, &Rig)>, mut transforms: Query<&mut Transform>) {
+    let (state, rig) = &mut *avatar;
+    **state = AvatarState::default();
+    if let Ok(mut body) = transforms.get_mut(rig.body) {
+        *body = Transform::default();
+    }
+    for (&joint_entity, rest) in rig.joints.iter().zip(REST) {
+        if let Ok(mut joint) = transforms.get_mut(joint_entity) {
+            *joint = Transform::from_translation(rest);
+        }
     }
 }
 

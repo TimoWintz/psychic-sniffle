@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(chapter_1_1().light, Light::Afternoon);
         let source = include_str!("../../../assets/curriculum/tier1_ch1.ron");
         assert!(Chapter::from_ron(&source.replace("light: Afternoon", "light: Teatime")).is_err(), "an unknown light is refused");
-        assert!(Chapter::from_ron(&source.replace("    light: Afternoon,\n", "")).is_err(), "every chapter chooses its light");
+        assert!(Chapter::from_ron(&source.replace("    light: Afternoon,", "")).is_err(), "every chapter chooses its light");
     }
 
     #[test]

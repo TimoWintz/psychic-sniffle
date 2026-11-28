@@ -3,6 +3,7 @@
 //! are high and cast no shadows, and the flocks keep well away from the island.
 
 use crate::island::WORLD_SIZE;
+use crate::state::not_paused;
 use crate::voxel::hash01;
 use bevy::asset::RenderAssetUsages;
 use bevy::light::NotShadowCaster;
@@ -50,7 +51,7 @@ pub struct AloftPlugin;
 
 impl Plugin for AloftPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn).add_systems(Update, (drift_clouds, fly));
+        app.add_systems(Startup, spawn).add_systems(Update, (drift_clouds, fly).run_if(not_paused));
     }
 }
 

@@ -52,9 +52,10 @@ shows the verdict, and counts the puzzle solved, only once the world has played 
 
 | Module | Contents |
 |---|---|
-| `intro` | title menu and the intro behind it: the placeholder sets for levels III and II, the ship, smoke and dust, the hand-over to the player's view |
+| `intro` | title menu (with 3-slot save management and quit) and the intro behind it: the placeholder sets for levels III and II, the ship, smoke and dust, the hand-over to the player's view |
 | `cinematic` | the intro's timeline as plain functions: camera, ship parts, fades, captions and events at any moment of the loop (tested without the engine) |
-| `state` | the shared game state: the chapter, the seeded layout, the save and its file (read once, moved aside if it can't be read, written whole by renaming a new file over it), the test still playing out, and what the interface shows |
+| `state` | the shared game state: the chapter, the seeded layout, the save and its numbered slots (read-only inspection, moved aside if it can't be read, written whole by renaming a new file over it), the test still playing out, and what the interface shows |
+| `session` | world lifecycle: builds save-dependent entities on `BuildWorld` at startup and cleanly despawns and rebuilds them when switching save slots, starting a new game, or returning from the pause menu |
 | `island` | the island built from the chapter layout in whole blocks: the coast, the puzzle sites kept flat, the route along the ancient way from the wreck to the skiff, the places (`Sites`) everything else reads |
 | `graphics` | the quality setting (`[graphics] quality` in `settings.toml`, or `GAME_QUALITY`) and the camera's look: high dynamic range, TonyMcMapface tonemapping, the colour grade, bloom, anti-aliasing (MSAA on low, SMAA on high), ambient occlusion and finer shadows on high; how strongly each glowing thing is drawn (`glow`), so the order of what glows is set in one place; the blocks' material (`BlockSurface`, its shader `blocks.wesl`), which draws a fine pattern for each material inside every face |
 | `water` | the sea: one plane drawn by its own shader (`water.wesl`) from a map baked from the block grid, one texel per column, of the water's depth and how near the land is (shallows and depths, foam at shores and cliffs, surf over a reef); the map is worked out again around blocks at the water's level when they change |

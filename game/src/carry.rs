@@ -15,7 +15,7 @@
 use crate::island::{Pin, Sites};
 use crate::player::Player;
 use crate::sim::Sim;
-use crate::state::{Game, Mode, Ui};
+use crate::state::{BuildWorld, Game, Mode, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -193,6 +193,8 @@ pub struct Carry {
     pub beam: Placement,
     /// Whether the beam is swinging, released, so nothing can be put on it or taken off.
     pub beam_swinging: bool,
+    /// Floating world-space badge for the current placement target: `(viewport_px, label, is_put)`.
+    pub badge: Option<(Vec2, String, bool)>,
 }
 
 impl Carry {
@@ -232,8 +234,8 @@ impl Plugin for CarryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Carry>()
             .init_resource::<DirtyCells>()
-            .add_systems(Startup, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
-        app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)))
+            .add_systems(BuildWorld, lay_out.after(crate::scenery::spawn).after(crate::sim::setup).after(crate::rig::spawn));
+        app.add_systems(Update, (point, aim, act).chain().after(crate::player::move_player).run_if(in_state(Mode::Playing)).run_if(not_paused))
             .add_systems(Update, (place_marks, hold, place_gate, draw_target));
     }
 }
@@ -276,6 +278,8 @@ fn lay_out(
     mut dirty: ResMut<DirtyCells>,
     game: Res<Game>,
 ) {
+    *carry = Carry::default();
+    dirty.0.clear();
     let placed = |slot: Slot| {
         let puzzle = game.puzzle_of(slot.puzzle());
         game.placed(puzzle).min(slot.most(&sites))
@@ -314,7 +318,14 @@ fn lay_out(
     for i in 0..MARKS {
         // A handle on top and a grip on each side, so blocks stacked in the frame read one by one.
         commands
-            .spawn((BlockMark(i), RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0), Transform::from_translation(Vec3::NEG_Y * 100.0), Visibility::default()))
+            .spawn((
+                WorldEntity,
+                BlockMark(i),
+                RigidBody::Static,
+                Collider::cuboid(1.0, 1.0, 1.0),
+                Transform::from_translation(Vec3::NEG_Y * 100.0),
+                Visibility::default(),
+            ))
             .with_children(|c| {
                 c.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(0.0, 0.53, 0.0)));
                 for turn in 0..4 {
@@ -330,6 +341,7 @@ fn lay_out(
     let body = meshes.add(Cuboid::from_length(HELD_SIZE));
     let stone = materials.add(StandardMaterial { base_color: colour(Material::Limestone), perceptual_roughness: 0.9, ..default() });
     commands.spawn((
+        WorldEntity,
         HeldBlock,
         Mesh3d(body),
         MeshMaterial3d(stone),
@@ -352,7 +364,7 @@ fn lay_out(
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.
     let clamp = meshes.add(Cuboid::new(1.2, 0.4, 1.6));
     let eye = meshes.add(Cuboid::new(0.1, 0.1, 0.04));
-    commands.spawn((Gate, Transform::default(), Visibility::default())).with_children(|g| {
+    commands.spawn((WorldEntity, Gate, Transform::default(), Visibility::default())).with_children(|g| {
         g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
         g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
         for side in [-1.0f32, 1.0] {
@@ -364,7 +376,7 @@ fn lay_out(
     // Its stand: a post with a cradle the gate's clamp rests in.
     let post = meshes.add(Cuboid::new(0.14, 1.0, 0.14));
     let cradle = meshes.add(Cuboid::new(0.5, 0.08, 0.5));
-    commands.spawn((GateStand, Transform::from_translation(sites.gate_stand), Visibility::default())).with_children(|s| {
+    commands.spawn((WorldEntity, GateStand, Transform::from_translation(sites.gate_stand), Visibility::default())).with_children(|s| {
         s.spawn((Mesh3d(post), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.5, 0.0)));
         s.spawn((Mesh3d(cradle), MeshMaterial3d(dark), Transform::from_xyz(0.0, 1.0, 0.0)));
     });
@@ -530,32 +542,84 @@ pub fn aim_on_tower(sites: &Sites, origin: Vec3, direction: Vec3) -> Option<f32>
     ((near.with_y(0.0) - line).length() < AIM_REACH && (low - 0.5..=sites.tower_release.y + 0.5).contains(&near.y)).then_some(near.y)
 }
 
-/// Follow the pointer onto the drop tower while the light gate is carried.
+/// Follow the pointer onto the drop tower while the light gate is carried. In free-look mode, aim
+/// from the centre of the screen so the player can pick a notch by looking up and down the tower.
 fn point(
     mut carry: ResMut<Carry>,
     sites: Res<Sites>,
+    orbit: Res<crate::player::OrbitCamera>,
     wants: Res<EguiWantsInput>,
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) {
-    let aim = (carry.holding == Some(Item::Gate) && !wants.wants_any_pointer_input())
-        .then(|| window.cursor_position())
-        .flatten()
-        .and_then(|cursor| camera.0.viewport_to_world(camera.1, cursor).ok())
-        .and_then(|ray| aim_on_tower(&sites, ray.origin, *ray.direction));
+    let pointer = if carry.holding != Some(Item::Gate) {
+        None
+    } else if orbit.free_look {
+        Some(window.size() / 2.0)
+    } else if !wants.wants_any_pointer_input() {
+        window.cursor_position()
+    } else {
+        None
+    };
+    let aim = pointer.and_then(|cursor| camera.0.viewport_to_world(camera.1, cursor).ok()).and_then(|ray| aim_on_tower(&sites, ray.origin, *ray.direction));
     if carry.aim != aim {
         carry.aim = aim;
     }
 }
 
+/// World position and compact label for a placement ghost (light gate notch, jack frame height,
+/// beam seat), plus whether the action places (`true`) or removes (`false`).
+pub fn badge_for(carry: &Carry, sites: &Sites) -> Option<(Vec3, String, bool)> {
+    match carry.target? {
+        Target::PutIn(Slot::Tower, notch) => Some((gate_at(sites, notch) + Vec3::Y * 0.45, format!("Notch: {notch} m"), true)),
+        Target::TakeOut(Slot::Tower, _) => {
+            let notch = carry.holds(Slot::Tower);
+            Some((gate_at(sites, notch) + Vec3::Y * 0.45, format!("Gate at {notch} m"), false))
+        }
+        Target::PutIn(Slot::Frame, holds) => {
+            let at = (sites.channel_well + IVec3::Y * (holds as i32 - 1)).as_vec3() + Vec3::new(0.5, 1.1, 0.5);
+            let plural = if holds == 1 { "" } else { "s" };
+            Some((at, format!("{holds} m ({holds} block{plural})"), true))
+        }
+        Target::TakeOut(Slot::Frame, left) => {
+            let cur = carry.holds(Slot::Frame);
+            let at = (sites.channel_well + IVec3::Y * left as i32).as_vec3() + Vec3::new(0.5, 1.1, 0.5);
+            Some((at, format!("Stack: {cur} m → {left} m"), false))
+        }
+        Target::PutOnBeam(arm, seat) => {
+            let count = carry.beam.get(arm, seat) + 1;
+            let at = sites.beam.seat(arm, seat) + Vec3::Y * (HELD_SIZE * count as f32 + 0.35);
+            Some((at, format!("Seat {seat} ({count})"), true))
+        }
+        Target::TakeOffBeam(arm, seat) => {
+            let count = carry.beam.get(arm, seat);
+            let at = sites.beam.seat(arm, seat) + Vec3::Y * (HELD_SIZE * count as f32 + 0.35);
+            Some((at, format!("Seat {seat} ({count})"), false))
+        }
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn aim(world: Res<VoxelWorld>, sites: Res<Sites>, ui: Res<Ui>, sim: Res<Sim>, mut carry: ResMut<Carry>, player: Single<&Transform, With<Player>>) {
+fn aim(
+    world: Res<VoxelWorld>,
+    sites: Res<Sites>,
+    ui: Res<Ui>,
+    sim: Res<Sim>,
+    mut carry: ResMut<Carry>,
+    player: Single<&Transform, With<Player>>,
+    camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>,
+) {
     let busy = ui.at_console() || sim.busy();
     let forward = (player.rotation * Vec3::NEG_Z).with_y(0.0).normalize_or_zero();
     let target = if busy { None } else { target_for(&world, &sites, &carry, player.translation, forward, carry.aim) };
     if carry.target != target {
         carry.target = target;
     }
+    carry.badge = badge_for(&carry, &sites).and_then(|(at, text, is_put)| {
+        let screen = camera.0.world_to_viewport(camera.1, at).ok()?;
+        Some((screen, text, is_put))
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -942,5 +1006,22 @@ mod tests {
         assert_eq!(aim_on_tower(&sites, eye, (eye - target).normalize()), None);
         // Nor does a ray that passes far to the side.
         assert_eq!(aim_on_tower(&sites, eye, (target + Vec3::Z * 5.0 - eye).normalize()), None);
+    }
+
+    #[test]
+    fn placement_badges_report_notches_stacks_and_beam_seats() {
+        let (_, sites, mut carry) = laid_out(7);
+        carry.target = Some(Target::PutIn(Slot::Tower, 8));
+        assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("Notch: 8 m".into(), true)));
+
+        carry.target = Some(Target::PutIn(Slot::Frame, 5));
+        assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("5 m (5 blocks)".into(), true)));
+
+        carry.filled[Slot::Frame.index()] = 5;
+        carry.target = Some(Target::TakeOut(Slot::Frame, 4));
+        assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("Stack: 5 m → 4 m".into(), false)));
+
+        carry.target = Some(Target::PutOnBeam(Arm::Far, 3));
+        assert_eq!(badge_for(&carry, &sites).map(|(_, t, put)| (t, put)), Some(("Seat 3 (1)".into(), true)));
     }
 }

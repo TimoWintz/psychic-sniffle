@@ -142,8 +142,9 @@ it:
    - each puzzle's and side-machine's `dialogue` (`present` beats and each topic's `lines`) and `done`
    - each experiment's `reveal`
 
-   Write these in Lumen's voice, with contractions, no digits and short lines. Lumen says only the
-   first sentence of a `reveal` aloud, so that sentence must stand on its own.
+   Write these in Lumen's voice, with contractions, no digits and short lines. Lumen displays the
+   full `reveal` in its post-experiment bubble (and falls back to its first sentence away from a
+   console), so the first sentence should still stand on its own.
 2. **Handbook fields:** each concept's `card`, `derivation`, `caption`, quiz `question`, `choices`
    and `explain`. Write these in the textbook voice. A concept's `title` is spoken as well, so it
    holds no digits.

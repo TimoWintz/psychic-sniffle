@@ -38,12 +38,16 @@ other line in the game is written, is set out in [writing.md](writing.md).
   what the chapter has to do, and the road the wreck came down across. While a line of it names a
   place, the camera turns to show it past the avatar, then turns back. The opening waits for click
   or `Enter` between lines and is not cut short: what happens meanwhile waits its turn.
-- **Station briefing.** When an unsolved station (or side-machine) first opens, Lumen presents it in
-  one or two short beats that wait for click or `Enter` (pointing at key parts while speaking),
-  followed by clickable dialogue chips for optional questions (how the machine works, what to
-  measure) and `Got it`. The console itself stays concise (one-line objective, hardware ratings,
-  experiment, handbook links, blueprint, result) and includes a `Briefing` button to reopen Lumen's
-  chips at any time.
+- **Station briefing.** When an untouched station (or side-machine) first opens, the console panel
+  stays hidden while Lumen presents it in one or two short beats that wait for click or `Enter`
+  (pointing at key parts while speaking). On stations with a conceptual experiment, the final beat
+  leads directly into Lumen's "Try it first" prediction prompt: picking a choice immediately runs
+  the free experiment, after which Lumen delivers the full reveal, links any newly written handbook
+  pages, and offers clickable Q&A chips (how the machine works, what to measure) alongside `Open
+  console`. Reopening an already-started station (or reloading a save mid-puzzle) skips the
+  automatic briefing and opens the console right away. The console itself stays concise (one-line
+  objective, hardware ratings, handbook links, measuring instrument, blueprint, result) and
+  includes `Briefing` and `Try it first` / `Replay experiment` buttons in its header.
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
 - **Closing.** When the chapter's part is installed, and what woke along the way with it (waits for
   click or `Enter` between lines).

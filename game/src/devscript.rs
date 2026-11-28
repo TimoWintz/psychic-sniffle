@@ -168,8 +168,8 @@ enum Step {
     Solve(usize),
     /// Wait until no wake is playing; fail if one still is after this many seconds.
     WaitWakeEnd(f32),
-    /// Wait until Lumen has finished telling a story (the opening or closing), advancing waiting
-    /// lines as needed; fail if it has not in time.
+    /// Wait until Lumen has finished telling a story (the opening or closing), advancing each
+    /// waiting line once it has been up as long as a timed line would be; fail if it has not in time.
     UntilStoryEnds(f32),
     /// Advance Lumen's current speech line (as pressing Enter or clicking the bubble would).
     AdvanceSpeech,
@@ -1172,7 +1172,7 @@ fn run(
         }
         Step::UntilStoryEnds(within) => {
             if companion.telling() {
-                if companion.waiting_line() {
+                if companion.waiting_line_read() {
                     companion.advance_line();
                 }
                 let left = within - time.delta_secs();

@@ -228,8 +228,20 @@ impl Companion {
     }
 
     /// Whether the current bubble is waiting for the player to advance it.
+    #[cfg(test)]
     pub fn waiting_line(&self) -> bool {
         self.dialogue.is_some() || self.lines.first().is_some_and(|l| l.wait)
+    }
+
+    /// Whether the bubble is waiting and has been up as long as a timed line of its length would
+    /// be, so a script can advance it at a reading pace.
+    pub fn waiting_line_read(&self) -> bool {
+        self.dialogue.is_some() || self.lines.first().is_some_and(|l| l.wait && l.shown >= l.left)
+    }
+
+    /// Seconds until the timed lines waiting to be said have been said.
+    fn talking_for(&self) -> f32 {
+        self.lines.iter().filter(|l| !l.wait).map(|l| l.left).sum()
     }
 
     fn say(&mut self, text: impl Into<String>) {
@@ -251,7 +263,8 @@ impl Companion {
         if lines.is_empty() {
             return;
         }
-        self.lines.clear();
+        // A story still being told is kept: it carries on once the dialogue closes.
+        self.lines.retain(|l| l.keep);
         self.record_history(&lines[0].text);
         self.dialogue = Some(StationDialogue { console, topics: dialogue.topics.clone(), lines, shown: 0.0 });
         self.since_spoke = 0.0;
@@ -321,12 +334,8 @@ impl Companion {
         } else if let Some(current) = self.lines.first_mut()
             && current.shown > 0.0
         {
-            if current.wait {
-                self.lines.clear();
-            } else {
-                current.left = current.left.min(0.3);
-                self.lines.truncate(1);
-            }
+            current.left = current.left.min(0.3);
+            self.lines.truncate(1);
         }
         let words = text.split_whitespace().count() as f32;
         // Timed lines stay long enough to read, then fade out; waiting lines stay until advanced.
@@ -496,7 +505,6 @@ struct Seen {
     quizzes: BTreeSet<String>,
     station: Option<usize>,
     recharging: [bool; PUZZLES],
-    beam_open: bool,
     beam_releases: u32,
     beam_woken: bool,
 }
@@ -537,8 +545,11 @@ fn advance_speech(
         return;
     }
     if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]) {
-        if companion.dialogue.is_some() {
-            companion.advance_dialogue();
+        if let Some(dialogue) = &companion.dialogue {
+            // Enter steps through the beats; once the topic chips show, only "Got it" closes them.
+            if dialogue.lines.len() > 1 {
+                companion.advance_dialogue();
+            }
         } else if !ui.at_console() {
             companion.advance_line();
         }
@@ -600,7 +611,6 @@ fn direct(
         quizzes: game.chapter.concepts.iter().filter(|c| game.save.quiz_done(&game.chapter, &c.id)).map(|c| c.id.clone()).collect(),
         station: ui.station,
         recharging: std::array::from_fn(|i| ui.recharging[i].is_some()),
-        beam_open: ui.beam_open,
         beam_releases: beam.releases,
         beam_woken: crate::beam::woken(&game),
     };
@@ -628,7 +638,7 @@ fn direct(
                 Some(n) => companion.say(format!("You're back! Next we need to {}", lowercase_first(&game.def(n).task))),
                 None => companion.say("You're back! The skiff has its helm, and it's still glowing."),
             }
-            companion.beckon_left = BECKON_SECONDS;
+            companion.beckon_left = BECKON_SECONDS + companion.talking_for();
         }
         Some(before) => {
             for puzzle in 0..PUZZLES {
@@ -654,14 +664,6 @@ fn direct(
                     react_to_demo(companion, &game, puzzle);
                 }
             }
-            if now.beam_open
-                && !before.beam_open
-                && !now.beam_woken
-                && companion.presented.insert(Console::Beam)
-                && let Some(side) = game.chapter.side(crate::beam::BEAM_ID)
-            {
-                companion.open_dialogue(Console::Beam, &side.dialogue, true);
-            }
             if now.beam_releases > before.beam_releases {
                 react_to_release(companion, &game, &beam);
             }
@@ -685,13 +687,6 @@ fn direct(
             }
             if now.station != before.station && now.station == next {
                 companion.beckon_left = 0.0;
-            }
-            if now.station != before.station
-                && let Some(p) = now.station
-                && !game.solved(p)
-                && companion.presented.insert(Console::Station(p))
-            {
-                companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, true);
             }
             if now.next != before.next {
                 companion.beckon_left = BECKON_SECONDS;
@@ -738,6 +733,24 @@ fn direct(
     let active_console = ui.station.map(Console::Station).or(ui.beam_open.then_some(Console::Beam));
     if companion.dialogue.as_ref().is_some_and(|d| Some(d.console) != active_console) || running || ruler.active || ui.tutor_open {
         companion.dialogue = None;
+    }
+
+    // Lumen's briefing plays once per console per session, as soon as nothing else is going on
+    // there: not over a test, the ruler, the chat, a wake or a story still being told.
+    let free = companion.dialogue.is_none() && !running && !ruler.active && !ui.tutor_open && !waking.playing() && !companion.telling();
+    if free {
+        if let Some(p) = ui.station
+            && !game.solved(p)
+            && companion.presented.insert(Console::Station(p))
+        {
+            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, true);
+        } else if ui.beam_open
+            && !crate::beam::woken(&game)
+            && let Some(side) = game.chapter.side(crate::beam::BEAM_ID)
+            && companion.presented.insert(Console::Beam)
+        {
+            companion.open_dialogue(Console::Beam, &side.dialogue, true);
+        }
     }
 
     // Time passes for held looks, moods, dialogue fade-in and timed lines.

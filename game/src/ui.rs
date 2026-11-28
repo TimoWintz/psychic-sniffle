@@ -589,9 +589,11 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                         });
                         let plural = if blocks == 1 { "" } else { "s" };
                         ui.label(
-                            RichText::new(format!("    {blocks} block{plural} in the jack frame (+1 m each). Carry blocks there (F) to change."))
-                                .small()
-                                .color(DIM),
+                            RichText::new(format!(
+                                "    {blocks} block{plural} in the jack frame (+1 m each). Leave the console and carry blocks there (F) to change it."
+                            ))
+                            .small()
+                            .color(DIM),
                         );
                         continue;
                     }

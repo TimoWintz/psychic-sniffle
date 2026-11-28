@@ -18,14 +18,14 @@
 use crate::carry::{Carry, Item, Slot, Yard};
 use crate::island::Sites;
 use crate::ruler::Ruler;
-use crate::sim::Sim;
+use crate::sim::{Request, Sim};
 use crate::state::{BuildWorld, Game, Mode, PUZZLES, Ui, not_paused};
 use crate::tutor_bridge::Lumen;
 use bevy::prelude::*;
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Align2, Color32, Pos2, RichText, Stroke, Vec2 as EVec2, pos2, vec2};
-use physics_core::content::{Dialogue, RemarkWhen, Spoken, Topic};
+use physics_core::content::{DemoDef, Dialogue, Found, RemarkWhen, Spoken, Topic};
 use physics_core::puzzle::PuzzleKind;
 use std::collections::BTreeSet;
 
@@ -152,14 +152,138 @@ pub enum Console {
     Beam,
 }
 
-/// Interactive station dialogue shown in Lumen's bubble: presentation beats followed by
-/// clickable Q&A chips. Waits for the player instead of auto-fading.
+/// Hands-on steps of Station 0's action-gated ruler and notebook walkthrough.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GuideStep {
+    /// Waiting for the player to press R to bring out the ruler.
+    PressR,
+    /// Ruler is active; waiting for the first yellow pin click.
+    PickFirstPin,
+    /// First pin clicked; waiting for the second yellow pin click.
+    PickSecondPin,
+    /// Finished reading is on screen; waiting for the player to note a value in the notebook.
+    NoteReading,
+    /// Reading saved; waiting for the player to open the notebook (N or clicking the header).
+    OpenNotebook,
+}
+
+impl GuideStep {
+    fn text(self) -> &'static str {
+        match self {
+            GuideStep::PressR => "Before we open the console, let's measure to the orange marker together. Press R to bring out the ruler.",
+            GuideStep::PickFirstPin => "Click the yellow pin I'm pointing at.",
+            GuideStep::PickSecondPin => "And now this one.",
+            GuideStep::NoteReading => "Now click Note on the ruler card to save the horizontal distance to your notebook.",
+            GuideStep::OpenNotebook => "Saved! Press N to open your notebook and see where your readings and calculator live.",
+        }
+    }
+
+    fn cue(self) -> &'static str {
+        match self {
+            GuideStep::PressR => "Press R to bring out the ruler",
+            GuideStep::PickFirstPin => "Click the first yellow pin",
+            GuideStep::PickSecondPin => "Click the second yellow pin",
+            GuideStep::NoteReading => "Click Note on the ruler card",
+            GuideStep::OpenNotebook => "Press N or click Notebook",
+        }
+    }
+
+    fn look(self) -> Option<&'static str> {
+        match self {
+            GuideStep::PressR => Some("Rail marker: centre"),
+            _ => None,
+        }
+    }
+}
+
+/// Lumen's line under a reveal that wrote the player's first handbook pages, until they open it.
+const FIRST_PAGES_LINE: &str = "That's gone into your handbook. Press H to open it and have a look.";
+
+/// Spoken line Lumen says once the Station 0 ruler and notebook walkthrough is complete.
+const GUIDE_DONE_LINE: &str = "There it is. Your notebook keeps every reading with its unit, and the calculator underneath can use their names. Whenever you're ready, open the console and let's get that cart loaded.";
+
+/// What follows the final presentation beat of a station's initial briefing.
+#[derive(Clone, Debug)]
+enum NextBeat {
+    /// Station 0's action-gated ruler and notebook walkthrough.
+    MeasureGuide,
+    /// A station's conceptual "Try it first" prediction prompt.
+    Experiment(usize, DemoDef),
+}
+
+/// What phase Lumen's interactive station dialogue is currently showing.
+#[derive(Clone, Debug)]
+enum DialogueStage {
+    /// Stepping through presentation beats or a topic's reply lines.
+    Lines(Vec<Spoken>),
+    /// Action-gated hands-on ruler and notebook walkthrough at Station 0.
+    Guide(GuideStep),
+    /// Asking the station's "Try it first" conceptual prediction question before running it.
+    Experiment { puzzle: usize, demo: DemoDef },
+    /// After the experiment finishes: Lumen's verdict, full reveal, and newly unlocked handbook pages.
+    Reveal {
+        puzzle: usize,
+        /// Optional verdict line ("You called it!" / "Not what you expected?...") and whether it matched.
+        verdict: Option<(String, bool)>,
+        /// Full `demo.reveal` explanation in Lumen's voice.
+        reveal: String,
+        /// Newly written handbook pages `(concept_id, title)` from this experiment.
+        new_pages: Vec<(String, String)>,
+    },
+}
+
+/// Interactive station dialogue shown in Lumen's bubble: presentation beats, optional action-gated
+/// walkthrough or "Try it first" experiment prompt and reveal, and clickable Q&A chips.
 #[derive(Clone, Debug)]
 struct StationDialogue {
     console: Console,
     topics: Vec<Topic>,
-    lines: Vec<Spoken>,
+    /// What follows the final presentation beat, if anything.
+    pending: Option<NextBeat>,
+    /// Keep the right-hand station / beam console panel hidden while this initial briefing plays.
+    hide_panel: bool,
+    stage: DialogueStage,
     shown: f32,
+}
+
+impl StationDialogue {
+    /// Whether Enter / Next advances to another beat (or into the pending guide / experiment).
+    fn has_more(&self) -> bool {
+        match &self.stage {
+            DialogueStage::Lines(lines) => lines.len() > 1 || self.pending.is_some(),
+            DialogueStage::Guide(_) | DialogueStage::Experiment { .. } | DialogueStage::Reveal { .. } => false,
+        }
+    }
+
+    /// The landmark Lumen is pointing out on the current beat, if any.
+    fn look(&self) -> Option<&str> {
+        match &self.stage {
+            DialogueStage::Lines(lines) => lines.first().and_then(|l| l.look.as_deref()),
+            DialogueStage::Guide(step) => step.look(),
+            DialogueStage::Experiment { .. } | DialogueStage::Reveal { .. } => None,
+        }
+    }
+}
+
+/// Action-gated prompt shown the first time a handbook page is unlocked, waiting until the player
+/// opens the handbook (`H` or clicking its header) at least once.
+#[derive(Clone, Debug)]
+struct HandbookPrompt {
+    text: String,
+    shown: f32,
+}
+
+/// Tracks a conceptual experiment launched from Lumen's dialogue so the post-experiment reveal
+/// resumes cleanly when the simulation finishes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AwaitingDemo {
+    puzzle: usize,
+    hide_panel: bool,
+    /// True on the first predicted run (show verdict + reveal); false on a replay.
+    first_run: bool,
+    /// Whether the station has started the run. Until it has, a request it dropped would leave
+    /// this waiting (and the console hidden) for good, so it is forgotten instead.
+    started: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -192,6 +316,12 @@ pub struct Companion {
     lines: Vec<Line>,
     /// Active interactive briefing/Q&A dialogue at an open console, if any.
     dialogue: Option<StationDialogue>,
+    /// Experiment launched from Lumen's dialogue whose post-run reveal should open when it ends.
+    awaiting_demo: Option<AwaitingDemo>,
+    /// Action-gated prompt waiting for the player to open the handbook the first time a page arrives.
+    handbook_prompt: Option<HandbookPrompt>,
+    /// Whether the player has already opened the handbook (or loaded a save with pages already found).
+    handbook_opened: bool,
     /// Topics the player has already asked this session, so their chips show a subtle tick.
     asked: BTreeSet<(Console, usize)>,
     /// Consoles whose automatic presentation has already played this session.
@@ -255,34 +385,180 @@ impl Companion {
         self.speak(line.text.clone(), line.look.clone(), keep, keep);
     }
 
+    /// Whether the right-hand station or beam console panel should stay hidden while Lumen
+    /// finishes a story beat, delivers its initial briefing, or waits for the first experiment to
+    /// finish.
+    pub fn hiding_console_panel(&self) -> bool {
+        self.telling() || self.dialogue.as_ref().is_some_and(|d| d.hide_panel) || self.awaiting_demo.as_ref().is_some_and(|a| a.hide_panel)
+    }
+
     /// Open Lumen's interactive station dialogue. On first open (`full_present == true`) every
-    /// presentation beat plays in sequence; on manual Briefing (`full_present == false`) it opens
-    /// directly on the final beat with all topic chips immediately clickable.
-    fn open_dialogue(&mut self, console: Console, dialogue: &Dialogue, full_present: bool) {
+    /// presentation beat plays in sequence (and leads into `pending` if present); on manual
+    /// Briefing (`full_present == false`) it opens directly on the final beat with all topic chips
+    /// immediately clickable.
+    fn open_dialogue(&mut self, console: Console, dialogue: &Dialogue, full_present: bool, hide_panel: bool, pending: Option<NextBeat>) {
         let lines: Vec<Spoken> = if full_present { dialogue.present.clone() } else { dialogue.present.last().cloned().into_iter().collect() };
         if lines.is_empty() {
             return;
         }
+        self.hand_over_handbook_gate();
         // A story still being told is kept: it carries on once the dialogue closes.
         self.lines.retain(|l| l.keep);
         self.record_history(&lines[0].text);
-        self.dialogue = Some(StationDialogue { console, topics: dialogue.topics.clone(), lines, shown: 0.0 });
+        self.dialogue = Some(StationDialogue {
+            console,
+            topics: dialogue.topics.clone(),
+            pending: if full_present { pending } else { None },
+            hide_panel,
+            stage: DialogueStage::Lines(lines),
+            shown: 0.0,
+        });
         self.since_spoke = 0.0;
     }
 
-    /// Advance the active station dialogue to its next beat, or dismiss it if on the last beat.
+    /// Open Lumen's "Try it first" prediction prompt directly for `puzzle`.
+    fn open_experiment(&mut self, puzzle: usize, dialogue: &Dialogue, demo: DemoDef, hide_panel: bool) {
+        self.hand_over_handbook_gate();
+        self.lines.retain(|l| l.keep);
+        self.dialogue = Some(StationDialogue {
+            console: Console::Station(puzzle),
+            topics: dialogue.topics.clone(),
+            pending: None,
+            hide_panel,
+            stage: DialogueStage::Experiment { puzzle, demo },
+            shown: 0.0,
+        });
+        self.since_spoke = 0.0;
+    }
+
+    /// Open Lumen's post-experiment reveal bubble with verdict, full explanation, new handbook
+    /// pages, and follow-up station topics.
+    fn open_demo_reveal(
+        &mut self,
+        puzzle: usize,
+        dialogue: &Dialogue,
+        verdict: Option<(String, bool)>,
+        reveal: String,
+        new_pages: Vec<(String, String)>,
+        hide_panel: bool,
+    ) {
+        self.lines.retain(|l| l.keep);
+        if let Some((line, _)) = &verdict {
+            self.record_history(line);
+        }
+        self.record_history(&reveal);
+        self.dialogue = Some(StationDialogue {
+            console: Console::Station(puzzle),
+            topics: dialogue.topics.clone(),
+            pending: None,
+            hide_panel,
+            stage: DialogueStage::Reveal { puzzle, verdict, reveal, new_pages },
+            shown: 0.0,
+        });
+        self.since_spoke = 0.0;
+    }
+
+    /// Advance the active station dialogue to its next beat (or into its pending guide / experiment),
+    /// or dismiss it if on the last beat.
     fn advance_dialogue(&mut self) -> bool {
         let Some(dialogue) = &mut self.dialogue else { return false };
-        if dialogue.lines.len() > 1 {
-            dialogue.lines.remove(0);
-            dialogue.shown = 0.0;
-            let text = dialogue.lines[0].text.clone();
-            self.record_history(&text);
-            self.since_spoke = 0.0;
-        } else {
-            self.dialogue = None;
+        match &mut dialogue.stage {
+            DialogueStage::Lines(lines) if lines.len() > 1 => {
+                lines.remove(0);
+                dialogue.shown = 0.0;
+                let text = lines[0].text.clone();
+                self.record_history(&text);
+                self.since_spoke = 0.0;
+            }
+            DialogueStage::Lines(_) if dialogue.pending.is_some() => {
+                let next = dialogue.pending.take().expect("checked above");
+                dialogue.shown = 0.0;
+                self.since_spoke = 0.0;
+                match next {
+                    NextBeat::MeasureGuide => {
+                        dialogue.stage = DialogueStage::Guide(GuideStep::PressR);
+                        self.record_history(GuideStep::PressR.text());
+                    }
+                    NextBeat::Experiment(puzzle, demo) => {
+                        dialogue.stage = DialogueStage::Experiment { puzzle, demo };
+                    }
+                }
+            }
+            _ => {
+                self.dialogue = None;
+            }
         }
         true
+    }
+
+    /// Drive Station 0's action-gated ruler and notebook walkthrough forward (or recover if the
+    /// ruler is cancelled early) based on live ruler, notebook, and UI state.
+    fn sync_measure_guide(&mut self, ruler: &Ruler, has_reading: bool, notebook_open: bool) {
+        let Some(dialogue) = &mut self.dialogue else { return };
+        let DialogueStage::Guide(current) = dialogue.stage else { return };
+        let next = if has_reading {
+            if notebook_open { None } else { Some(GuideStep::OpenNotebook) }
+        } else if ruler.finished() {
+            Some(GuideStep::NoteReading)
+        } else if ruler.active && ruler.first.is_some() {
+            Some(GuideStep::PickSecondPin)
+        } else if ruler.active {
+            Some(GuideStep::PickFirstPin)
+        } else {
+            Some(GuideStep::PressR)
+        };
+        match next {
+            Some(step) if step != current => {
+                dialogue.stage = DialogueStage::Guide(step);
+                dialogue.shown = 0.0;
+                self.record_history(step.text());
+                self.since_spoke = 0.0;
+            }
+            None => {
+                dialogue.stage = DialogueStage::Lines(vec![Spoken { text: GUIDE_DONE_LINE.into(), look: Some(CART_BLOCK.into()) }]);
+                dialogue.shown = 0.0;
+                self.record_history(GUIDE_DONE_LINE);
+                self.since_spoke = 0.0;
+                self.feel(Mood::Pleased, 3.0);
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether the open reveal has just written the player's first handbook pages. Until they open
+    /// the handbook, the reveal offers only those pages: its topic chips, `Run it again` and
+    /// `Open console` wait.
+    fn reveal_waits_for_handbook(&self) -> bool {
+        !self.handbook_opened && self.dialogue.as_ref().is_some_and(|d| matches!(&d.stage, DialogueStage::Reveal { new_pages, .. } if !new_pages.is_empty()))
+    }
+
+    /// The reveal is closing (or being replaced) before the player has opened the handbook: the
+    /// first-time handbook prompt takes over, so the tutorial step isn't skipped.
+    fn hand_over_handbook_gate(&mut self) {
+        if !self.reveal_waits_for_handbook() || self.handbook_prompt.is_some() {
+            return;
+        }
+        let title = match self.dialogue.as_ref().map(|d| &d.stage) {
+            Some(DialogueStage::Reveal { new_pages, .. }) => new_pages.first().map(|(_, title)| title.clone()),
+            _ => None,
+        };
+        let Some(title) = title else { return };
+        let text = first_page_prompt(&title);
+        self.record_history(&text);
+        self.handbook_prompt = Some(HandbookPrompt { text, shown: 0.0 });
+    }
+
+    /// Follow an experiment Lumen is waiting on, given whether a request is still queued for the
+    /// station and which experiment is running. It marks the run started once it plays, and forgets
+    /// it once it has ended (its reveal opened already) or if the station dropped the request
+    /// without running it, so the console isn't left hidden.
+    fn track_awaiting_demo(&mut self, request_queued: bool, running_demo: Option<usize>) {
+        let Some(awaiting) = &mut self.awaiting_demo else { return };
+        if running_demo == Some(awaiting.puzzle) {
+            awaiting.started = true;
+        } else if awaiting.started || !request_queued {
+            self.awaiting_demo = None;
+        }
     }
 
     /// Answer a clicked station dialogue topic chip.
@@ -294,7 +570,7 @@ impl Companion {
         }
         let console = dialogue.console;
         let first = topic.lines[0].text.clone();
-        dialogue.lines = topic.lines;
+        dialogue.stage = DialogueStage::Lines(topic.lines);
         dialogue.shown = 0.0;
         self.asked.insert((console, index));
         self.record_history(&first);
@@ -500,6 +776,8 @@ struct Seen {
     asking: bool,
     /// Experiments watched at least once, per puzzle.
     watched: [bool; PUZZLES],
+    /// Conceptual experiment currently playing out, if any.
+    demo_running: Option<usize>,
     found: BTreeSet<String>,
     /// Handbook pages whose quiz has been answered in full.
     quizzes: BTreeSet<String>,
@@ -520,7 +798,11 @@ impl Plugin for CompanionPlugin {
             // The greeting comes with the first frame of the game, after Start.
             .add_systems(
                 Update,
-                (follow_sites, advance_speech.run_if(in_state(Mode::Playing)).run_if(not_paused), direct.run_if(in_state(Mode::Playing)).run_if(not_paused))
+                (
+                    follow_sites,
+                    advance_speech.run_if(in_state(Mode::Playing)).run_if(not_paused),
+                    direct.after(crate::stations::proximity).after(crate::beam::proximity).run_if(in_state(Mode::Playing)).run_if(not_paused),
+                )
                     .chain(),
             )
             .add_systems(EguiPrimaryContextPass, draw.after(crate::ui::draw).after(crate::beam::panel).run_if(in_state(Mode::Playing)));
@@ -546,11 +828,12 @@ fn advance_speech(
     }
     if keys.any_just_pressed([KeyCode::Enter, KeyCode::NumpadEnter]) {
         if let Some(dialogue) = &companion.dialogue {
-            // Enter steps through the beats; once the topic chips show, only "Got it" closes them.
-            if dialogue.lines.len() > 1 {
+            // Enter steps through presentation beats (and into the experiment prompt); once choices
+            // or topic chips are showing, the player clicks one or dismisses explicitly.
+            if dialogue.has_more() {
                 companion.advance_dialogue();
             }
-        } else if !ui.at_console() {
+        } else if !ui.at_console() || companion.hiding_console_panel() {
             companion.advance_line();
         }
     }
@@ -607,6 +890,7 @@ fn direct(
         ruler_first: ruler.first.is_some(),
         asking,
         watched: std::array::from_fn(|i| game.save.demo_watched(&game.def(i).id)),
+        demo_running: sim.demo(),
         found: game.save.found.clone(),
         quizzes: game.chapter.concepts.iter().filter(|c| game.save.quiz_done(&game.chapter, &c.id)).map(|c| c.id.clone()).collect(),
         station: ui.station,
@@ -616,6 +900,10 @@ fn direct(
     };
     match companion.last_seen.clone() {
         None => {
+            // A reloaded save that already discovered pages does not need the first-time handbook prompt.
+            if !game.save.found.is_empty() {
+                companion.handbook_opened = true;
+            }
             // The first frame: a greeting. The opening plays until the player has done anything at
             // all, so it isn't heard again by someone who has already been measuring.
             let fresh = game.save.untouched();
@@ -659,9 +947,36 @@ fn direct(
                 companion.feel(Mood::Concerned, 4.0);
                 companion.say("The console rejected that before anything moved, so it didn't spend a charge. The reason's under the button.");
             }
+            let mut revealed_pages: BTreeSet<String> = BTreeSet::new();
             for puzzle in 0..PUZZLES {
                 if now.watched[puzzle] && !before.watched[puzzle] {
-                    react_to_demo(companion, &game, puzzle);
+                    if ui.station == Some(puzzle) && !ui.tutor_open && (!companion.telling() || companion.awaiting_demo.is_some()) {
+                        let hide_panel = companion.awaiting_demo.take().filter(|a| a.puzzle == puzzle).is_some_and(|a| a.hide_panel);
+                        let def = game.def(puzzle);
+                        let new_pages: Vec<(String, String)> = now
+                            .found
+                            .difference(&before.found)
+                            .filter_map(|id| game.chapter.concept(id))
+                            .filter(|c| c.found == Found::Demo(def.id.clone()))
+                            .map(|c| {
+                                revealed_pages.insert(c.id.clone());
+                                (c.id.clone(), c.title.clone())
+                            })
+                            .collect();
+                        open_demo_reveal(companion, &game, puzzle, new_pages, hide_panel, true);
+                    } else {
+                        companion.awaiting_demo = None;
+                        react_to_demo(companion, &game, puzzle);
+                    }
+                }
+            }
+            if let Some(puzzle) = before.demo_running
+                && now.demo_running.is_none()
+                && let Some(awaiting) = companion.awaiting_demo.filter(|a| a.puzzle == puzzle && !a.first_run)
+            {
+                companion.awaiting_demo = None;
+                if ui.station == Some(puzzle) && !ui.tutor_open {
+                    open_demo_reveal(companion, &game, puzzle, Vec::new(), awaiting.hide_panel, false);
                 }
             }
             if now.beam_releases > before.beam_releases {
@@ -674,9 +989,18 @@ fn direct(
                 }
             }
             for id in now.found.difference(&before.found) {
+                if revealed_pages.contains(id) {
+                    continue;
+                }
                 if let Some(page) = game.chapter.concept(id) {
                     companion.feel(Mood::Pleased, 4.0);
-                    companion.say(format!("There's a new page in your handbook, {}. Press H to read it.", page.title));
+                    if !companion.handbook_opened && companion.handbook_prompt.is_none() {
+                        let text = first_page_prompt(&page.title);
+                        companion.record_history(&text);
+                        companion.handbook_prompt = Some(HandbookPrompt { text, shown: 0.0 });
+                    } else {
+                        companion.say(format!("There's a new page in your handbook, {}. Press H to read it.", page.title));
+                    }
                 }
             }
             for id in now.quizzes.difference(&before.quizzes) {
@@ -699,7 +1023,8 @@ fn direct(
                     }
                 }
             }
-            if !ui.beam_open && focus_kind == PuzzleKind::Rail && !game.solved(focus) {
+            let guiding_ruler = companion.dialogue.as_ref().is_some_and(|d| matches!(d.stage, DialogueStage::Guide(_)));
+            if !guiding_ruler && !ui.beam_open && focus_kind == PuzzleKind::Rail && !game.solved(focus) {
                 if now.ruler_active && !before.ruler_active {
                     companion.say("Click the yellow pin I'm pointing at.");
                 } else if now.ruler_active && now.ruler_first && !before.ruler_first && ruler.second.is_none() {
@@ -717,11 +1042,32 @@ fn direct(
 
     if std::mem::take(&mut ui.request_briefing) {
         if let Some(p) = ui.station {
-            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, false);
+            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, false, false, None);
         } else if ui.beam_open
             && let Some(side) = game.chapter.side(crate::beam::BEAM_ID)
         {
-            companion.open_dialogue(Console::Beam, &side.dialogue, false);
+            companion.open_dialogue(Console::Beam, &side.dialogue, false, false, None);
+        }
+    }
+    if std::mem::take(&mut ui.request_experiment)
+        && let Some(p) = ui.station
+        && let Some(demo) = game.def(p).demo.clone()
+    {
+        companion.open_experiment(p, &game.def(p).dialogue, demo, false);
+    }
+    // The console's `Replay experiment` button has queued a run: its reveal opens when it ends.
+    if std::mem::take(&mut ui.request_replay)
+        && let Some(p) = ui.station
+    {
+        companion.awaiting_demo = Some(AwaitingDemo { puzzle: p, hide_panel: false, first_run: false, started: false });
+    }
+
+    // Once the player opens the handbook (by pressing H or clicking its header), mark the first-time
+    // handbook gate done and clear the prompt.
+    if ui.handbook_open {
+        companion.handbook_opened = true;
+        if companion.handbook_prompt.take().is_some() {
+            companion.feel(Mood::Pleased, 2.5);
         }
     }
 
@@ -729,29 +1075,57 @@ fn direct(
     let running = testing.is_some() || sim.demo().is_some() || sim.measuring().is_some() || beam.animating();
 
     // Dismiss station dialogue when leaving its console, running a test/experiment, measuring with
-    // the ruler, or opening the full chat panel.
+    // the ruler (except during Station 0's hands-on ruler guide), or opening the full chat panel.
     let active_console = ui.station.map(Console::Station).or(ui.beam_open.then_some(Console::Beam));
-    if companion.dialogue.as_ref().is_some_and(|d| Some(d.console) != active_console) || running || ruler.active || ui.tutor_open {
+    let guiding_ruler = companion.dialogue.as_ref().is_some_and(|d| matches!(d.stage, DialogueStage::Guide(_)));
+    if companion.dialogue.as_ref().is_some_and(|d| Some(d.console) != active_console) || running || (ruler.active && !guiding_ruler) || ui.tutor_open {
+        // If the player left mid-guide before finishing their first measurement, let the guide
+        // resume when they reopen Station 0.
+        if let Some(d) = &companion.dialogue
+            && (matches!(d.stage, DialogueStage::Guide(_)) || matches!(d.pending, Some(NextBeat::MeasureGuide)))
+            && game.save.notebook.entries.is_empty()
+        {
+            companion.presented.remove(&d.console);
+        }
+        companion.hand_over_handbook_gate();
         companion.dialogue = None;
     }
+    if companion.awaiting_demo.is_some_and(|a| ui.station != Some(a.puzzle)) || ruler.active || ui.tutor_open {
+        companion.awaiting_demo = None;
+    }
+    companion.track_awaiting_demo(sim.request.is_some(), sim.demo());
 
-    // Lumen's briefing plays once per console per session, as soon as nothing else is going on
-    // there: not over a test, the ruler, the chat, a wake or a story still being told.
-    let free = companion.dialogue.is_none() && !running && !ruler.active && !ui.tutor_open && !waking.playing() && !companion.telling();
+    // Lumen's initial briefing plays once per untouched console per session (hiding the right-hand
+    // console panel until finished), as soon as nothing else is going on there.
+    let free = companion.dialogue.is_none()
+        && companion.awaiting_demo.is_none()
+        && !running
+        && !ruler.active
+        && !ui.tutor_open
+        && !waking.playing()
+        && !companion.telling();
     if free {
         if let Some(p) = ui.station
-            && !game.solved(p)
+            && should_auto_present_station(&game, p)
             && companion.presented.insert(Console::Station(p))
         {
-            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, true);
+            let pending = if game.def(p).kind == PuzzleKind::Rail && game.save.notebook.entries.is_empty() {
+                Some(NextBeat::MeasureGuide)
+            } else {
+                game.def(p).demo.clone().map(|demo| NextBeat::Experiment(p, demo))
+            };
+            companion.open_dialogue(Console::Station(p), &game.def(p).dialogue, true, true, pending);
         } else if ui.beam_open
-            && !crate::beam::woken(&game)
+            && should_auto_present_beam(&game)
             && let Some(side) = game.chapter.side(crate::beam::BEAM_ID)
             && companion.presented.insert(Console::Beam)
         {
-            companion.open_dialogue(Console::Beam, &side.dialogue, true);
+            companion.open_dialogue(Console::Beam, &side.dialogue, true, true, None);
         }
     }
+
+    // Advance Station 0's action-gated ruler and notebook walkthrough from live game state.
+    companion.sync_measure_guide(&ruler, !game.save.notebook.entries.is_empty(), ui.notebook_open);
 
     // Time passes for held looks, moods, dialogue fade-in and timed lines.
     if let Some((_, left)) = &mut companion.held {
@@ -771,6 +1145,15 @@ fn direct(
     if let Some(dialogue) = &mut companion.dialogue {
         dialogue.shown += dt;
     }
+    if companion.dialogue.is_none()
+        && companion.lines.is_empty()
+        && !running
+        && !waking.playing()
+        && !ui.tutor_open
+        && let Some(prompt) = &mut companion.handbook_prompt
+    {
+        prompt.shown += dt;
+    }
     if let Some(line) = companion.lines.first_mut() {
         line.shown += dt;
         if !line.wait {
@@ -788,7 +1171,7 @@ fn direct(
         ruler: ruler.active || ruler.in_use(),
         conversation_open: ui.tutor_open,
         carrying: carry.holding.is_some(),
-        speaking: !companion.lines.is_empty() || companion.dialogue.is_some(),
+        speaking: !companion.lines.is_empty() || companion.dialogue.is_some() || companion.handbook_prompt.is_some(),
         since_spoke: companion.since_spoke,
     };
     if quiet(&calm) {
@@ -820,7 +1203,7 @@ fn direct(
         beckon: companion.beckon_left > 0.0,
         at_finished_station: ui.near_station.is_some_and(|n| game.solved(n) || !game.unlocked(n)),
         held: companion.held.as_ref().map(|(place, _)| place.clone()),
-        dialogue_look: companion.dialogue.as_ref().and_then(|d| d.lines.first()).and_then(|l| l.look.clone()),
+        dialogue_look: companion.dialogue.as_ref().and_then(|d| d.look()).map(str::to_string),
         line_look: companion.lines.first().filter(|l| l.shown > 0.0).and_then(|l| l.look.clone()),
         carrying: carry.holding,
         light_running: waking.light_running(),
@@ -916,7 +1299,42 @@ fn react_to_release(companion: &mut Companion, game: &Game, beam: &crate::beam::
     });
 }
 
-/// After an experiment's first run: how the guess went, then what was seen.
+/// Whether opening `puzzle`'s station should auto-play Lumen's full briefing (with the console
+/// panel held back): only when the puzzle has not yet been solved, experimented on, or attempted.
+fn should_auto_present_station(game: &Game, puzzle: usize) -> bool {
+    let def = game.def(puzzle);
+    !game.solved(puzzle) && !game.save.demo_watched(&def.id) && game.save.progress(&def.id).attempts.is_empty()
+}
+
+/// Whether opening the beam console should auto-play Lumen's briefing: only before any load has held.
+fn should_auto_present_beam(game: &Game) -> bool {
+    !crate::beam::woken(game) && crate::beam::held(game) == 0
+}
+
+/// After an experiment finishes at an open station: open Lumen's reveal bubble with mood, verdict,
+/// full explanation, newly written handbook pages, and follow-up station topics.
+fn open_demo_reveal(companion: &mut Companion, game: &Game, puzzle: usize, new_pages: Vec<(String, String)>, hide_panel: bool, show_verdict: bool) {
+    let def = game.def(puzzle);
+    let Some(demo) = &def.demo else { return };
+    let verdict = if show_verdict {
+        match game.save.first_guess(&def.id) {
+            Some(guess) if guess == demo.answer => {
+                companion.feel(Mood::Pleased, 5.0);
+                Some(("You called it!".to_string(), true))
+            }
+            Some(_) => {
+                companion.feel(Mood::Concerned, 4.0);
+                Some(("Not what you expected? Don't worry, this one surprises most people.".to_string(), false))
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    companion.open_demo_reveal(puzzle, &def.dialogue, verdict, demo.reveal.clone(), new_pages, hide_panel);
+}
+
+/// After an experiment's first run away from a console: how the guess went, then what was seen.
 fn react_to_demo(companion: &mut Companion, game: &Game, puzzle: usize) {
     let def = game.def(puzzle);
     let Some(demo) = &def.demo else { return };
@@ -932,6 +1350,11 @@ fn react_to_demo(companion: &mut Companion, game: &Game, puzzle: usize) {
         None => {}
     }
     companion.say(first_sentence(&demo.reveal));
+}
+
+/// Lumen's line the first time a handbook page is written, kept up until the handbook is opened.
+fn first_page_prompt(title: &str) -> String {
+    format!("There's a new page in your handbook, {title}. Press H to open it and have a look.")
 }
 
 fn first_sentence(text: &str) -> &str {
@@ -1137,7 +1560,7 @@ fn draw(
     mut companion: ResMut<Companion>,
     mut ui_state: ResMut<Ui>,
     ruler: Res<Ruler>,
-    sim: Res<Sim>,
+    mut sim: ResMut<Sim>,
     beam: Res<crate::beam::Beam>,
     waking: Res<crate::waking::Waking>,
     orbit: Res<crate::player::OrbitCamera>,
@@ -1151,6 +1574,7 @@ fn draw(
     let companion = &mut *companion;
     let mood = companion.mood;
     let gaze = companion.gaze.clone();
+    let panel_hidden = companion.hiding_console_panel();
     let a = &mut companion.anim;
     a.clock += dt;
     let t = a.clock;
@@ -1190,12 +1614,13 @@ fn draw(
     let hud_hidden = crate::ui::hud_hidden(&waking, &sim, &beam);
     let show_chat = ui_state.tutor_open && !hud_hidden;
     // Forward to the bottom centre while there is something to say, back to the corner after.
-    let speaking = !show_chat && (companion.dialogue.is_some() || !companion.lines.is_empty());
+    let speaking = !show_chat && (companion.dialogue.is_some() || !companion.lines.is_empty() || companion.handbook_prompt.is_some());
     a.linger = if speaking { FORWARD_LINGER } else { (a.linger - dt).max(0.0) };
     let toward = if speaking || (a.linger > 0.0 && !show_chat) { 1.0 } else { 0.0 };
     a.forward += (toward - a.forward).clamp(-dt / FORWARD_SECONDS, dt / FORWARD_SECONDS);
     let forward = crate::voxel::smoothstep(0.0, 1.0, a.forward);
-    let right_edge = if ui_state.at_console() { screen.right() - STATION_PANEL } else { screen.right() };
+    let panel_shown = ui_state.at_console() && !panel_hidden;
+    let right_edge = if panel_shown { screen.right() - STATION_PANEL } else { screen.right() };
     let rest = eye_place(screen, a.lift, forward, right_edge);
     let centre = rest + vec2(0.0, (t * 1.7).sin() * 3.0);
     let (camera, at) = *camera;
@@ -1302,10 +1727,16 @@ fn draw(
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-panel-tail")));
         paint_tail(&painter, panel.response.rect, centre, BUBBLE_FILL, stroke);
     } else if !hud_hidden && companion.dialogue.is_some() {
-        // Interactive station briefing and Q&A chips in a bubble above the eye.
-        let (shown, text, more, console, topics) = {
+        // Interactive station briefing, action-gated Station 0 guide, "Try it first" experiment
+        // prompt, post-experiment reveal, and Q&A chips in a bubble above the eye.
+        let (shown, console, topics, hide_panel, has_more, next_label, stage) = {
             let d = companion.dialogue.as_ref().expect("checked above");
-            (d.shown, d.lines[0].text.clone(), d.lines.len() > 1, d.console, d.topics.clone())
+            let next_label = match (&d.stage, &d.pending) {
+                (DialogueStage::Lines(lines), Some(NextBeat::MeasureGuide)) if lines.len() == 1 => "Measure it ▸",
+                (DialogueStage::Lines(lines), Some(NextBeat::Experiment(..))) if lines.len() == 1 => "Try it first ▸",
+                _ => "Next ▸",
+            };
+            (d.shown, d.console, d.topics.clone(), d.hide_panel, d.has_more(), next_label, d.stage.clone())
         };
         let alpha = (shown / 0.25).min(1.0);
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-dialogue-ring")));
@@ -1313,59 +1744,167 @@ fn draw(
             let k = shown / RING_SECONDS;
             painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
         }
-        let max_w = 380.0_f32.min((right_edge - screen.left() - 24.0).max(240.0));
+        let preferred_w: f32 = if matches!(stage, DialogueStage::Lines(_) | DialogueStage::Guide(_)) { 380.0 } else { 440.0 };
+        let max_w = preferred_w.min((right_edge - screen.left() - 24.0).max(240.0));
         let anchor_x = centre.x.clamp(screen.left() + max_w / 2.0 + 10.0, (right_edge - max_w / 2.0 - 10.0).max(screen.left() + max_w / 2.0 + 10.0));
         let anchor = pos2(anchor_x, centre.y - EYE - 22.0);
         let fill = BUBBLE_FILL.gamma_multiply(alpha);
         let stroke = Stroke::new(1.5, tint(colour, 0.85 * alpha));
         let mut advance = false;
         let mut pick: Option<usize> = None;
+        let mut run_guess: Option<(usize, usize)> = None;
+        let mut replay_demo: Option<usize> = None;
+        let mut open_page: Option<String> = None;
         let mut dismiss = false;
         let mut open_tutor = false;
+        let dismiss_label = if hide_panel { "Open console" } else { "Got it" };
+        let handbook_gate = companion.reveal_waits_for_handbook();
         let area =
             egui::Area::new(egui::Id::new("lumen-dialogue")).order(egui::Order::Foreground).pivot(Align2::CENTER_BOTTOM).fixed_pos(anchor).show(&ctx, |ui| {
                 egui::Frame::new().fill(fill).stroke(stroke).corner_radius(8.0).inner_margin(10.0).show(ui, |ui| {
                     ui.set_max_width(max_w);
-                    let line_resp =
-                        ui.add(egui::Label::new(RichText::new(&text).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap().sense(if more {
-                            egui::Sense::click()
-                        } else {
-                            egui::Sense::hover()
-                        }));
-                    if more && line_resp.clicked() {
-                        advance = true;
-                    }
-                    ui.add_space(8.0);
-                    if more {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Click or press Enter").small().color(crate::ui::DIM));
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button(RichText::new("Next ▸").strong().color(crate::ui::LUMEN)).clicked() {
-                                    advance = true;
-                                }
-                            });
-                        });
-                    } else {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-                            for (idx, topic) in topics.iter().enumerate() {
-                                let asked = companion.asked.contains(&(console, idx));
-                                let label = if asked {
-                                    RichText::new(format!("✔ {}", topic.ask)).color(crate::ui::DIM)
+                    match &stage {
+                        DialogueStage::Lines(lines) => {
+                            let text = lines.first().map_or("", |l| l.text.as_str());
+                            let line_resp = ui.add(
+                                egui::Label::new(RichText::new(text).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap().sense(if has_more {
+                                    egui::Sense::click()
                                 } else {
-                                    RichText::new(&topic.ask).color(crate::ui::LUMEN)
-                                };
-                                if ui.button(label).clicked() {
-                                    pick = Some(idx);
+                                    egui::Sense::hover()
+                                }),
+                            );
+                            if has_more && line_resp.clicked() {
+                                advance = true;
+                            }
+                            ui.add_space(8.0);
+                            if has_more {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new("Click or press Enter").small().color(crate::ui::DIM));
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        if ui.button(RichText::new(next_label).strong().color(crate::ui::LUMEN)).clicked() {
+                                            advance = true;
+                                        }
+                                    });
+                                });
+                            } else {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                                    for (idx, topic) in topics.iter().enumerate() {
+                                        let asked = companion.asked.contains(&(console, idx));
+                                        let label = if asked {
+                                            RichText::new(format!("✔ {}", topic.ask)).color(crate::ui::DIM)
+                                        } else {
+                                            RichText::new(&topic.ask).color(crate::ui::LUMEN)
+                                        };
+                                        if ui.button(label).clicked() {
+                                            pick = Some(idx);
+                                        }
+                                    }
+                                    if lumen.tutor.is_online()
+                                        && ui.button(RichText::new("Ask something else (T)").color(Color32::from_rgb(200, 225, 240))).clicked()
+                                    {
+                                        open_tutor = true;
+                                    }
+                                    if ui.button(RichText::new(dismiss_label).strong()).clicked() {
+                                        dismiss = true;
+                                    }
+                                });
+                            }
+                        }
+                        DialogueStage::Guide(step) => {
+                            ui.add(egui::Label::new(RichText::new(step.text()).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap());
+                            ui.add_space(6.0);
+                            ui.label(RichText::new(step.cue()).small().strong().color(crate::ui::WARN));
+                        }
+                        DialogueStage::Experiment { puzzle, demo } => {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Try it first").small().strong().color(crate::ui::LUMEN));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.label(RichText::new("Free experiment").small().color(crate::ui::DIM));
+                                });
+                            });
+                            ui.add_space(4.0);
+                            ui.add(egui::Label::new(RichText::new(&demo.question).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap());
+                            ui.add_space(8.0);
+                            ui.spacing_mut().item_spacing.y = 5.0;
+                            let ready = !sim.busy();
+                            for (idx, choice) in demo.choices.iter().enumerate() {
+                                let button = egui::Button::new(RichText::new(choice).color(Color32::from_rgb(230, 242, 252))).wrap().min_size(vec2(max_w, 0.0));
+                                if ui.add_enabled(ready, button).clicked() {
+                                    run_guess = Some((*puzzle, idx));
                                 }
                             }
-                            if lumen.tutor.is_online() && ui.button(RichText::new("Ask something else (T)").color(Color32::from_rgb(200, 225, 240))).clicked() {
-                                open_tutor = true;
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Pick a prediction to run it.").small().color(crate::ui::DIM));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button(RichText::new("Skip for now").small().color(crate::ui::DIM)).clicked() {
+                                        dismiss = true;
+                                    }
+                                });
+                            });
+                        }
+                        DialogueStage::Reveal { puzzle, verdict, reveal, new_pages } => {
+                            if let Some((line, right)) = verdict {
+                                let colour = if *right { crate::ui::GOOD } else { crate::ui::WARN };
+                                ui.add(egui::Label::new(RichText::new(line).size(LINE_FONT).strong().color(colour)).wrap());
+                                ui.add_space(4.0);
                             }
-                            if ui.button(RichText::new("Got it").strong()).clicked() {
-                                dismiss = true;
+                            ui.add(egui::Label::new(RichText::new(reveal).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap());
+                            if !new_pages.is_empty() {
+                                ui.add_space(6.0);
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
+                                    let heading = if new_pages.len() == 1 { "New handbook page:" } else { "New handbook pages:" };
+                                    ui.label(RichText::new(heading).small().color(crate::ui::GOOD));
+                                    for (id, title) in new_pages {
+                                        if ui
+                                            .small_button(RichText::new(title).color(crate::ui::GOOD))
+                                            .on_hover_text("Open this page in the handbook")
+                                            .clicked()
+                                        {
+                                            open_page = Some(id.clone());
+                                        }
+                                    }
+                                });
                             }
-                        });
+                            ui.add_space(8.0);
+                            if handbook_gate {
+                                // The player's first pages: open the handbook before anything else.
+                                ui.add(egui::Label::new(RichText::new(FIRST_PAGES_LINE).size(LINE_FONT).color(tint([235.0, 245.0, 255.0], alpha))).wrap());
+                                ui.add_space(6.0);
+                                ui.label(RichText::new("Press H or click the page").small().strong().color(crate::ui::WARN));
+                            } else {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                                    for (idx, topic) in topics.iter().enumerate() {
+                                        let asked = companion.asked.contains(&(console, idx));
+                                        let label = if asked {
+                                            RichText::new(format!("✔ {}", topic.ask)).color(crate::ui::DIM)
+                                        } else {
+                                            RichText::new(&topic.ask).color(crate::ui::LUMEN)
+                                        };
+                                        if ui.button(label).clicked() {
+                                            pick = Some(idx);
+                                        }
+                                    }
+                                    if ui
+                                        .add_enabled(!sim.busy(), egui::Button::new(RichText::new("Run it again").color(Color32::from_rgb(200, 225, 240))))
+                                        .clicked()
+                                    {
+                                        replay_demo = Some(*puzzle);
+                                    }
+                                    if lumen.tutor.is_online()
+                                        && ui.button(RichText::new("Ask something else (T)").color(Color32::from_rgb(200, 225, 240))).clicked()
+                                    {
+                                        open_tutor = true;
+                                    }
+                                    if ui.button(RichText::new(dismiss_label).strong()).clicked() {
+                                        dismiss = true;
+                                    }
+                                });
+                            }
+                        }
                     }
                 });
             });
@@ -1373,7 +1912,19 @@ fn draw(
         paint_tail(&tail_painter, area.response.rect, centre, fill, stroke);
         let r = area.response.rect;
         ui_state.occupied.push([r.min.x, r.min.y, r.max.x, r.max.y]);
-        if open_tutor {
+        if let Some((puzzle, guess)) = run_guess {
+            ui_state.guess[puzzle] = Some(guess);
+            sim.request = Some(Request::Demo(puzzle));
+            companion.awaiting_demo = Some(AwaitingDemo { puzzle, hide_panel, first_run: true, started: false });
+            companion.dialogue = None;
+        } else if let Some(puzzle) = replay_demo {
+            sim.request = Some(Request::Demo(puzzle));
+            companion.awaiting_demo = Some(AwaitingDemo { puzzle, hide_panel, first_run: false, started: false });
+            companion.dialogue = None;
+        } else if let Some(page) = open_page {
+            companion.dialogue = None;
+            ui_state.open_page(&page);
+        } else if open_tutor {
             companion.dialogue = None;
             ui_state.tutor_open = true;
         } else if dismiss {
@@ -1394,7 +1945,7 @@ fn draw(
             painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
         }
         let galley = painter.layout(line.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
-        let enter_advances = !ui_state.at_console() && !waking.playing();
+        let enter_advances = (!ui_state.at_console() || panel_hidden) && !waking.playing();
         let hint_text = match (orbit.free_look, enter_advances, more, line.wait) {
             (true, _, true, _) => "Press Enter for next",
             (true, _, false, true) => "Press Enter to continue",
@@ -1426,6 +1977,27 @@ fn draw(
         if !orbit.free_look && hit.inner.clicked() {
             companion.advance_line();
         }
+    } else if !hud_hidden && let Some(prompt) = &companion.handbook_prompt {
+        // Action-gated first handbook prompt: stays on screen until the player opens the handbook.
+        let alpha = (prompt.shown / 0.25).min(1.0);
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("lumen-action-prompt")));
+        if prompt.shown < RING_SECONDS {
+            let k = prompt.shown / RING_SECONDS;
+            painter.circle_stroke(centre, EYE + 10.0 + 46.0 * k, Stroke::new(2.5 * (1.0 - k) + 0.5, tint(colour, 0.8 * (1.0 - k))));
+        }
+        let galley = painter.layout(prompt.text.clone(), egui::FontId::proportional(LINE_FONT), tint([235.0, 245.0, 255.0], alpha), LINE_WRAP);
+        let cue_galley = painter.layout_no_wrap("Press H or click Handbook".into(), egui::FontId::proportional(11.5), crate::ui::WARN.gamma_multiply(alpha));
+        let width = galley.size().x.max(cue_galley.size().x);
+        let size = vec2(width + 20.0, galley.size().y + cue_galley.size().y + 20.0);
+        let rect = bubble_rect(screen, centre, size, forward);
+        let fill = BUBBLE_FILL.gamma_multiply(alpha);
+        let stroke = Stroke::new(1.5, tint(colour, 0.85 * alpha));
+        painter.rect_filled(rect, 8.0, fill);
+        painter.rect_stroke(rect, 8.0, stroke, egui::StrokeKind::Inside);
+        paint_tail(&painter, rect, centre, fill, stroke);
+        painter.galley(rect.min + vec2(10.0, 7.0), galley, Color32::WHITE);
+        painter.galley(pos2(rect.left() + 10.0, rect.bottom() - 6.0 - cue_galley.size().y), cue_galley, Color32::WHITE);
+        ui_state.occupied.push([rect.min.x, rect.min.y, rect.max.x, rect.max.y]);
     }
     Ok(())
 }
@@ -1809,36 +2381,87 @@ mod tests {
     }
 
     #[test]
-    fn station_dialogue_presents_picks_topics_and_points_while_open() {
+    fn station_dialogue_presents_experiment_topics_and_hides_panel_on_first_open() {
         let chapter = physics_core::content::chapter_1_1();
         let channel = chapter.puzzle("1.1.3").unwrap();
+        let demo = channel.demo.clone().unwrap();
         let mut companion = Companion::default();
 
-        // First open plays all presentation beats, waiting for advance.
-        companion.open_dialogue(Console::Station(3), &channel.dialogue, true);
+        // First open plays all presentation beats, hides the console panel, and points at landmarks.
+        companion.open_dialogue(Console::Station(3), &channel.dialogue, true, true, Some(NextBeat::Experiment(3, demo)));
         assert!(companion.waiting_line());
-        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), channel.dialogue.present.len());
-        let first_look = companion.dialogue.as_ref().unwrap().lines[0].look.clone();
+        assert!(companion.hiding_console_panel());
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Lines(lines) if lines.len() == channel.dialogue.present.len()));
+        let first_look = companion.dialogue.as_ref().unwrap().look().map(str::to_string);
         assert!(first_look.is_some());
         let gaze = choose_gaze(&Facts { focus_kind: Some(PuzzleKind::Channel), station_open: true, dialogue_look: first_look.clone(), ..walking_to(3) });
         assert_eq!(gaze, first_look, "station dialogue points at what it names");
 
-        // Advance to the final presentation beat, then pick a topic chip.
+        // Advance to the final presentation beat: still has_more because the experiment follows.
         assert!(companion.advance_line());
-        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), 1);
+        assert!(companion.dialogue.as_ref().unwrap().has_more());
+        assert!(companion.hiding_console_panel());
+
+        // Advancing from the final beat enters the "Try it first" experiment prompt.
+        assert!(companion.advance_line());
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Experiment { puzzle: 3, .. }));
+        assert!(!companion.dialogue.as_ref().unwrap().has_more());
+        assert!(companion.hiding_console_panel());
+
+        // After the experiment runs, Reveal shows with topic chips and still hides the panel until dismissed.
+        companion.open_demo_reveal(
+            3,
+            &channel.dialogue,
+            Some(("You called it!".into(), true)),
+            channel.demo.as_ref().unwrap().reveal.clone(),
+            vec![("independence".into(), "Horizontal and vertical motion are independent".into())],
+            true,
+        );
+        assert!(companion.hiding_console_panel());
         assert!(companion.pick_topic(0));
         assert!(companion.asked.contains(&(Console::Station(3), 0)));
-        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), channel.dialogue.topics[0].lines.len());
+        assert!(companion.hiding_console_panel(), "panel stays hidden while reading initial Q&A topics");
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Lines(lines) if lines.len() == channel.dialogue.topics[0].lines.len()));
 
-        // Advancing through the topic reply dismisses the dialogue.
+        // Advancing through the topic reply dismisses the dialogue and reveals the console panel.
         for _ in 0..channel.dialogue.topics[0].lines.len() {
             assert!(companion.advance_line());
         }
         assert!(companion.dialogue.is_none());
+        assert!(!companion.hiding_console_panel());
 
-        // Re-opening via Briefing jumps directly to the last presentation line so chips show at once.
-        companion.open_dialogue(Console::Station(3), &channel.dialogue, false);
-        assert_eq!(companion.dialogue.as_ref().unwrap().lines.len(), 1);
+        // Re-opening via Briefing jumps directly to the last presentation line and keeps the panel visible.
+        companion.open_dialogue(Console::Station(3), &channel.dialogue, false, false, None);
+        assert!(!companion.hiding_console_panel());
+        assert!(!companion.dialogue.as_ref().unwrap().has_more());
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Lines(lines) if lines.len() == 1));
+    }
+
+    #[test]
+    fn auto_briefing_is_skipped_on_reloaded_progress() {
+        let mut game = Game::for_test(7);
+        assert!(should_auto_present_station(&game, 0));
+        assert!(should_auto_present_station(&game, 1));
+        assert!(should_auto_present_beam(&game));
+
+        // Watching a station's experiment skips its automatic briefing on reload.
+        let chase_id = game.def(1).id.clone();
+        game.save.record_demo(&chase_id, Some(0));
+        assert!(!should_auto_present_station(&game, 1));
+
+        // Making an attempt at a station without a demo skips its automatic briefing too.
+        let rail_id = game.def(0).id.clone();
+        game.save.puzzles.entry(rail_id).or_default().attempts.push(physics_core::progress::Attempt {
+            values: Vec::new(),
+            pass: false,
+            headline: "Short".into(),
+            detail: String::new(),
+        });
+        assert!(!should_auto_present_station(&game, 0));
+
+        // Holding a load on the beam skips the beam's automatic briefing.
+        game.save.sides.entry(crate::beam::BEAM_ID.into()).or_default().held = 1;
+        assert!(!should_auto_present_beam(&game));
     }
 
     #[test]
@@ -1847,10 +2470,119 @@ mod tests {
         companion.say_spoken(&Spoken { text: "Opening line.".into(), look: None }, true);
         assert!(companion.telling());
         assert!(companion.waiting_line());
+        assert!(companion.hiding_console_panel(), "console stays hidden while Lumen is still telling a story");
         assert!(companion.lines[0].wait);
-        // Remarks still auto-fade.
+        assert!(companion.advance_line());
+        assert!(!companion.hiding_console_panel());
+        // Remarks still auto-fade and do not hide the console.
         let mut remarking = Companion::default();
         assert!(remarking.remark(&Spoken { text: "Quiet remark.".into(), look: None }));
         assert!(!remarking.waiting_line());
+        assert!(!remarking.hiding_console_panel());
+    }
+
+    #[test]
+    fn station_zero_measure_guide_advances_and_recovers_on_cancel() {
+        let chapter = physics_core::content::chapter_1_1();
+        let rail = chapter.puzzle("1.1.0").unwrap();
+        let mut companion = Companion::default();
+        let mut ruler = Ruler::default();
+
+        // First open at Station 0 leads from the presentation beats into the action-gated guide.
+        companion.open_dialogue(Console::Station(0), &rail.dialogue, true, true, Some(NextBeat::MeasureGuide));
+        assert!(companion.advance_line());
+        assert!(companion.dialogue.as_ref().unwrap().has_more());
+        assert!(companion.advance_line());
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Guide(GuideStep::PressR)));
+        assert!(!companion.dialogue.as_ref().unwrap().has_more(), "Enter / Next cannot skip an action-gated guide step");
+        assert!(companion.hiding_console_panel());
+
+        // Pressing R moves to PickFirstPin; cancelling steps smoothly back to PressR.
+        ruler.start();
+        companion.sync_measure_guide(&ruler, false, false);
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Guide(GuideStep::PickFirstPin)));
+        ruler.put_away();
+        companion.sync_measure_guide(&ruler, false, false);
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Guide(GuideStep::PressR)));
+
+        // Full sequence: R -> first pin -> second pin -> note reading -> open notebook -> wrap-up.
+        let picked = |x: f32| crate::ruler::Picked { point: Vec3::new(x, 0.0, 0.0), label: String::new(), snapped: true };
+        ruler.start();
+        companion.sync_measure_guide(&ruler, false, false);
+        ruler.pick(picked(0.0));
+        companion.sync_measure_guide(&ruler, false, false);
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Guide(GuideStep::PickSecondPin)));
+        ruler.pick(picked(10.0));
+        companion.sync_measure_guide(&ruler, false, false);
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Guide(GuideStep::NoteReading)));
+
+        // Noting the reading asks the player to open the notebook.
+        companion.sync_measure_guide(&ruler, true, false);
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Guide(GuideStep::OpenNotebook)));
+
+        // Opening the notebook finishes the guide and transitions to the wrap-up beat with topics.
+        companion.sync_measure_guide(&ruler, true, true);
+        assert!(matches!(&companion.dialogue.as_ref().unwrap().stage, DialogueStage::Lines(lines) if lines[0].text == GUIDE_DONE_LINE));
+        assert!(companion.hiding_console_panel(), "panel stays hidden until the player clicks Open console");
+    }
+
+    #[test]
+    fn awaited_experiment_is_forgotten_when_dropped_or_ended() {
+        let waiting = |hide_panel| AwaitingDemo { puzzle: 3, hide_panel, first_run: true, started: false };
+        // Queued, not yet taken by the station: still waiting, and the console stays hidden.
+        let mut companion = Companion { awaiting_demo: Some(waiting(true)), ..Companion::default() };
+        companion.track_awaiting_demo(true, None);
+        assert!(companion.awaiting_demo.is_some());
+        assert!(companion.hiding_console_panel());
+
+        // The station took the request and dropped it without running anything: forgotten, so the
+        // console comes back.
+        companion.track_awaiting_demo(false, None);
+        assert!(companion.awaiting_demo.is_none());
+        assert!(!companion.hiding_console_panel());
+
+        // Another station's run doesn't count as this one starting.
+        companion.awaiting_demo = Some(waiting(true));
+        companion.track_awaiting_demo(false, Some(2));
+        assert!(companion.awaiting_demo.is_none());
+
+        // A run that starts is followed until it ends; anything left over then is forgotten.
+        companion.awaiting_demo = Some(waiting(true));
+        companion.track_awaiting_demo(false, Some(3));
+        assert!(companion.awaiting_demo.is_some_and(|a| a.started));
+        companion.track_awaiting_demo(false, Some(3));
+        assert!(companion.awaiting_demo.is_some());
+        companion.track_awaiting_demo(false, None);
+        assert!(companion.awaiting_demo.is_none());
+    }
+
+    #[test]
+    fn first_pages_in_a_reveal_wait_for_the_handbook() {
+        let chapter = physics_core::content::chapter_1_1();
+        let channel = chapter.puzzle("1.1.3").unwrap();
+        let reveal = channel.demo.as_ref().unwrap().reveal.clone();
+        let pages = vec![("independence".to_string(), "Horizontal and vertical motion are independent".to_string())];
+        let mut companion = Companion::default();
+
+        // The player's first pages: the reveal waits for the handbook, the console stays hidden.
+        companion.open_demo_reveal(3, &channel.dialogue, None, reveal.clone(), pages.clone(), true);
+        assert!(companion.reveal_waits_for_handbook());
+        assert!(companion.hiding_console_panel());
+
+        // Closed early (the player walked off, say): the first-time handbook prompt takes over.
+        companion.hand_over_handbook_gate();
+        companion.dialogue = None;
+        assert!(companion.handbook_prompt.as_ref().is_some_and(|p| p.text == first_page_prompt(&pages[0].1)));
+
+        // Once the handbook has been opened, a reveal with new pages offers its chips at once.
+        companion.handbook_prompt = None;
+        companion.handbook_opened = true;
+        companion.open_demo_reveal(3, &channel.dialogue, None, reveal.clone(), pages, true);
+        assert!(!companion.reveal_waits_for_handbook());
+
+        // A reveal with no new pages never waits.
+        companion.handbook_opened = false;
+        companion.open_demo_reveal(3, &channel.dialogue, None, reveal, Vec::new(), true);
+        assert!(!companion.reveal_waits_for_handbook());
     }
 }

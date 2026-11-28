@@ -506,6 +506,11 @@ pub struct Ui {
     pub near_beam: bool,
     /// Set by a console's "Briefing" button to reopen Lumen's station dialogue chips.
     pub request_briefing: bool,
+    /// Set by a station's "Try it first" button to open Lumen's conceptual experiment prompt.
+    pub request_experiment: bool,
+    /// Set by a station's "Replay experiment" button, beside the run it queues, so Lumen opens the
+    /// reveal again when that run ends.
+    pub request_replay: bool,
     /// Text typed into the blueprint, per puzzle and input.
     pub drafts: [Vec<String>; PUZZLES],
     /// Why the last commit was refused (costs no charge).

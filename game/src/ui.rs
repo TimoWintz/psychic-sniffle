@@ -22,7 +22,7 @@ use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass, egui};
 use egui::{Align2, Color32, RichText};
 use physics_core::ballistics::FlightEnd;
-use physics_core::content::{DemoDef, PuzzleDef};
+use physics_core::content::PuzzleDef;
 use physics_core::expr::{evaluate, is_function};
 use physics_core::notebook::source;
 use physics_core::progress::Quality;
@@ -192,6 +192,7 @@ pub fn draw(
     carry: Res<Carry>,
     waking: Res<Waking>,
     beam: Res<crate::beam::Beam>,
+    companion: Res<crate::companion::Companion>,
     orbit: Res<OrbitCamera>,
     mut session: ResMut<SessionControl>,
     mut exit: MessageWriter<AppExit>,
@@ -216,10 +217,13 @@ pub fn draw(
         clear_rename(ui_state);
     }
 
+    let panel_hidden = companion.hiding_console_panel();
     dock(&ctx, game, ui_state, ruler);
     hints(&ctx, game, &waking, ui_state, ruler, &carry);
-    controls_help(&ctx, ui_state);
-    if let Some(puzzle) = ui_state.station {
+    controls_help(&ctx, ui_state, panel_hidden);
+    if let Some(puzzle) = ui_state.station
+        && !panel_hidden
+    {
         station_panel(&ctx, game, ui_state, sim, puzzle);
     }
     if ruler.in_use() {
@@ -449,8 +453,8 @@ fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, r
 }
 
 /// Compact `?` toggle in the lower right (and `F1`) that opens a reference card of all controls.
-fn controls_help(ctx: &egui::Context, ui_state: &mut Ui) {
-    let x_offset = if ui_state.at_console() { -424.0 } else { -10.0 };
+fn controls_help(ctx: &egui::Context, ui_state: &mut Ui, panel_hidden: bool) {
+    let x_offset = if ui_state.at_console() && !panel_hidden { -424.0 } else { -10.0 };
     let area = egui::Area::new(egui::Id::new("controls-toggle")).anchor(Align2::RIGHT_BOTTOM, [x_offset, -10.0]).movable(false).show(ctx, |ui| {
         egui::Frame::window(ui.style()).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
             let label = if ui_state.controls_open { "Controls (F1) ×" } else { "?  F1" };
@@ -539,6 +543,24 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                 if ui.button(RichText::new("Briefing").color(LUMEN)).on_hover_text("Talk through this station with Lumen").clicked() {
                     ui_state.request_briefing = true;
                 }
+                if def.demo.is_some() {
+                    if game.save.demo_watched(&def.id) {
+                        if ui
+                            .add_enabled(!sim.busy(), egui::Button::new("Replay experiment"))
+                            .on_hover_text("Run this station's free conceptual experiment again")
+                            .clicked()
+                        {
+                            sim.request = Some(Request::Demo(puzzle));
+                            ui_state.request_replay = true;
+                        }
+                    } else if ui
+                        .add_enabled(!sim.busy(), egui::Button::new(RichText::new("Try it first").color(WARN)))
+                        .on_hover_text("Predict what happens and watch this station's free experiment")
+                        .clicked()
+                    {
+                        ui_state.request_experiment = true;
+                    }
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("Leave (E)").clicked() {
                         ui_state.station = None;
@@ -561,14 +583,6 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                     rating_plate(ui, game);
                 }
 
-                if let Some(demo) = &def.demo {
-                    ui.add_space(6.0);
-                    let watched = game.save.demo_watched(&def.id);
-                    let heading = if watched { "Try it first (watched)" } else { "Try it first" };
-                    egui::CollapsingHeader::new(RichText::new(heading).strong()).id_salt(("station-demo", puzzle)).default_open(!watched).show(ui, |ui| {
-                        experiment_section(ui, game, ui_state, sim, puzzle, demo);
-                    });
-                }
                 ui.add_space(6.0);
                 pages_row(ui, game, ui_state, &def);
 
@@ -723,48 +737,6 @@ pub fn write_plate(game: &mut Game) {
     let (low, high) = (Quantity::speed(game.layout.channel_speed_min), Quantity::speed(game.layout.channel_speed_max));
     game.save.notebook.set("vmin", "lowest speed of the ledge launcher's dial", low, source::PLATE);
     game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, source::PLATE);
-}
-
-/// The station's free conceptual demonstration: a guess first, then the world shows the principle.
-/// Measurements live in [`measure_section`] below, separate from this.
-fn experiment_section(ui: &mut egui::Ui, game: &Game, ui_state: &mut Ui, sim: &mut Sim, puzzle: usize, demo: &DemoDef) {
-    let id = &game.def(puzzle).id;
-    let watched = game.save.demo_watched(id);
-    let running = sim.demo() == Some(puzzle);
-    ui.label(&demo.question);
-    let first_guess = game.save.first_guess(id);
-    for (i, choice) in demo.choices.iter().enumerate() {
-        if watched {
-            // The guess before the first run stays on record, beside what happened. One label per
-            // choice, so it wraps inside the panel.
-            let (mark, note, colour) = match (i == demo.answer, first_guess == Some(i)) {
-                (true, true) => ("✔", "  (your guess)", GOOD),
-                (true, false) => ("✔", "", Color32::WHITE),
-                (false, true) => ("✖", "  (your guess)", WARN),
-                (false, false) => ("·", "", DIM),
-            };
-            ui.label(RichText::new(format!("{mark}  {choice}{note}")).color(colour));
-        } else {
-            if ui.add_enabled(!running, egui::RadioButton::new(ui_state.guess[puzzle] == Some(i), choice.as_str())).clicked() {
-                ui_state.guess[puzzle] = Some(i);
-            }
-        }
-    }
-    ui.horizontal(|ui| {
-        let ready = !sim.busy() && (watched || ui_state.guess[puzzle].is_some());
-        let label = if watched { "Run it again" } else { "Run the experiment" };
-        if ui.add_enabled(ready, egui::Button::new(label)).clicked() {
-            sim.request = Some(Request::Demo(puzzle));
-        }
-        if !watched && ui_state.guess[puzzle].is_none() {
-            ui.label(RichText::new("Make a guess first. It costs nothing.").small().color(DIM));
-        } else {
-            ui.label(RichText::new("It's free, so run it as often as you like.").small().color(DIM));
-        }
-    });
-    if watched && !running {
-        ui.label(RichText::new(&demo.reveal).color(Color32::from_rgb(200, 225, 240)));
-    }
 }
 
 /// Format light-gate `(drop, time)` pairs from the notebook, matching each time entry with the

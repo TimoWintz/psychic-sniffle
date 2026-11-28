@@ -369,7 +369,7 @@ Chapter(
             dialogue: Dialogue(
                 present: [
                     Spoken(text: "That six-legged thing's been pacing the track on its own, carrying a carved quartz instrument on its back. Nothing here can stop or steer it.", look: Some("Crawler: rear coupler")),
-                    Spoken(text: "The crane only reaches the orange transfer marker, so our haul cart'll have to catch and couple with the crawler right there. If you haven't tried the experiment yet, give it a go before any numbers.", look: Some("Transfer marker: centre")),
+                    Spoken(text: "The crane only reaches the orange transfer marker, so our haul cart'll have to catch and couple with the crawler right there.", look: Some("Transfer marker: centre")),
                 ],
                 topics: [
                     Topic(
@@ -411,7 +411,7 @@ Chapter(
             dialogue: Dialogue(
                 present: [
                     Spoken(text: "This console won't take a distance or a speed. It wants the planet's gravitational acceleration, and my tables are only good for home.", look: Some("Drop tower: release point")),
-                    Spoken(text: "We can time drops on this stone tower beside us. When you commit a value, the taller survey mast drops a second mass to check your prediction. If you haven't run the experiment yet, it's a good place to start.", look: Some("Survey mast: landing plate")),
+                    Spoken(text: "We can time drops on this stone tower beside us. When you commit a value, the taller survey mast drops a second mass to check your prediction.", look: Some("Survey mast: landing plate")),
                 ],
                 topics: [
                     Topic(
@@ -495,7 +495,7 @@ Chapter(
             dialogue: Dialogue(
                 present: [
                     Spoken(text: "Look what came out of the casket. A long stone tiller, aimed over the ridge towards the boat on the north shore. Whoever left all this stopped mid-delivery, and we're about to finish it.", look: Some("Landing circle: centre")),
-                    Spoken(text: "This launcher tilts, up to its rated top speed, and the tiller has to clear the ridge and come down inside the circle on level ground. If you haven't tried the experiment yet, start there.", look: Some("Ridge: top, near edge")),
+                    Spoken(text: "This launcher tilts, up to its rated top speed, and the tiller has to clear the ridge and come down inside the circle on level ground.", look: Some("Ridge: top, near edge")),
                 ],
                 topics: [
                     Topic(

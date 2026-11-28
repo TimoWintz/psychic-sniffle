@@ -442,16 +442,18 @@ fn light_looks(game: Res<Game>, mut beam: ResMut<Beam>, looks: Res<Looks>, mut m
 }
 
 /// The console's panel.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn panel(
     mut contexts: EguiContexts,
     game: Res<Game>,
     sim: Res<crate::sim::Sim>,
     waking: Res<crate::waking::Waking>,
+    companion: Res<crate::companion::Companion>,
     mut ui: ResMut<Ui>,
     mut beam: ResMut<Beam>,
     mut carry: ResMut<Carry>,
 ) -> Result {
-    if !ui.beam_open || ui.paused || crate::ui::hud_hidden(&waking, &sim, &beam) {
+    if !ui.beam_open || ui.paused || crate::ui::hud_hidden(&waking, &sim, &beam) || companion.hiding_console_panel() {
         return Ok(());
     }
     let ctx = contexts.ctx_mut()?.clone();

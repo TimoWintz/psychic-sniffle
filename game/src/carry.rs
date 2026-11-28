@@ -359,7 +359,7 @@ fn lay_out(
     // origin is where the beam crosses the fall line.
     let dark = materials.add(StandardMaterial { base_color: Color::srgb(0.12, 0.13, 0.16), perceptual_roughness: 0.6, ..default() });
     let lens = materials.add(StandardMaterial { base_color: Color::srgb(1.0, 0.2, 0.15), emissive: LinearRgba::rgb(1.5, 0.15, 0.1), ..default() });
-    let arm = meshes.add(Cuboid::new(2.2, 0.12, 0.12));
+    let arm = meshes.add(Cuboid::new(2.0, 0.12, 0.12));
     let head = meshes.add(Cuboid::new(0.24, 0.24, 0.2));
     // The clamp wraps the tower's column, whose centre is two metres from the fall line.
     let clamp = meshes.add(Cuboid::new(1.2, 0.4, 1.6));
@@ -368,7 +368,7 @@ fn lay_out(
         g.spawn((Mesh3d(clamp), MeshMaterial3d(dark.clone()), Transform::from_xyz(-GATE_REACH, 0.0, 0.0)));
         g.spawn((Mesh3d(handle.clone()), MeshMaterial3d(glow.clone()), Transform::from_xyz(-GATE_REACH, 0.24, 0.0)));
         for side in [-1.0f32, 1.0] {
-            g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-0.9, 0.0, side * 0.68)));
+            g.spawn((Mesh3d(arm.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(-1.0, 0.0, side * 0.68)));
             g.spawn((Mesh3d(head.clone()), MeshMaterial3d(dark.clone()), Transform::from_xyz(0.0, 0.0, side * 0.68)));
             g.spawn((Mesh3d(eye.clone()), MeshMaterial3d(lens.clone()), Transform::from_xyz(0.0, 0.0, side * 0.56)));
         }

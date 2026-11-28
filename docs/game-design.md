@@ -451,8 +451,9 @@ inventory.
   has some), and it keeps that distance: a post or pylon the light runs past hides the light for a
   moment rather than pulling the camera in to it.
 - **Ruler.** `R` takes one measurement: two clicks, then the ruler stops taking clicks and its reading
-  stays on screen to be noted. `R` again measures anew; `Esc` or the card's close button puts it
-  away; `R` or `Esc` before the second click cancels.
+  stays on screen to be noted. `R`, `Esc`, the card's `Done` or close button, walking away, leaving a
+  console, committing a test, or starting a wake puts it away; the card's `Measure again` button starts
+  a fresh measurement. `R` or `Esc` before the second click cancels.
 - **Carrying.** What has an orange handle can be moved. `F` picks up what is in front of the
   avatar; a ghost block shows where it will go, and `F` puts it down there: on the ground, or on top
   of another block, at most one above the feet (so blocks can be stacked into steps). The builders'

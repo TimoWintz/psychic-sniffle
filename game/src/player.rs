@@ -365,7 +365,7 @@ impl Plugin for PlayerPlugin {
             .init_resource::<Shore>()
             .add_systems(Startup, spawn)
             .add_systems(BuildWorld, reset)
-            .add_systems(Update, (move_player.run_if(not_paused), orbit_camera).chain().run_if(in_state(Mode::Playing)));
+            .add_systems(Update, (move_player.run_if(not_paused), orbit_camera.after(crate::waking::play)).chain().run_if(in_state(Mode::Playing)));
     }
 }
 

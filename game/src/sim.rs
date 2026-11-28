@@ -9,6 +9,7 @@ use crate::carry::{Carry, Slot};
 use crate::island::{GROUND, LaunchSite, SEA_LEVEL, Sites};
 use crate::player::OrbitCamera;
 use crate::props::{self, Finishes, Vehicle};
+use crate::ruler::Ruler;
 use crate::state::{BuildWorld, Game, Mode, PageEvent, RECHARGE_SECONDS, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use avian3d::prelude::*;
@@ -726,6 +727,7 @@ fn handle_requests(
     mut game: ResMut<Game>,
     mut ui: ResMut<Ui>,
     mut orbit: ResMut<OrbitCamera>,
+    mut ruler: ResMut<Ruler>,
     mut sites: ResMut<Sites>,
     assets: Res<PropAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -823,6 +825,7 @@ fn handle_requests(
             _ => unreachable!("only Chase and Gravity accept Request::Measure"),
         },
         Accepted::Commit { puzzle, outcome } => {
+            ruler.put_away();
             let instance = game.instance(puzzle);
             // A run of the tutorial after it is solved fetches the cart back down the line for it.
             if instance.kind == PuzzleKind::Rail {

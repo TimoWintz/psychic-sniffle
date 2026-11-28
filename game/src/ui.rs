@@ -79,7 +79,7 @@ pub fn hud_hidden(waking: &Waking, sim: &Sim, beam: &crate::beam::Beam) -> bool 
 }
 
 #[allow(clippy::too_many_arguments)]
-fn hotkeys(
+pub(crate) fn hotkeys(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     waking: Res<Waking>,
@@ -121,11 +121,23 @@ fn hotkeys(
         ui.tutor_open = !ui.tutor_open;
     }
     if keys.just_pressed(KeyCode::KeyR) {
-        // R starts a measurement, or cancels one half taken. A finished reading is replaced.
-        if ruler.active { ruler.put_away() } else { ruler.start() }
+        toggle_ruler(&mut ruler);
+    }
+    if !ui.at_console() && ruler.finished() && keys.any_just_pressed([KeyCode::KeyW, KeyCode::KeyA, KeyCode::KeyS, KeyCode::KeyD]) {
+        ruler.put_away();
     }
     if keys.just_pressed(KeyCode::F1) {
         ui.controls_open = !ui.controls_open;
+    }
+}
+
+/// Toggle the ruler with R: start a new measurement, or put the ruler away whether it is still
+/// taking points or showing a finished reading.
+fn toggle_ruler(ruler: &mut Ruler) {
+    if ruler.in_use() {
+        ruler.put_away();
+    } else {
+        ruler.start();
     }
 }
 
@@ -396,6 +408,8 @@ pub(crate) fn dock_header(ui: &mut egui::Ui, title: &str, key: &str, open: bool,
 fn hints(ctx: &egui::Context, game: &Game, waking: &Waking, ui_state: &mut Ui, ruler: &Ruler, carry: &Carry) {
     let prompt = if ruler.active {
         Some("Left-click two points to measure between them. R or Esc cancels.".to_string())
+    } else if ruler.in_use() && !ui_state.at_console() {
+        Some("Note the reading, or press R or Esc to put the ruler away.".to_string())
     } else if let Some(line) = crate::carry::hint(carry).filter(|_| !ui_state.at_console()) {
         Some(line)
     } else if ui_state.beam_open {
@@ -1041,7 +1055,16 @@ fn ruler_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, ruler: &
                 ruler.noted[idx] = Some(name);
                 game.persist();
             }
-            ui.label(RichText::new("R measures again · Esc puts the ruler away").small().color(DIM));
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button("Measure again").clicked() {
+                    ruler.start();
+                }
+                if ui.button("Done").clicked() {
+                    ruler.put_away();
+                }
+            });
+            ui.label(RichText::new("R or Esc puts the ruler away.").small().color(DIM));
         })
     {
         record_rect(ui_state, resp.response.rect);
@@ -1459,5 +1482,23 @@ mod tests {
         // 5. Esc again resumes.
         handle_escape(&mut ui, &mut ruler);
         assert!(!ui.paused);
+    }
+
+    #[test]
+    fn toggling_ruler_with_r_puts_away_finished_readings() {
+        let mut ruler = Ruler::default();
+        toggle_ruler(&mut ruler);
+        assert!(ruler.active && ruler.in_use() && !ruler.finished());
+        // Pressing R while aiming cancels it.
+        toggle_ruler(&mut ruler);
+        assert!(!ruler.in_use());
+        // Completing a measurement leaves a finished reading on screen; pressing R again puts it away.
+        toggle_ruler(&mut ruler);
+        let picked = |x: f32| crate::ruler::Picked { point: Vec3::new(x, 0.0, 0.0), label: String::new(), snapped: true };
+        ruler.pick(picked(0.0));
+        ruler.pick(picked(10.0));
+        assert!(ruler.finished() && ruler.in_use());
+        toggle_ruler(&mut ruler);
+        assert!(!ruler.in_use() && !ruler.finished());
     }
 }

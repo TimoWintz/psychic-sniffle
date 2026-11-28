@@ -15,6 +15,7 @@
 use crate::carry::Carry;
 use crate::island::{BEAM_AXLE, BEAM_THICK, BeamSite, Sites};
 use crate::player::{OrbitCamera, Player};
+use crate::ruler::Ruler;
 use crate::state::{BuildWorld, Game, Mode, Ui, WorldEntity, not_paused};
 use crate::voxel::VoxelWorld;
 use crate::waking::{Changes, MachineTrim, light, stone};
@@ -271,7 +272,7 @@ pub fn near_console(site: &BeamSite, feet: Vec3) -> bool {
 
 /// E at the console opens its panel and closes it again; walking away closes it.
 #[allow(clippy::too_many_arguments)]
-fn proximity(
+pub(crate) fn proximity(
     keys: Res<ButtonInput<KeyCode>>,
     wants: Res<EguiWantsInput>,
     sites: Res<Sites>,
@@ -295,7 +296,7 @@ fn proximity(
 
 /// While the console is open the camera shows the beam from the north, where the ground is open and
 /// nothing stands between, and glides back after.
-fn frame(ui: Res<Ui>, sites: Res<Sites>, mut orbit: ResMut<OrbitCamera>, mut beam: ResMut<Beam>) {
+pub(crate) fn frame(ui: Res<Ui>, sites: Res<Sites>, mut orbit: ResMut<OrbitCamera>, mut ruler: ResMut<Ruler>, mut beam: ResMut<Beam>) {
     if ui.beam_open == beam.frame_shown {
         return;
     }
@@ -303,8 +304,11 @@ fn frame(ui: Res<Ui>, sites: Res<Sites>, mut orbit: ResMut<OrbitCamera>, mut bea
     if ui.beam_open {
         let (min, max) = view(&sites.beam);
         orbit.frame_side_view(min, max, Vec3::NEG_X, true);
-    } else if ui.station.is_none() {
-        orbit.ease_home();
+    } else {
+        ruler.put_away();
+        if ui.station.is_none() {
+            orbit.ease_home();
+        }
     }
 }
 

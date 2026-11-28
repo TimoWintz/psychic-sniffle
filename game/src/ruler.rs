@@ -77,6 +77,11 @@ impl Ruler {
         self.active || self.first.is_some()
     }
 
+    /// Whether two points have been picked and the finished reading is on screen.
+    pub fn finished(&self) -> bool {
+        !self.active && self.second.is_some()
+    }
+
     /// Take a point: the first, then the second, which ends the measurement. The reading stays.
     pub fn pick(&mut self, picked: Picked) {
         if self.first.is_none() || self.second.is_some() {
@@ -233,12 +238,13 @@ mod tests {
         assert_eq!(ruler.preview(), Some(m));
         assert!((m.direct - (21.5f32 * 21.5 + 64.0).sqrt()).abs() < 1e-5);
         // The second point ends the measurement; the reading stays until put away.
-        assert!(!ruler.active && ruler.in_use());
+        assert!(!ruler.active && ruler.in_use() && ruler.finished());
         ruler.noted[0] = Some("d1".into());
         ruler.start();
         assert_eq!(ruler.measurement(), None);
         assert_eq!(ruler.noted, [None, None, None]);
+        assert!(!ruler.finished());
         ruler.put_away();
-        assert!(!ruler.in_use());
+        assert!(!ruler.in_use() && !ruler.finished());
     }
 }

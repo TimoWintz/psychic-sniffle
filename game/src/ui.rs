@@ -551,6 +551,7 @@ fn station_panel(ctx: &egui::Context, game: &mut Game, ui_state: &mut Ui, sim: &
                             .clicked()
                         {
                             sim.request = Some(Request::Demo(puzzle));
+                            ui_state.request_replay = true;
                         }
                     } else if ui
                         .add_enabled(!sim.busy(), egui::Button::new(RichText::new("Try it first").color(WARN)))

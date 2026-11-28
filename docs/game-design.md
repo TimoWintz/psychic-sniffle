@@ -48,11 +48,12 @@ other line in the game is written, is set out in [writing.md](writing.md).
   the free experiment, after which Lumen delivers the full reveal, links any newly written handbook
   pages, and offers clickable Q&A chips (how the machine works, what to measure) alongside `Open
   console`. The very first time a handbook page is written, Lumen also keeps its prompt on screen
-  until the player opens the handbook (`H`). Reopening an already-started station (or reloading a
+  until the player opens the handbook (`H`). When that first page comes from an experiment, the
+  reveal links it and holds back its chips and `Open console` until the handbook has been opened. Reopening an already-started station (or reloading a
   save mid-puzzle) skips the automatic briefing and opens the console right away. The console
   itself stays concise (one-line objective, hardware ratings, handbook links, measuring instrument,
   blueprint, result) and includes `Briefing` and `Try it first` / `Replay experiment` buttons in
-  its header.
+  its header. A replay ends with Lumen's reveal again, without the verdict.
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
 - **Closing.** When the chapter's part is installed, and what woke along the way with it (waits for
   click or `Enter` between lines).

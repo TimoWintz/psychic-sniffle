@@ -40,14 +40,19 @@ other line in the game is written, is set out in [writing.md](writing.md).
   or `Enter` between lines and is not cut short: what happens meanwhile waits its turn.
 - **Station briefing.** When an untouched station (or side-machine) first opens, the console panel
   stays hidden while Lumen presents it in one or two short beats that wait for click or `Enter`
-  (pointing at key parts while speaking). On stations with a conceptual experiment, the final beat
+  (pointing at key parts while speaking). At the first station (the supply rail), if nothing has
+  been measured yet, the final beat leads into an action-gated walkthrough that waits for the
+  player to bring out the ruler (`R`), pick both pins, note the reading, and open the notebook
+  (`N`) before opening the console. On later stations with a conceptual experiment, the final beat
   leads directly into Lumen's "Try it first" prediction prompt: picking a choice immediately runs
   the free experiment, after which Lumen delivers the full reveal, links any newly written handbook
   pages, and offers clickable Q&A chips (how the machine works, what to measure) alongside `Open
-  console`. Reopening an already-started station (or reloading a save mid-puzzle) skips the
-  automatic briefing and opens the console right away. The console itself stays concise (one-line
-  objective, hardware ratings, handbook links, measuring instrument, blueprint, result) and
-  includes `Briefing` and `Try it first` / `Replay experiment` buttons in its header.
+  console`. The very first time a handbook page is written, Lumen also keeps its prompt on screen
+  until the player opens the handbook (`H`). Reopening an already-started station (or reloading a
+  save mid-puzzle) skips the automatic briefing and opens the console right away. The console
+  itself stays concise (one-line objective, hardware ratings, handbook links, measuring instrument,
+  blueprint, result) and includes `Briefing` and `Try it first` / `Replay experiment` buttons in
+  its header.
 - **Done.** On a pass, what the job got us and what it leads to, then the way to the next station.
 - **Closing.** When the chapter's part is installed, and what woke along the way with it (waits for
   click or `Enter` between lines).

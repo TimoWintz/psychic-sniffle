@@ -7,11 +7,10 @@
 //! (Lumen: its eye); their key, or a click on the header, expands and reduces them. The handbook has
 //! its own place beside the dock's column, where it opens downward to read at full height.
 
-use crate::carry::{Carry, Item};
+use crate::carry::Carry;
 use crate::companion::Landmarks;
-use crate::player::OrbitCamera;
 use crate::ruler::Ruler;
-use crate::sim::{CRAWLER_TIME, Request, Sim};
+use crate::sim::{CLIFF_DROP_TIME, CRAWLER_TIME, LOW_DROP_TIME, Request, Sim};
 use crate::state::{Game, InputTarget, Mode, SessionAction, SessionControl, Ui};
 use crate::tutor_bridge::Lumen;
 use crate::waking::Waking;
@@ -193,7 +192,6 @@ pub fn draw(
     waking: Res<Waking>,
     beam: Res<crate::beam::Beam>,
     companion: Res<crate::companion::Companion>,
-    orbit: Res<OrbitCamera>,
     mut session: ResMut<SessionControl>,
     mut exit: MessageWriter<AppExit>,
 ) -> Result {
@@ -234,12 +232,6 @@ pub fn draw(
     }
     if !ui_state.at_console() {
         carry_badge(&ctx, &carry);
-    }
-    if orbit.free_look && carry.holding == Some(Item::Gate) {
-        let centre = ctx.content_rect().center();
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("aim-dot")));
-        painter.circle_filled(centre, 3.0, Color32::from_rgba_unmultiplied(255, 220, 120, 220));
-        painter.circle_stroke(centre, 5.5, egui::Stroke::new(1.0, Color32::from_rgba_unmultiplied(15, 20, 28, 190)));
     }
     if ui_state.handbook_open {
         ui_state.handbook_was_open = true;
@@ -479,7 +471,7 @@ fn controls_help(ctx: &egui::Context, ui_state: &mut Ui, panel_hidden: bool) {
                     ("Mouse / Arrows", "Look around"),
                     ("Scroll", "Zoom"),
                     ("E", "Use or leave a station"),
-                    ("F", "Pick up, put down or clamp"),
+                    ("F", "Pick up, put down or drop"),
                     ("R", "Measure with the ruler"),
                     ("N", "Notebook and calculator"),
                     ("H", "Handbook"),
@@ -739,31 +731,8 @@ pub fn write_plate(game: &mut Game) {
     game.save.notebook.set("vmax", "highest speed of the ledge launcher's dial", high, source::PLATE);
 }
 
-/// Format light-gate `(drop, time)` pairs from the notebook, matching each time entry with the
-/// adjacent drop entry written alongside it so renaming either entry preserves the pair.
-fn light_gate_pairs(entries: &[physics_core::notebook::Entry]) -> Vec<String> {
-    entries
-        .iter()
-        .enumerate()
-        .filter(|(_, e)| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::TIME)
-        .map(|(i, time)| {
-            let adjacent = i
-                .checked_sub(1)
-                .and_then(|prev| entries.get(prev))
-                .filter(|e| e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::LENGTH);
-            let by_name = || {
-                let number = time.name.trim_start_matches('t');
-                let want = format!("h{number}");
-                entries.iter().find(|e| e.name == want && e.source == source::LIGHT_GATE && e.quantity.dim == physics_core::units::Dim::LENGTH)
-            };
-            let drop = adjacent.or_else(by_name).map_or(String::new(), |h| format!("{} = {}, ", h.name, h.quantity.display()));
-            format!("{drop}{} = {}", time.name, time.quantity.display())
-        })
-        .collect()
-}
-
-/// The station's built-in measuring instrument (stopwatch at the haul track, light gate at the drop
-/// tower): free, repeatable, and separate from the conceptual "Try it first" demonstration.
+/// The station's stopwatch readings (haul track button, or quarry stone drops timed in the world):
+/// free, repeatable, and separate from the conceptual "Try it first" demonstration.
 fn measure_section(ui: &mut egui::Ui, game: &Game, sim: &mut Sim, puzzle: usize) {
     let kind = game.def(puzzle).kind;
     match kind {
@@ -781,39 +750,21 @@ fn measure_section(ui: &mut egui::Ui, game: &Game, sim: &mut Sim, puzzle: usize)
             };
         }
         PuzzleKind::Gravity => {
-            ui.label(RichText::new("Measure · Light gate").strong());
-            let gate = game.placed(puzzle);
-            let unready = game.instance(puzzle).measure_unready(gate);
-            if gate > 0 {
-                let built = game.instance(puzzle).built(gate).unwrap_or_default();
-                ui.label(RichText::new(format!("{}.", capitalise(&built))).color(GOOD));
-            } else {
-                ui.horizontal(|ui| {
-                    ui.label("Light gate:");
-                    ui.label(RichText::new("not fitted").strong().color(WARN));
-                });
-                if let Some(how) = &unready {
-                    ui.label(RichText::new(format!("    {how}")).small().color(DIM));
+            ui.label(RichText::new("Measure · Stopwatch").strong());
+            ui.label(
+                RichText::new("Leave the console, pick up a quarry stone (F), and drop it off either orange lip (F). Lumen times the fall and notes it here.")
+                    .small()
+                    .color(DIM),
+            );
+            let mut any = false;
+            for (heading, label) in [("Low step", LOW_DROP_TIME), ("Cliff rim", CLIFF_DROP_TIME)] {
+                if let Some(time) = game.save.notebook.entries.iter().rev().find(|e| e.label == label) {
+                    ui.label(RichText::new(format!("{heading}: {} = {}", time.name, time.quantity.display())).color(GOOD));
+                    any = true;
                 }
             }
-            ui.horizontal(|ui| {
-                let ready = !sim.busy() && unready.is_none();
-                if ui.add_enabled(ready, egui::Button::new(RichText::new("Drop and time").strong())).clicked() {
-                    sim.request = Some(Request::Measure(puzzle));
-                }
-                if unready.is_some() {
-                    ui.label(RichText::new("Clamp the light gate first.").small().color(WARN));
-                } else {
-                    ui.label(RichText::new("Free. Move the gate to another notch for another pair.").small().color(DIM));
-                }
-            });
-            let pairs = light_gate_pairs(&game.save.notebook.entries);
-            if pairs.is_empty() {
-                ui.label(RichText::new("No readings yet.").small().color(DIM));
-            } else {
-                for line in pairs {
-                    ui.label(RichText::new(line).color(GOOD));
-                }
+            if !any {
+                ui.label(RichText::new("No drop timed yet.").small().color(DIM));
             }
         }
         _ => {}
@@ -1409,18 +1360,6 @@ mod tests {
         }
         assert_eq!(history.len(), MAX_CALC_HISTORY);
         assert_eq!(history.last().unwrap(), "x = 39 m");
-    }
-
-    #[test]
-    fn light_gate_pairs_survive_renaming_entries() {
-        let mut nb = physics_core::notebook::Notebook::default();
-        nb.add_pair(("h", "drop", Quantity::metres(5.0)), ("t", "time", Quantity::seconds(1.0)), source::LIGHT_GATE);
-        assert!(nb.rename("h1", "short_drop"));
-        assert!(nb.rename("t1", "short_time"));
-        let pairs = light_gate_pairs(&nb.entries);
-        assert_eq!(pairs.len(), 1);
-        assert!(pairs[0].contains("short_drop = 5.000 m"), "{}", pairs[0]);
-        assert!(pairs[0].contains("short_time = 1.000 s"), "{}", pairs[0]);
     }
 
     #[test]

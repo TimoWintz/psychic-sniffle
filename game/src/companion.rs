@@ -58,8 +58,7 @@ impl Landmarks {
         places.push((JACK_FRAME.into(), sites.channel_well.as_vec3() + Vec3::new(0.5, 0.5, 0.5)));
         places.push((CART_BLOCK.into(), sites.cargo_cell.as_vec3() + Vec3::new(0.5, 1.0, 0.5)));
         places.push((RAIL_CART.into(), sites.cart + Vec3::Y * 0.8));
-        places.push((LIGHT_GATE.into(), sites.gate_stand + Vec3::Y * 1.2));
-        places.push((TOWER_NOTCHES.into(), (sites.tower_release + sites.tower_plate) / 2.0 - Vec3::X * 1.5));
+        places.push((QUARRY_STONES.into(), sites.stone_pile + Vec3::Y * 0.7));
         places.push(("The wreck".into(), sites.wreck + Vec3::Y * 2.0));
         places.push(("The boat on the slipway".into(), sites.slipway + Vec3::Y * 1.0));
         places.push((MAIN_HULL.into(), crate::intro::Mainland::wreck() + Vec3::Y * 6.0));
@@ -120,9 +119,8 @@ const JACK_FRAME: &str = "Jack frame under the ledge launcher";
 /// The block for the supply rail's cart where it lies at the start, and the cart it goes on.
 const CART_BLOCK: &str = "The cart's block beside the rail";
 const RAIL_CART: &str = "Rail cart";
-/// The light gate on its stand, and the drop tower it clamps on.
-const LIGHT_GATE: &str = "Light gate on its stand";
-const TOWER_NOTCHES: &str = "Notches on the drop tower";
+/// The stack of quarry drop-stones beside the sea-cliff console.
+const QUARRY_STONES: &str = "Stack of quarry stones";
 /// The beam, the side-machine off the road.
 const BEAM: &str = "The beam";
 /// The main hull on the mainland, where the rest of Lumen is, and the island's shore facing it.
@@ -785,6 +783,8 @@ struct Seen {
     recharging: [bool; PUZZLES],
     beam_releases: u32,
     beam_woken: bool,
+    low_drops: u32,
+    cliff_drops: u32,
 }
 
 pub struct CompanionPlugin;
@@ -897,6 +897,8 @@ fn direct(
         recharging: std::array::from_fn(|i| ui.recharging[i].is_some()),
         beam_releases: beam.releases,
         beam_woken: crate::beam::woken(&game),
+        low_drops: sim.low_drops,
+        cliff_drops: sim.cliff_drops,
     };
     match companion.last_seen.clone() {
         None => {
@@ -981,6 +983,26 @@ fn direct(
             }
             if now.beam_releases > before.beam_releases {
                 react_to_release(companion, &game, &beam);
+            }
+            if now.low_drops > before.low_drops {
+                companion.feel(Mood::Neutral, 4.0);
+                if now.low_drops == 1 {
+                    companion.say(
+                        "Timed it, and it's in your notebook. That was a very short drop, though. The stopwatch rounds to hundredths of a second, so the deeper cliff rim will give us a cleaner reading.",
+                    );
+                } else {
+                    companion.say("Timed the low step again. Same reading.");
+                }
+            }
+            if now.cliff_drops > before.cliff_drops {
+                companion.feel(Mood::Pleased, 4.0);
+                if now.cliff_drops == 1 {
+                    companion.say(
+                        "Timed the cliff drop, and it's in your notebook. Measure the drop height with the ruler and we're ready to work out local gravity.",
+                    );
+                } else {
+                    companion.say("Timed the cliff drop again. Same reading.");
+                }
             }
             if now.beam_woken && !before.beam_woken {
                 companion.feel(Mood::Pleased, 6.0);
@@ -1072,7 +1094,7 @@ fn direct(
     }
 
     let testing = sim.testing().map(|p| game.def(p).kind);
-    let running = testing.is_some() || sim.demo().is_some() || sim.measuring().is_some() || beam.animating();
+    let running = testing.is_some() || sim.demo().is_some() || sim.measuring() || beam.animating();
 
     // Dismiss station dialogue when leaving its console, running a test/experiment, measuring with
     // the ruler (except during Station 0's hands-on ruler guide), or opening the full chat panel.
@@ -1242,14 +1264,14 @@ fn react_to_result(companion: &mut Companion, game: &Game, ui: &Ui, puzzle: usiz
     } else {
         companion.feel(Mood::Concerned, 5.0);
         companion.say(match kind {
-            PuzzleKind::Gravity => "Not quite. Have a look at how your prediction compares with the real fall.",
+            PuzzleKind::Gravity => "Not quite. Watch whether the shutter opened too early or too late for the counterweight.",
             PuzzleKind::Chase => "Not quite. Look at where the cart caught the crawler, and where the marker is.",
             _ => "Not this time. Look at where it ended up, and where the target is.",
         });
         let def = game.def(puzzle);
-        // The shots after the drop tower are worked out with the player's own g, which passed there.
+        // The shots after the sea cliff are worked out with the player's own g, which passed there.
         if matches!(kind, PuzzleKind::Channel | PuzzleKind::Ridge) && companion.nudged.insert((puzzle, Nudge::YourG)) {
-            companion.say("Your g worked at the drop tower, so I'd check the other readings first.");
+            companion.say("Your g worked at the sea cliff, so I'd check the other readings first.");
             return;
         }
         let misses = game.save.progress(&def.id).attempts.iter().filter(|a| !a.pass).count();
@@ -2118,8 +2140,8 @@ mod tests {
             assert_eq!(choose_gaze(&Facts { ruler_active: true, station_open: true, ..base.clone() }), None, "{kind:?}: ruler at console");
             assert_eq!(choose_gaze(&Facts { ruler_active: true, ..base.clone() }), None, "{kind:?}: ruler while exploring");
         }
-        let carrying_gate = Facts { focus_kind: Some(PuzzleKind::Gravity), carrying: Some(Item::Gate), beckon: false, ..walking_to(2) };
-        assert_eq!(choose_gaze(&carrying_gate), None);
+        let carrying_stone = Facts { focus_kind: Some(PuzzleKind::Gravity), carrying: Some(Item::QuarryStone), beckon: false, ..walking_to(2) };
+        assert_eq!(choose_gaze(&carrying_stone), None);
         let carrying_ledge = Facts { focus_kind: Some(PuzzleKind::Channel), carrying: Some(Item::Block(Yard::Ledge)), beckon: false, ..walking_to(3) };
         assert_eq!(choose_gaze(&carrying_ledge), None);
         // The tutor can still point on demand via [look: NAME] when a station is open.
@@ -2133,14 +2155,13 @@ mod tests {
         let (_, sites) = island::build(&layout);
         let game = Game::for_test(7);
         let landmarks = Landmarks::new(&sites, &game);
-        for place in [LEDGE_BLOCKS, JACK_FRAME, CART_BLOCK, RAIL_CART, LIGHT_GATE, TOWER_NOTCHES] {
+        for place in [LEDGE_BLOCKS, JACK_FRAME, CART_BLOCK, RAIL_CART, QUARRY_STONES, "Low quarry step: drop lip", "Cliff rim: drop lip"] {
             assert!(landmarks.position(place).is_some(), "{place}");
         }
-        assert!(landmarks.position("Light gate").is_none(), "the gate's pin is away until it is clamped");
     }
 
     #[test]
-    fn landmarks_follow_the_launcher_and_the_light_gate() {
+    fn landmarks_follow_the_launcher_and_the_cart() {
         let game = Game::for_test(9);
         let (mut world, mut sites) = island::build(&game.layout);
         let mut landmarks = Landmarks::new(&sites, &game);
@@ -2148,13 +2169,8 @@ mod tests {
         let bare = landmarks.position(release).unwrap();
         let mut dirty = crate::carry::DirtyCells::default();
         crate::carry::set_stack(&mut world, &mut sites, &mut dirty, 3);
-        crate::carry::set_slot(&mut world, &mut sites, &mut dirty, crate::carry::Slot::Tower, 4);
         landmarks.follow(&sites);
         assert_eq!(landmarks.position(release), Some(bare + Vec3::Y * 3.0), "the beam points where the ruler's pin is");
-        assert_eq!(landmarks.position("Light gate"), Some(sites.pins[sites.gate_pin].position));
-        crate::carry::set_slot(&mut world, &mut sites, &mut dirty, crate::carry::Slot::Tower, 0);
-        landmarks.follow(&sites);
-        assert!(landmarks.position("Light gate").is_none(), "unclamped, the gate is not a place");
         sites.cart = sites.rail_start + Vec3::X * 5.0;
         landmarks.follow(&sites);
         assert_eq!(landmarks.position(RAIL_CART), Some(sites.cart + Vec3::Y * 0.8));

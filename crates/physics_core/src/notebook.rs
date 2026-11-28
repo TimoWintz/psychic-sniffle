@@ -19,12 +19,11 @@ pub struct Entry {
 pub mod source {
     pub const RULER: &str = "ruler";
     pub const STOPWATCH: &str = "stopwatch";
-    pub const LIGHT_GATE: &str = "light gate";
     /// The ledge launcher's rating plate.
     pub const PLATE: &str = "plate";
     /// The calculator.
     pub const CALCULATED: &str = "calculated";
-    /// The player's own g, from a pass at the drop tower.
+    /// The player's own g, from a pass at the sea-cliff quarry.
     pub const CALIBRATED: &str = "calibrated";
 }
 

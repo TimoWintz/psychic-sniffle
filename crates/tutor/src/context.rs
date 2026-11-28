@@ -242,13 +242,6 @@ impl TutorContext {
             // The haul cart's rating, printed on the station.
             known_numbers.push(physics_core::puzzle::Ch1Layout::CART_TOP_SPEED);
         }
-        if instance.kind == PuzzleKind::Gravity
-            && let Some(&notch) = save.placed.get(&def.id)
-            && notch > 0
-        {
-            // The light gate's notch: the player chose it and it is shown when it is clamped.
-            known_numbers.push(notch as f64);
-        }
         if instance.kind == PuzzleKind::Channel {
             // On the launcher's rating plate, in plain view.
             known_numbers.extend([instance.layout.channel_speed_min, instance.layout.channel_speed_max]);

@@ -58,10 +58,11 @@ pub struct Ch1Layout {
     /// Puzzle 1: distance between the two timing posts the stopwatch times the crawler between.
     pub post_gap: u32,
 
-    /// Puzzle 2: height of the drop tower's release point above the ground.
-    pub tower_h: u32,
-    /// Puzzle 2: height of the survey mast's release point, used for the test drop.
-    pub mast_h: u32,
+    /// Puzzle 2: height of the quarry cliff rim above the tidal stone slab.
+    pub cliff_h: u32,
+    /// Puzzle 2: height of the outcrop overhang's counterweight above the shutter socket on the
+    /// tidal slab, used for the verification drop.
+    pub overhang_h: u32,
 
     /// Puzzle 3: height of the ledge above the far plateau, before any blocks raise the launcher.
     pub ledge_h: u32,
@@ -124,6 +125,13 @@ impl Ch1Layout {
     /// of the speed needed, so the crawler's speed worked out from the stopwatch (good to about 0.12 %)
     /// always does.
     pub const CHASE_WINDOW_MIN: f64 = 0.006;
+    /// Puzzle 2: height of the low quarry step beside the console, in whole metres. Short enough
+    /// that 0.01 s stopwatch rounding makes its g reading noticeably rough (and can push it past 2%
+    /// on high-g worlds).
+    pub const LOW_DROP: u32 = 1;
+    /// Puzzle 2: how many whole metres the dressed tidal stone slab sits below `GROUND` (dry, just
+    /// above sea level).
+    pub const SLAB_DROP: u32 = 10;
     /// Puzzle 3: how many blocks the jack frame under the ledge launcher holds (and how many lie in
     /// the pile of blocks on the ledge). Each raises the launcher one metre.
     pub const MAX_STACK: u32 = 8;
@@ -151,8 +159,9 @@ impl Ch1Layout {
         let g = if pick < cut_lo - lo { lo + pick } else { cut_hi + (pick - (cut_lo - lo)) };
         let g = (g * 1000.0).round() / 1000.0;
 
-        let tower_h = rng.int(12, 24);
-        let mast_h = tower_h + rng.int(8, 14);
+        let cliff_h = rng.int(8, 10);
+        // Kept so every later draw stays unchanged for existing seeds.
+        let _legacy_mast = rng.int(8, 14);
 
         // The canyon's ledge height and platform distance used to be drawn here (the channel was a canyon then). They are drawn anew
         // below, but these draws are kept so that every other number stays what it was for older saves.
@@ -194,8 +203,8 @@ impl Ch1Layout {
                 head_start: 0,
                 transfer_at: 0,
                 post_gap: 0,
-                tower_h,
-                mast_h,
+                cliff_h,
+                overhang_h: Self::SLAB_DROP + ledge_h + 1,
                 ledge_h,
                 channel_width,
                 platform_centre,
@@ -225,6 +234,8 @@ impl Ch1Layout {
             }
         };
 
+        let overhang_h = Self::SLAB_DROP + ledge_h + 1;
+
         Ch1Layout {
             g,
             rail_target,
@@ -232,8 +243,8 @@ impl Ch1Layout {
             head_start,
             transfer_at,
             post_gap,
-            tower_h,
-            mast_h,
+            cliff_h,
+            overhang_h,
             ledge_h,
             channel_width,
             platform_centre,
@@ -339,21 +350,20 @@ impl Ch1Layout {
         stopwatch(self.post_gap as f64 / self.crawler_speed)
     }
 
-    /// Fall time from the drop tower as the stopwatch shows it (hundredths of a second).
-    pub fn tower_fall_time(&self) -> f64 {
-        self.gate_time(self.tower_h)
-    }
-
-    /// Puzzle 2: the light gate's reading with the gate clamped `drop` metres below the release point
-    /// (one of the notches `1..=tower_h`; the last is at the landing plate): the time from the release
-    /// until the mass reaches the gate, as the stopwatch shows it (hundredths of a second).
-    pub fn gate_time(&self, drop: u32) -> f64 {
+    /// Puzzle 2: fall time for a stone dropped `drop` metres from rest, as Lumen's stopwatch shows
+    /// it (hundredths of a second).
+    pub fn drop_time(&self, drop: u32) -> f64 {
         stopwatch(fall_time(drop as f64, self.g))
     }
 
-    /// Puzzle 2: the notches the light gate can be clamped at, as drops below the release point.
-    pub fn gate_notches(&self) -> std::ops::RangeInclusive<u32> {
-        1..=self.tower_h
+    /// Puzzle 2: fall time from the 1 m low quarry step, as the stopwatch shows it.
+    pub fn low_fall_time(&self) -> f64 {
+        self.drop_time(Self::LOW_DROP)
+    }
+
+    /// Puzzle 2: fall time from the main cliff rim to the tidal slab, as the stopwatch shows it.
+    pub fn cliff_fall_time(&self) -> f64 {
+        self.drop_time(self.cliff_h)
     }
 
     /// Launch angles (radians) between which a shot aimed at the centre of the circle clears the ridge and
@@ -574,9 +584,11 @@ impl Instance {
                 ]
             }
             PuzzleKind::Gravity => vec![
-                given("height of the drop tower", Quantity::metres(l.tower_h as f64)),
-                given("fall time from the drop tower", Quantity::seconds(l.tower_fall_time())),
-                given("height of the survey mast", Quantity::metres(l.mast_h as f64)),
+                given("height of the low quarry step", Quantity::metres(Ch1Layout::LOW_DROP as f64)),
+                given("fall time from the low quarry step", Quantity::seconds(l.low_fall_time())),
+                given("height of the cliff rim", Quantity::metres(l.cliff_h as f64)),
+                given("fall time from the cliff rim", Quantity::seconds(l.cliff_fall_time())),
+                given("height of the outcrop overhang", Quantity::metres(l.overhang_h as f64)),
             ],
             PuzzleKind::Channel => vec![
                 given("drop from the ledge to the platform, with no blocks under the launcher", Quantity::metres(l.ledge_h as f64)),
@@ -617,18 +629,15 @@ impl Instance {
     }
 
     /// What stands at this puzzle's station in the world, given what the save says is placed there
-    /// (`placed`: blocks in the jack frame, the cart's block on the cart, the light gate's notch), in
-    /// words for the station panel and the tutor. `None` where nothing is placed (the haul track, the
-    /// ridge).
+    /// (`placed`: blocks in the jack frame, the cart's block on the cart), in words for the station
+    /// panel and the tutor. `None` where nothing is placed (the haul track, the cliff, the ridge).
     pub fn built(&self, placed: u32) -> Option<String> {
         let plural = |n: u32| if n == 1 { "" } else { "s" };
         Some(match self.kind {
             PuzzleKind::Rail if placed == 0 => "the cart is empty, and its block is beside the rail".into(),
             PuzzleKind::Rail => "the block is on the cart".into(),
-            PuzzleKind::Gravity if placed == 0 => "no light gate on the drop tower".into(),
-            PuzzleKind::Gravity => format!("the light gate is clamped {placed} m below the release point"),
             PuzzleKind::Channel => format!("{placed} block{} in the jack frame", plural(placed)),
-            PuzzleKind::Chase | PuzzleKind::Ridge => return None,
+            PuzzleKind::Chase | PuzzleKind::Gravity | PuzzleKind::Ridge => return None,
         })
     }
 
@@ -642,16 +651,9 @@ impl Instance {
         }
     }
 
-    /// Why the station's built-in measuring instrument cannot run yet: the drop tower's light gate
-    /// must be clamped on a notch first. Refused for free; nothing is noted.
-    pub fn measure_unready(&self, placed: u32) -> Option<String> {
-        match self.kind {
-            PuzzleKind::Gravity if placed == 0 => Some(
-                "Clamp the light gate to the tower first. Leave the console, pick the gate up from its stand (F), then point at a notch on the tower and press F."
-                    .into(),
-            ),
-            _ => None,
-        }
+    /// Why the station's built-in measuring instrument cannot run yet. Refused for free; nothing is noted.
+    pub fn measure_unready(&self, _placed: u32) -> Option<String> {
+        None
     }
 
     /// Check that every input is present, has the right dimension and is physically usable. Passing
@@ -804,33 +806,37 @@ impl Instance {
             }
             PuzzleKind::Gravity => {
                 let g_player = value("g");
-                let height = l.mast_h as f64;
+                let height = l.overhang_h as f64;
                 let predicted_time = fall_time(height, g_player);
                 let actual_time = fall_time(height, l.g);
                 let pass = ((g_player - l.g) / l.g).abs() <= GRAVITY_TOLERANCE;
                 let (headline, detail, comparisons) = if pass {
                     (
-                        "Calibrated".to_string(),
+                        "Socket caught it".to_string(),
                         format!(
-                            "The mass fell from the {} m mast in {} s, and your value predicted {} s.",
-                            l.mast_h,
+                            "The counterweight fell {} m from the outcrop in {} s and dropped cleanly into the open socket (your value predicted {} s).",
+                            l.overhang_h,
                             sig(actual_time, 3),
                             sig(predicted_time, 3)
                         ),
                         vec![Comparison {
-                            label: format!("Fall time from the mast ({} m)", l.mast_h),
+                            label: format!("Fall time from the overhang ({} m)", l.overhang_h),
                             expected: Quantity::seconds(predicted_time),
                             observed: Quantity::seconds(actual_time),
                         }],
                     )
                 } else {
-                    let (speed_word, strength_word) = if actual_time < predicted_time { ("sooner", "stronger") } else { ("later", "weaker") };
+                    let (shutter_line, strength_word) = if actual_time < predicted_time {
+                        ("opened too late and the counterweight struck it closed", "stronger")
+                    } else {
+                        ("opened and shut too early before the counterweight arrived", "weaker")
+                    };
                     (
-                        "Prediction doesn't match".to_string(),
+                        "Shutter missed it".to_string(),
                         format!(
-                            "Your value predicted {} s for the {} m mast, but the mass landed {speed_word}, so gravity here is {strength_word} than your value.",
+                            "Your value predicted {} s for the {} m overhang, so the stone shutter {shutter_line}. Gravity here is {strength_word} than your value.",
                             sig(predicted_time, 3),
-                            l.mast_h,
+                            l.overhang_h,
                         ),
                         Vec::new(),
                     )
@@ -984,24 +990,22 @@ impl Instance {
                 }
             }
             PuzzleKind::Gravity => {
-                let (h, t) = (l.tower_h as f64, l.tower_fall_time());
+                let (h, t) = (l.cliff_h as f64, l.cliff_fall_time());
                 Solution {
                     steps: vec![
-                        "A mass released from rest falls a height h in a time t with h = (1/2) g t^2.".into(),
+                        "A stone released from rest falls a height h in a time t with h = (1/2) g t^2.".into(),
                         "Rearranged: g = 2 h / t^2.".into(),
                         format!(
-                            "With the light gate at the plate notch, h = {h} m (the whole tower) and the timed fall t = {t} s: g = 2 x {h} / {t}^2 = {} m/s^2.",
+                            "From the cliff rim, h = {h} m (measured with the ruler down to the tidal slab) and the timed fall t = {t} s: g = 2 x {h} / {t}^2 = {} m/s^2.",
                             sig(2.0 * h / (t * t), 4)
                         ),
                     ],
                     answers: vec![answer("g", "Gravitational acceleration", Quantity::acceleration(l.g), "m/s^2")],
                     note: format!(
                         "The true value is {} m/s^2. The stopwatch reads to 0.01 s, so the player's result differs \
-                         slightly; anything within {}% passes. The light gate times a drop once it is clamped \
-                         at a notch, and the same relation holds for the drop h to the gate and the time t to it. Short drops are worth \
-                         less: the rounding is a bigger share of a short time, so a reading of a second or more \
-                         gives g to 1%, and fitting several notches shows that doubling the drop does not double \
-                         the time.",
+                         slightly; anything within {}% passes. Dropping a quarry stone off the 1 m step beside the \
+                         console gives a rougher reading because 0.01 s rounding is a larger share of a short fall; \
+                         the deeper cliff rim takes over a second and gives g to within 1%.",
                         l.g,
                         GRAVITY_TOLERANCE * 100.0
                     ),
@@ -1117,7 +1121,9 @@ mod tests {
             let l = Ch1Layout::generate(seed);
             assert!((6.5..=13.5).contains(&l.g), "g {}", l.g);
             assert!(!(9.3..10.3).contains(&l.g), "g {} is too close to Earth's", l.g);
-            assert!(l.mast_h > l.tower_h);
+            assert!((8..=10).contains(&l.cliff_h), "seed {seed}: cliff {}", l.cliff_h);
+            assert_eq!(l.overhang_h, Ch1Layout::SLAB_DROP + l.ledge_h + 1, "seed {seed}");
+            assert!(l.overhang_h > l.cliff_h);
             assert!(l.platform_centre - l.platform_half >= l.channel_width as f64 + 2.0);
             assert!((l.ridge_x as f64) < l.pad_centre / 2.0);
             let (min, max) = l.ridge_angle_window();
@@ -1154,20 +1160,20 @@ mod tests {
     }
 
     #[test]
-    fn older_saves_keep_every_number_but_the_channels() {
-        // Values from before the channel was reworked: (seed, g, rail, tower, mast, channel width, pad,
-        // ridge distance, ridge height, rated speed of the tilting launcher).
+    fn older_saves_keep_every_number_but_the_channels_and_cliff() {
+        // Values from before the channel and quarry cliff were reworked: (seed, g, rail, channel
+        // width, pad, ridge distance, ridge height, rated speed of the tilting launcher).
         let before = [
-            (0, 8.734, 17, 20, 30, 15, 46.5, 10, 10, 22.7),
-            (7, 10.891, 9, 23, 34, 12, 53.5, 15, 14, 27.3),
-            (42, 8.789, 11, 23, 32, 13, 54.5, 12, 11, 23.9),
-            (999, 7.945, 10, 23, 34, 13, 41.5, 9, 9, 20.4),
+            (0, 8.734, 17, 15, 46.5, 10, 10, 22.7),
+            (7, 10.891, 9, 12, 53.5, 15, 14, 27.3),
+            (42, 8.789, 11, 13, 54.5, 12, 11, 23.9),
+            (999, 7.945, 10, 13, 41.5, 9, 9, 20.4),
         ];
-        for (seed, g, rail, tower, mast, width, pad, ridge_x, ridge_h, v_max) in before {
+        for (seed, g, rail, width, pad, ridge_x, ridge_h, v_max) in before {
             let l = Ch1Layout::generate(seed);
             assert_eq!(
-                (l.g, l.rail_target, l.tower_h, l.mast_h, l.channel_width, l.pad_centre, l.ridge_x, l.ridge_h, l.v_max),
-                (g, rail, tower, mast, width, pad, ridge_x, ridge_h, v_max),
+                (l.g, l.rail_target, l.channel_width, l.pad_centre, l.ridge_x, l.ridge_h, l.v_max),
+                (g, rail, width, pad, ridge_x, ridge_h, v_max),
                 "seed {seed}"
             );
         }
@@ -1263,12 +1269,12 @@ mod tests {
 
     #[test]
     fn the_players_own_measurement_of_g_is_good_enough() {
-        // g worked out from the whole-metre tower height and the 0.01 s stopwatch must pass, and
-        // must then be accurate enough to solve the channel.
+        // g worked out from the whole-metre cliff height and the 0.01 s stopwatch must pass, and
+        // must then be accurate enough to solve the channel and ridge.
         for seed in 0..SEEDS {
             let layout = Ch1Layout::generate(seed);
-            let t = layout.tower_fall_time();
-            let g_measured = 2.0 * layout.tower_h as f64 / (t * t);
+            let t = layout.cliff_fall_time();
+            let g_measured = 2.0 * layout.cliff_h as f64 / (t * t);
             let gravity = Instance::new(PuzzleKind::Gravity, &layout);
             assert!(gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_measured))])).unwrap().pass);
 
@@ -1292,59 +1298,36 @@ mod tests {
     }
 
     #[test]
-    fn the_light_gate_reads_the_fall_to_every_notch() {
-        for seed in 0..SEEDS {
-            let layout = Ch1Layout::generate(seed);
-            let notches = layout.gate_notches();
-            assert_eq!((*notches.start(), *notches.end()), (1, layout.tower_h), "from a metre below the release down to the plate");
-            for drop in notches {
-                let t = layout.gate_time(drop);
-                assert!((t - fall_time(drop as f64, layout.g)).abs() <= 0.005 + 1e-12, "seed {seed}: {drop} m reads {t} s");
-                assert_eq!(t, (t * 100.0).round() / 100.0, "the stopwatch reads to 0.01 s");
-            }
-            // At the plate the gate reads what the stopwatch read for the whole drop.
-            assert_eq!(layout.gate_time(layout.tower_h), layout.tower_fall_time());
-            // Doubling the drop does not double the time.
-            let half = layout.tower_h / 2;
-            assert!(layout.gate_time(2 * half) < 1.5 * layout.gate_time(half), "seed {seed}");
-        }
-    }
-
-    #[test]
-    fn g_from_a_good_enough_notch_passes() {
-        // The rule the brief gives: a reading of a second or more gives g to 1%. Shorter drops are worth
-        // less, and at the shortest the rounding alone can push g past the 2% a pass allows.
+    fn the_cliff_drop_is_clean_and_the_low_step_is_rough() {
+        // The 1 m step takes well under a second so 0.01 s stopwatch rounding can push g past 2%
+        // on high-g worlds, while the deep cliff rim always takes over a second and gives g to 1%.
         let mut a_short_drop_failed = false;
         for seed in 0..SEEDS {
             let layout = Ch1Layout::generate(seed);
             let gravity = Instance::new(PuzzleKind::Gravity, &layout);
-            let g_at = |drop: u32| 2.0 * drop as f64 / layout.gate_time(drop).powi(2);
-            let mut good = 0;
-            for drop in layout.gate_notches() {
-                let g = g_at(drop);
-                let passes = gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g))])).unwrap().pass;
-                if layout.gate_time(drop) >= 1.0 {
-                    good += 1;
-                    assert!(((g - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: {drop} m gives g = {g}, true {}", layout.g);
-                    assert!(passes, "seed {seed}: {drop} m");
-                } else {
-                    a_short_drop_failed |= !passes;
-                }
-            }
-            assert!(good >= 5, "seed {seed}: only {good} notches time a second or more");
-            // A straight line through the origin fitted to every pair (h against t^2) passes too.
-            let (num, den) = layout.gate_notches().fold((0.0, 0.0), |(n, d), drop| {
-                let t2 = layout.gate_time(drop).powi(2);
-                (n + drop as f64 * t2, d + t2 * t2)
-            });
-            let g_fit = 2.0 * num / den;
-            assert!(((g_fit - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: the fit gives {g_fit}");
+
+            let t_low = layout.low_fall_time();
+            assert!((t_low - fall_time(Ch1Layout::LOW_DROP as f64, layout.g)).abs() <= 0.005 + 1e-12);
+            assert_eq!(t_low, (t_low * 100.0).round() / 100.0);
+            let g_low = 2.0 * Ch1Layout::LOW_DROP as f64 / (t_low * t_low);
+            let low_passes = gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_low))])).unwrap().pass;
+            a_short_drop_failed |= !low_passes;
+
+            let t_cliff = layout.cliff_fall_time();
+            assert!(t_cliff >= 1.0, "seed {seed}: cliff drop timed {t_cliff} s");
+            assert!((t_cliff - fall_time(layout.cliff_h as f64, layout.g)).abs() <= 0.005 + 1e-12);
+            let g_cliff = 2.0 * layout.cliff_h as f64 / (t_cliff * t_cliff);
+            assert!(((g_cliff - layout.g) / layout.g).abs() <= 0.01, "seed {seed}: cliff gives {g_cliff}, true {}", layout.g);
+            assert!(gravity.evaluate(&inputs(&[("g", Quantity::acceleration(g_cliff))])).unwrap().pass, "seed {seed}");
+
+            // An 8–10x taller drop takes far less than 8–10x as long.
+            assert!(t_cliff < 0.5 * layout.cliff_h as f64 * t_low, "seed {seed}");
         }
         assert!(a_short_drop_failed, "a one-metre drop should sometimes be too short to pass");
     }
 
     #[test]
-    fn the_cart_must_be_loaded_and_the_gate_clamped() {
+    fn the_cart_must_be_loaded() {
         let layout = Ch1Layout::generate(6);
         let rail = Instance::new(PuzzleKind::Rail, &layout);
         let reason = rail.unready(0).expect("an empty cart is refused");
@@ -1354,14 +1337,10 @@ mod tests {
             assert_eq!(Instance::new(kind, &layout).unready(0), None, "{kind:?}");
         }
         assert_eq!(rail.built(1).as_deref(), Some("the block is on the cart"));
-        let gravity = Instance::new(PuzzleKind::Gravity, &layout);
-        let reason = gravity.measure_unready(0).expect("the tower times nothing without the gate");
-        assert!(reason.starts_with("Clamp the light gate"), "{reason}");
-        assert_eq!(gravity.measure_unready(3), None);
-        for kind in [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Channel, PuzzleKind::Ridge] {
+        for kind in [PuzzleKind::Rail, PuzzleKind::Chase, PuzzleKind::Gravity, PuzzleKind::Channel, PuzzleKind::Ridge] {
             assert_eq!(Instance::new(kind, &layout).measure_unready(0), None, "{kind:?}");
         }
-        assert_eq!(Instance::new(PuzzleKind::Gravity, &layout).built(7).as_deref(), Some("the light gate is clamped 7 m below the release point"));
+        assert_eq!(Instance::new(PuzzleKind::Gravity, &layout).built(0), None);
         assert_eq!(Instance::new(PuzzleKind::Channel, &layout).built(1).as_deref(), Some("1 block in the jack frame"));
         assert_eq!(Instance::new(PuzzleKind::Ridge, &layout).built(0), None);
         assert_eq!(Instance::new(PuzzleKind::Chase, &layout).built(0), None);

@@ -5,7 +5,7 @@
 //! exact path until the judged event (the landing or the strike), and is then handed to the physics
 //! engine, which bounces and settles it. Nothing the engine does can change the result.
 
-use crate::carry::{Carry, Slot};
+use crate::carry::{Carry, DropLedge, QUARRY_STONE_SIZE, Slot};
 use crate::island::{GROUND, LaunchSite, SEA_LEVEL, Sites};
 use crate::player::OrbitCamera;
 use crate::props::{self, Finishes, Vehicle};
@@ -28,10 +28,12 @@ pub enum Request {
     /// Run a station's conceptual "Try it first" demonstration (free, repeatable, writes handbook
     /// pages; does not record instrument readings).
     Demo(usize),
-    /// Run a station's built-in measuring instrument (free, repeatable): timing the crawler past the
-    /// posts at the haul track, or dropping the test mass through the clamped light gate at the
-    /// drop tower.
+    /// Run a station's built-in measuring instrument (free, repeatable): timing the crawler past
+    /// the posts at the haul track.
     Measure(usize),
+    /// Release a loose quarry drop-stone straight down from rest off a sea-cliff ledge (triggered
+    /// directly in the world with F; free, repeatable, logs fall time only).
+    DropStone(DropLedge),
     /// Commit the blueprint of a puzzle and run the test.
     Commit(usize),
 }
@@ -44,8 +46,8 @@ const PAIR_COLOURS: [[f32; 3]; 2] = [[0.35, 0.85, 1.0], [1.0, 0.4, 0.75]];
 const TRAIL: [f32; 3] = [1.0, 0.85, 0.2];
 
 enum Running {
-    /// The conceptual strobe demonstration at the drop tower: a flash marks the test mass at each
-    /// of `flashes`.
+    /// The conceptual strobe demonstration at the sea-cliff quarry: a flash marks a stone falling
+    /// down the cliff face at each of `flashes`.
     Strobe {
         puzzle: usize,
         t: f32,
@@ -53,12 +55,11 @@ enum Running {
         shown: usize,
         guess: Option<usize>,
     },
-    /// Measuring gravity with the clamped light gate: drops the test mass from the drop tower,
-    /// trips the beam at `gate` metres below release, and notes the `(h, t)` pair.
-    GateDrop {
-        puzzle: usize,
+    /// Dropping a loose quarry stone off either ledge with F: falls from rest to the bench or
+    /// tidal slab and notes `t` in the notebook via Lumen's stopwatch.
+    QuarryDrop {
+        ledge: DropLedge,
         t: f32,
-        gate: u32,
     },
     /// Two demonstration bodies fly their exact paths from a launch site.
     Pair {
@@ -71,11 +72,15 @@ enum Running {
         landed: [bool; 2],
         guess: Option<usize>,
     },
-    MastDrop {
+    /// Verification drop from the outcrop overhang: the stone shutter leaves over the tidal slab's
+    /// quartz socket slide open at `predicted` and either catch the counterweight or let it strike
+    /// the closed stone.
+    OverhangDrop {
         puzzle: usize,
         t: f32,
         predicted: f32,
         actual: f32,
+        landed: bool,
         verdict: Verdict,
     },
     /// A launcher's load in flight; `landed` once it has been handed to the physics engine.
@@ -107,7 +112,6 @@ enum Running {
     },
     /// Timing the crawler solo past both timing posts with the station's stopwatch.
     TimeCrawler {
-        puzzle: usize,
         t: f32,
         run: Run,
     },
@@ -165,8 +169,9 @@ pub struct Sim {
     watch_left: f32,
     /// Where the moving object of the running test or experiment is.
     action: Option<Vec3>,
-    /// The test mass has passed the light gate since it was last released: its beam shows it.
-    pub gate_tripped: bool,
+    /// Counts of completed quarry stone drops per ledge (read by Lumen to comment on each drop).
+    pub low_drops: u32,
+    pub cliff_drops: u32,
     /// Tracks whether the rail cart and tiller have already transitioned to their post-solve places.
     relayed: Relayed,
 }
@@ -184,10 +189,12 @@ impl Sim {
     /// The puzzle whose test is running, if one is (a demonstration or measurement is not a test).
     pub fn testing(&self) -> Option<usize> {
         match &self.running {
-            Some(Running::MastDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. } | Running::Chase { puzzle, .. }) => {
+            Some(Running::OverhangDrop { puzzle, .. } | Running::Flight { puzzle, .. } | Running::Slide { puzzle, .. } | Running::Chase { puzzle, .. }) => {
                 Some(*puzzle)
             }
-            Some(Running::Strobe { .. } | Running::GateDrop { .. } | Running::Pair { .. } | Running::Pace { .. } | Running::TimeCrawler { .. }) | None => None,
+            Some(Running::Strobe { .. } | Running::QuarryDrop { .. } | Running::Pair { .. } | Running::Pace { .. } | Running::TimeCrawler { .. }) | None => {
+                None
+            }
         }
     }
 
@@ -204,12 +211,9 @@ impl Sim {
         }
     }
 
-    /// The puzzle whose built-in measuring instrument is running, if one is.
-    pub fn measuring(&self) -> Option<usize> {
-        match &self.running {
-            Some(Running::GateDrop { puzzle, .. } | Running::TimeCrawler { puzzle, .. }) => Some(*puzzle),
-            _ => None,
-        }
+    /// Whether a built-in measuring run (crawler stopwatch or quarry stone drop) is under way.
+    pub fn measuring(&self) -> bool {
+        matches!(&self.running, Some(Running::QuarryDrop { .. } | Running::TimeCrawler { .. }))
     }
 
     fn archive_current_test_trails(&mut self) {
@@ -266,10 +270,10 @@ impl Sim {
 /// The objects that tests move.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
 enum Prop {
-    TowerMass,
-    MastMass,
-    /// Follows the player's prediction during the mast test.
-    Ghost,
+    /// Smaller quarry drop-stone shown during the strobe demo or an F drop off either ledge.
+    CliffMass,
+    /// Heavy builders' counterweight hanging under the outcrop overhang.
+    Counterweight,
     Casket,
     Tiller,
     /// The rail cart, on the tutorial's stretch of the line.
@@ -282,6 +286,11 @@ enum Prop {
     /// The survey crawler, ahead of its rear coupler.
     Crawler,
 }
+
+/// One of the two sliding pale-stone shutter leaves covering the quartz socket on the tidal slab:
+/// `-1.0` for the west leaf, `+1.0` for the east leaf.
+#[derive(Component, Clone, Copy)]
+struct ShutterLeaf(f32);
 
 /// A body handed to the physics engine after a test; removed when its time is up.
 #[derive(Component)]
@@ -316,6 +325,9 @@ struct PropAssets {
     stone: Handle<StandardMaterial>,
     pair: [Handle<StandardMaterial>; 2],
     afterimage: Handle<StandardMaterial>,
+    /// Smaller quarry drop-stone mesh (`QUARRY_STONE_SIZE`), used for strobe & ledge drops.
+    quarry_stone: Handle<Mesh>,
+    /// Counterweight mesh (`MASS_SIZE`), used for the outcrop overhang verification drop.
     mass: Handle<Mesh>,
     /// What the ledge launcher and the tilting launcher throw: the helm's casket and the tiller,
     /// each a stone body and its quartz, with the quartz's material.
@@ -382,6 +394,7 @@ fn spread_splashes(time: Res<Time>, mut commands: Commands, mut splashes: Query<
 }
 
 const MASS_SIZE: Vec3 = Vec3::new(0.8, 0.8, 0.8);
+const STONE_SIZE: Vec3 = Vec3::splat(QUARRY_STONE_SIZE);
 const CASKET_SIZE: Vec3 = Vec3::new(0.9, 0.9, 0.9);
 pub const TILLER_SIZE: Vec3 = Vec3::new(2.4, 0.5, 0.5);
 const CART_SIZE: Vec3 = Vec3::new(0.9, 0.7, 0.9);
@@ -403,7 +416,8 @@ fn crawler_centre(sites: &Sites, s: f32) -> Vec3 {
 
 fn prop_size(prop: Prop) -> Vec3 {
     match prop {
-        Prop::TowerMass | Prop::MastMass | Prop::Ghost => MASS_SIZE,
+        Prop::CliffMass => STONE_SIZE,
+        Prop::Counterweight => MASS_SIZE,
         Prop::Casket => CASKET_SIZE,
         Prop::Tiller => TILLER_SIZE,
         Prop::Cart => CART_SIZE,
@@ -420,7 +434,7 @@ impl Plugin for SimPlugin {
         app.init_resource::<Sim>().init_resource::<TerrainReshaped>().add_systems(BuildWorld, setup).add_systems(
             Update,
             (
-                (handle_requests, advance, settle, recharge, props::spin_wheels, props::step_legs, splash_the_avatar, spread_splashes)
+                (handle_requests, advance, pose_shutters, settle, recharge, props::spin_wheels, props::step_legs, splash_the_avatar, spread_splashes)
                     .chain()
                     .run_if(in_state(Mode::Playing))
                     .run_if(not_paused),
@@ -463,7 +477,7 @@ fn rest_transform(prop: Prop, sites: &Sites, game: &Game) -> Transform {
 /// the skiff takes it).
 fn shown(prop: Prop, game: &Game) -> bool {
     match prop {
-        Prop::Ghost | Prop::Cargo => false,
+        Prop::CliffMass | Prop::Cargo => false,
         Prop::Cart => !game.kind_solved(PuzzleKind::Rail),
         Prop::HaulCart => game.kind_solved(PuzzleKind::Rail),
         Prop::Tiller => game.kind_solved(PuzzleKind::Channel) && !game.kind_solved(PuzzleKind::Ridge),
@@ -475,8 +489,8 @@ fn shown(prop: Prop, game: &Game) -> bool {
 fn rest_pose(prop: Prop, sites: &Sites, game: &Game) -> Vec3 {
     let half = Vec3::Y * prop_size(prop).y / 2.0;
     match prop {
-        Prop::TowerMass => sites.tower_release + half,
-        Prop::MastMass | Prop::Ghost => sites.mast_release + half,
+        Prop::CliffMass => sites.cliff_drop + half,
+        Prop::Counterweight => sites.overhang_release + half,
         // Once it has crossed, on the platform beside the tilting launcher.
         Prop::Casket if game.kind_solved(PuzzleKind::Channel) => sites.channel_launch.at(game.layout.platform_centre, 0.0, GROUND as f32) + half,
         Prop::Casket | Prop::Tiller => launch_pose(prop, sites),
@@ -524,11 +538,10 @@ pub(crate) fn setup(
     let [tiller_shaft, tiller_core] = props::tiller(TILLER_SIZE).map(|m| meshes.add(m));
     let casket = (casket_body, casket_band, trim.0[3].clone());
     let tiller = (tiller_shaft, tiller_core, trim.0[4].clone());
-    let ghost = materials.add(StandardMaterial { base_color: Color::srgba(0.4, 0.8, 1.0, 0.35), alpha_mode: AlphaMode::Blend, unlit: true, ..default() });
+    let quarry_quartz = trim.0[2].clone();
     for (prop, material) in [
-        (Prop::TowerMass, stone.clone()),
-        (Prop::MastMass, stone.clone()),
-        (Prop::Ghost, ghost),
+        (Prop::CliffMass, stone.clone()),
+        (Prop::Counterweight, stone.clone()),
         (Prop::Casket, stone.clone()),
         (Prop::Tiller, stone.clone()),
         (Prop::Cart, stone.clone()),
@@ -555,6 +568,11 @@ pub(crate) fn setup(
             rest_transform(prop, &sites, &game),
             if shown(prop, &game) { Visibility::Visible } else { Visibility::Hidden },
         ));
+        if prop == Prop::Counterweight {
+            // A band of builders' quartz around the counterweight, lighting as the quarry wakes.
+            let band = meshes.add(Cuboid::new(MASS_SIZE.x + 0.04, 0.14, MASS_SIZE.z + 0.04));
+            body.with_child((Mesh3d(band), MeshMaterial3d(quarry_quartz.clone())));
+        }
         if let Some(vehicle) = vehicle {
             // The cart's quartz is the supply rail's machine's, and sleeps and wakes with it. The
             // crawler never slept: it still walks its rounds, so its quartz is lit.
@@ -584,6 +602,28 @@ pub(crate) fn setup(
                 crawler.spawn((crate::vessel::Sight { riding: true }, unit.0, unit.1, on_top, Visibility::Inherited)).with_child(lens);
             });
         }
+    }
+
+    // The two sliding pale-stone shutter leaves over the tidal slab's quartz socket. They slide
+    // apart along +/-X at the player's predicted arrival time during the verification drop.
+    let leaf_mesh = meshes.add(Cuboid::new(SHUTTER_WIDTH, SHUTTER_HEIGHT, 1.08));
+    let leaf_trim = meshes.add(Cuboid::new(0.08, SHUTTER_HEIGHT + 0.02, 1.1));
+    let solved_gravity = game.kind_solved(PuzzleKind::Gravity);
+    let initial_open = if solved_gravity { 1.0 } else { 0.0 };
+    for sign in [-1.0f32, 1.0] {
+        commands
+            .spawn((
+                WorldEntity,
+                ShutterLeaf(sign),
+                Mesh3d(leaf_mesh.clone()),
+                MeshMaterial3d(stone.clone()),
+                Transform::from_translation(shutter_pose(sites.overhang_socket, sign, initial_open)),
+            ))
+            .with_child((
+                Mesh3d(leaf_trim.clone()),
+                MeshMaterial3d(quarry_quartz.clone()),
+                Transform::from_xyz(-sign * (SHUTTER_WIDTH / 2.0 - 0.05), 0.0, 0.0),
+            ));
     }
 
     // The physics engine's view of the island: every block anything could touch.
@@ -641,6 +681,7 @@ pub(crate) fn setup(
         stone,
         pair,
         afterimage,
+        quarry_stone: meshes.add(Cuboid::from_size(STONE_SIZE)),
         mass: meshes.add(Cuboid::from_size(MASS_SIZE)),
         casket,
         tiller,
@@ -679,14 +720,14 @@ pub fn read_blueprint(game: &Game, ui: &Ui, puzzle: usize) -> Result<(Inputs, Ve
 enum Accepted {
     Demo { puzzle: usize, playback: DemoPlayback, guess: Option<usize> },
     Measure { puzzle: usize, kind: PuzzleKind },
+    DropStone(DropLedge),
     Commit { puzzle: usize, outcome: Outcome },
 }
 
-/// Whether a request runs: a demonstration needs its station awake; a measurement needs any
-/// required instrument in place (the light gate); a commit is judged, and may be refused for free.
-/// Nothing in the world changes for a request that does not run, so the last test's result stays
-/// where it can be looked at. A commit that runs has used its charge from this moment (see
-/// [`Game::begin_test`]).
+/// Whether a request runs: a demonstration needs its station awake; a commit is judged and may be
+/// refused for free. Nothing in the world changes for a request that does not run, so the last
+/// test's result stays where it can be looked at. A commit that runs has used its charge from this
+/// moment (see [`Game::begin_test`]).
 fn accept(game: &mut Game, ui: &mut Ui, request: Request) -> Option<Accepted> {
     match request {
         Request::Demo(puzzle) => {
@@ -704,7 +745,7 @@ fn accept(game: &mut Game, ui: &mut Ui, request: Request) -> Option<Accepted> {
                 return None;
             }
             let kind = game.def(puzzle).kind;
-            if !matches!(kind, PuzzleKind::Chase | PuzzleKind::Gravity) {
+            if kind != PuzzleKind::Chase {
                 return None;
             }
             if game.instance(puzzle).measure_unready(game.placed(puzzle)).is_some() {
@@ -712,6 +753,7 @@ fn accept(game: &mut Game, ui: &mut Ui, request: Request) -> Option<Accepted> {
             }
             Some(Accepted::Measure { puzzle, kind })
         }
+        Request::DropStone(ledge) => Some(Accepted::DropStone(ledge)),
         Request::Commit(puzzle) => {
             let (outcome, values) = judge_commit(game, ui, puzzle)?;
             game.begin_test(puzzle, values, outcome.clone());
@@ -748,7 +790,7 @@ fn handle_requests(
         }
     }
     for (prop, mut transform, mut visibility) in &mut props {
-        if !matches!(*prop, Prop::Ghost | Prop::Cargo) {
+        if *prop != Prop::Cargo {
             *transform = rest_transform(*prop, &sites, &game);
             *visibility = if shown(*prop, &game) { Visibility::Visible } else { Visibility::Hidden };
         }
@@ -765,8 +807,13 @@ fn handle_requests(
                 }
                 sim.strobe.clear();
                 sim.start_demo_trails(Vec::new());
-                sim.gate_tripped = false;
-                orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
+                for (prop, mut transform, mut visibility) in &mut props {
+                    if *prop == Prop::CliffMass {
+                        transform.translation = sites.cliff_drop + Vec3::Y * STONE_SIZE.y / 2.0;
+                        *visibility = Visibility::Visible;
+                    }
+                }
+                orbit.frame_side_view(sites.cliff_landing, sites.cliff_drop, Vec3::X, false);
                 Running::Strobe { puzzle, t: 0.0, flashes: playback.flash_times(), shown: 0, guess }
             }
             DemoPlayback::Pace { cart_speed, crawler_speed, head_start, duration, .. } => {
@@ -796,16 +843,6 @@ fn handle_requests(
             }
         },
         Accepted::Measure { puzzle, kind } => match kind {
-            PuzzleKind::Gravity => {
-                for mark in &marks {
-                    commands.entity(mark).despawn();
-                }
-                sim.strobe.clear();
-                sim.start_measure_trails(puzzle, Vec::new());
-                sim.gate_tripped = false;
-                orbit.frame_side_view(sites.tower_plate, sites.tower_release, Vec3::X, false);
-                Running::GateDrop { puzzle, t: 0.0, gate: game.placed(puzzle) }
-            }
             PuzzleKind::Chase => {
                 for mark in &marks {
                     commands.entity(mark).despawn();
@@ -820,10 +857,31 @@ fn handle_requests(
                 let (_, crawler_end) = run.at(run.end);
                 frame_track(&mut orbit, &sites, crawler_end + CRAWLER_SIZE.x);
                 sim.start_measure_trails(puzzle, vec![(Vec::new(), PAIR_COLOURS[1])]);
-                Running::TimeCrawler { puzzle, t: 0.0, run }
+                Running::TimeCrawler { t: 0.0, run }
             }
-            _ => unreachable!("only Chase and Gravity accept Request::Measure"),
+            _ => unreachable!("only Chase accepts Request::Measure"),
         },
+        Accepted::DropStone(ledge) => {
+            for mark in &marks {
+                commands.entity(mark).despawn();
+            }
+            sim.strobe.clear();
+            let gravity = game.puzzle_of(PuzzleKind::Gravity);
+            sim.start_measure_trails(gravity, Vec::new());
+            let release = ledge.release(&sites);
+            let landing = ledge.landing(&sites);
+            for (prop, mut transform, mut visibility) in &mut props {
+                if *prop == Prop::CliffMass {
+                    transform.translation = release + Vec3::Y * STONE_SIZE.y / 2.0;
+                    *visibility = Visibility::Visible;
+                }
+            }
+            match ledge {
+                DropLedge::Low => orbit.frame_side_view(landing - Vec3::Y * 1.0, release + Vec3::Y * 1.5, Vec3::X, false),
+                DropLedge::Cliff => orbit.frame_side_view(landing, release, Vec3::X, false),
+            }
+            Running::QuarryDrop { ledge, t: 0.0 }
+        }
         Accepted::Commit { puzzle, outcome } => {
             ruler.put_away();
             let instance = game.instance(puzzle);
@@ -843,13 +901,8 @@ fn handle_requests(
             let verdict = Verdict { outcome: outcome.clone() };
             match outcome.playback {
                 Playback::Drop { predicted_time, actual_time, .. } => {
-                    for (prop, _, mut visibility) in &mut props {
-                        if *prop == Prop::Ghost {
-                            *visibility = Visibility::Visible;
-                        }
-                    }
-                    orbit.frame_side_view(sites.mast_plate, sites.mast_release, Vec3::X, false);
-                    Running::MastDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, verdict }
+                    orbit.frame_side_view(sites.overhang_socket, sites.overhang_release, Vec3::X, false);
+                    Running::OverhangDrop { puzzle, t: 0.0, predicted: predicted_time as f32, actual: actual_time as f32, landed: false, verdict }
                 }
                 Playback::Flight { projectile, flight } => {
                     let site = if instance.kind == PuzzleKind::Channel { sites.channel_launch } else { sites.ridge_launch };
@@ -1050,20 +1103,17 @@ fn advance(
     match &mut running {
         Running::Strobe { puzzle, t, flashes, shown, guess } => {
             *t += dt;
-            let height = game.layout.tower_h as f32;
+            let height = game.layout.cliff_h as f32;
             let fall_time = (2.0 * height / g).sqrt();
-            let gate = game.placed(*puzzle);
-            if gate > 0 && fallen(g, *t, height) >= gate as f32 {
-                sim.gate_tripped = true;
-            }
-            // Each flash leaves an afterimage of the mass and a tick beside its path.
+            let start = sites.cliff_drop + Vec3::Y * STONE_SIZE.y / 2.0;
+            // Each flash leaves an afterimage of the quarry stone and a tick beside its path.
             while *shown < flashes.len() && *t >= flashes[*shown] as f32 {
                 let below = fallen(g, flashes[*shown] as f32, height);
-                let centre = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * below;
+                let centre = start - Vec3::Y * below;
                 commands.spawn((
                     WorldEntity,
                     StrobeMark,
-                    Mesh3d(assets.mass.clone()),
+                    Mesh3d(assets.quarry_stone.clone()),
                     MeshMaterial3d(assets.afterimage.clone()),
                     Transform::from_translation(centre),
                 ));
@@ -1071,21 +1121,22 @@ fn advance(
                 *shown += 1;
             }
             for (prop, mut transform, mut visibility, material) in &mut props {
-                if *prop != Prop::TowerMass {
+                if *prop != Prop::CliffMass {
                     continue;
                 }
-                transform.translation = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * fallen(g, *t, height);
+                transform.translation = start - Vec3::Y * fallen(g, *t, height);
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
+                    crate::particles::burst(&mut commands, crate::particles::Kind::Dust, sites.cliff_landing, 0.8);
                     hand_over(
                         &mut commands,
-                        assets.mass.clone(),
-                        MASS_SIZE,
+                        assets.quarry_stone.clone(),
+                        STONE_SIZE,
                         transform.translation,
                         Vec3::NEG_Y * g * fall_time,
                         material.0.clone(),
-                        AfterSettling::Restore(Prop::TowerMass),
+                        AfterSettling::Vanish,
                     );
                 }
             }
@@ -1097,37 +1148,43 @@ fn advance(
                 return;
             }
         }
-        Running::GateDrop { t, gate, .. } => {
+        Running::QuarryDrop { ledge, t } => {
             *t += dt;
-            let height = game.layout.tower_h as f32;
+            let release = ledge.release(&sites);
+            let landing = ledge.landing(&sites);
+            let height = (release.y - landing.y).max(0.1);
             let fall_time = (2.0 * height / g).sqrt();
-            if *gate > 0 && fallen(g, *t, height) >= *gate as f32 {
-                sim.gate_tripped = true;
-            }
+            let start = release + Vec3::Y * STONE_SIZE.y / 2.0;
             for (prop, mut transform, mut visibility, material) in &mut props {
-                if *prop != Prop::TowerMass {
+                if *prop != Prop::CliffMass {
                     continue;
                 }
-                transform.translation = rest_pose(Prop::TowerMass, &sites, &game) - Vec3::Y * fallen(g, *t, height);
+                transform.translation = start - Vec3::Y * fallen(g, *t, height);
                 sim.action = Some(transform.translation);
                 if *t >= fall_time {
                     *visibility = Visibility::Hidden;
+                    crate::particles::burst(&mut commands, crate::particles::Kind::Dust, landing, 0.9);
                     hand_over(
                         &mut commands,
-                        assets.mass.clone(),
-                        MASS_SIZE,
+                        assets.quarry_stone.clone(),
+                        STONE_SIZE,
                         transform.translation,
                         Vec3::NEG_Y * g * fall_time,
                         material.0.clone(),
-                        AfterSettling::Restore(Prop::TowerMass),
+                        AfterSettling::Vanish,
                     );
                 }
             }
             if *t >= fall_time {
-                note_reading(&mut game, *gate);
+                let ledge = *ledge;
+                note_quarry_drop(&mut game, ledge);
                 game.persist();
+                match ledge {
+                    DropLedge::Low => sim.low_drops += 1,
+                    DropLedge::Cliff => sim.cliff_drops += 1,
+                }
                 sim.running = None;
-                sim.watch_left = 2.0;
+                sim.watch_left = 1.6;
                 return;
             }
         }
@@ -1235,35 +1292,37 @@ fn advance(
                 return;
             }
         }
-        Running::MastDrop { puzzle, t, predicted, actual, verdict } => {
+        Running::OverhangDrop { puzzle, t, predicted, actual, landed, verdict } => {
             *t += dt;
-            let height = game.layout.mast_h as f32;
-            let g_player = 2.0 * height / (*predicted * *predicted);
+            let height = game.layout.overhang_h as f32;
+            let pass = verdict.outcome.pass;
+            let end_t = if pass { *actual + 0.35 } else { (*actual).max((*predicted).min(*actual + 1.2)) + 0.45 };
             for (prop, mut transform, mut visibility, material) in &mut props {
-                match *prop {
-                    Prop::MastMass => {
-                        transform.translation = rest_pose(Prop::MastMass, &sites, &game) - Vec3::Y * fallen(g, *t, height);
-                        sim.action = Some(transform.translation);
-                        if *t >= *actual && *visibility != Visibility::Hidden {
-                            *visibility = Visibility::Hidden;
-                            hand_over(
-                                &mut commands,
-                                assets.mass.clone(),
-                                MASS_SIZE,
-                                transform.translation,
-                                Vec3::NEG_Y * g * *actual,
-                                material.0.clone(),
-                                AfterSettling::Restore(Prop::MastMass),
-                            );
-                        }
+                if *prop != Prop::Counterweight {
+                    continue;
+                }
+                let start = rest_pose(Prop::Counterweight, &sites, &game);
+                let stop_drop = if pass { height + 0.15 } else { height - SHUTTER_HEIGHT };
+                transform.translation = start - Vec3::Y * fallen(g, *t, stop_drop);
+                sim.action = Some(transform.translation);
+                if *t >= *actual && !*landed {
+                    *landed = true;
+                    crate::particles::burst(&mut commands, crate::particles::Kind::Dust, sites.overhang_socket, 1.2);
+                    if !pass {
+                        *visibility = Visibility::Hidden;
+                        hand_over(
+                            &mut commands,
+                            assets.mass.clone(),
+                            MASS_SIZE,
+                            transform.translation,
+                            Vec3::new(0.4, -g * *actual * 0.4, 0.3),
+                            material.0.clone(),
+                            AfterSettling::Restore(Prop::Counterweight),
+                        );
                     }
-                    Prop::Ghost => {
-                        transform.translation = rest_pose(Prop::Ghost, &sites, &game) - Vec3::Y * fallen(g_player, *t, height);
-                    }
-                    _ => {}
                 }
             }
-            if *t >= predicted.max(*actual) {
+            if *t >= end_t {
                 finished = Some((*puzzle, verdict.clone()));
             }
         }
@@ -1361,17 +1420,75 @@ fn advance(
     // The test has played out: now it counts (the save file has had it since the commit).
     sim.watch_left = 2.5;
     let outcome = game.finish_test().unwrap_or(outcome);
-    for (prop, _, mut visibility, _) in &mut props {
-        if *prop == Prop::Ghost {
-            *visibility = Visibility::Hidden;
-        }
-    }
     ui.results[puzzle] = Some(outcome);
     ui.scroll_to_result[puzzle] = true;
 }
 
+/// Dimensions of each sliding stone shutter leaf covering the tidal slab's quartz socket.
+const SHUTTER_WIDTH: f32 = 0.54;
+const SHUTTER_HEIGHT: f32 = 0.16;
+const SHUTTER_SLIDE: f32 = 0.66;
+
+fn shutter_pose(socket: Vec3, sign: f32, open: f32) -> Vec3 {
+    let closed_offset = sign * (SHUTTER_WIDTH / 2.0);
+    socket + Vec3::new(closed_offset + sign * SHUTTER_SLIDE * open.clamp(0.0, 1.0), SHUTTER_HEIGHT / 2.0, 0.0)
+}
+
+/// How far open (`0.0` closed .. `1.0` open) the stone shutters are at `t` during a verification
+/// drop. The visual timing strictly mirrors the pass/fail verdict: on a pass they slide open to
+/// receive the counterweight; on a miss they either open after impact (too late) or snap shut
+/// before impact (too early).
+fn shutter_open(t: f32, predicted: f32, actual: f32, pass: bool) -> f32 {
+    let smooth = |x: f32| {
+        let u = x.clamp(0.0, 1.0);
+        u * u * (3.0 - 2.0 * u)
+    };
+    if pass {
+        let start = (actual - 0.22).max(0.0);
+        smooth((t - start) / 0.18)
+    } else if actual < predicted {
+        // Gravity stronger than predicted: shutters stay firmly closed at impact, then open late.
+        let open_at = predicted.min(actual + 1.0).max(actual + 0.12);
+        if t < open_at {
+            0.0
+        } else if t < open_at + 0.14 {
+            smooth((t - open_at) / 0.14)
+        } else if t < open_at + 0.30 {
+            1.0
+        } else {
+            1.0 - smooth((t - (open_at + 0.30)) / 0.14)
+        }
+    } else {
+        // Gravity weaker than predicted: shutters open early and snap shut before impact.
+        let close_by = (actual - 0.06).max(0.18);
+        let open_at = (predicted - 0.14).clamp(0.04, (close_by - 0.22).max(0.04));
+        let mid = (open_at + close_by) / 2.0;
+        if t < open_at || t > close_by {
+            0.0
+        } else if t < mid {
+            smooth((t - open_at) / (mid - open_at).max(0.05))
+        } else {
+            1.0 - smooth((t - mid) / (close_by - mid).max(0.05))
+        }
+    }
+}
+
+fn pose_shutters(sim: Res<Sim>, sites: Res<Sites>, game: Res<Game>, mut leaves: Query<(&ShutterLeaf, &mut Transform)>) {
+    let open = match &sim.running {
+        Some(Running::OverhangDrop { t, predicted, actual, verdict, .. }) => shutter_open(*t, *predicted, *actual, verdict.outcome.pass),
+        _ if game.kind_solved(PuzzleKind::Gravity) => 1.0,
+        _ => 0.0,
+    };
+    for (leaf, mut transform) in &mut leaves {
+        transform.translation = shutter_pose(sites.overhang_socket, leaf.0, open);
+    }
+}
+
 /// What the stopwatch's reading is called in the notebook at the haul track.
 pub const CRAWLER_TIME: &str = "crawler's time between the timing posts";
+/// What the stopwatch's readings are called in the notebook at the sea-cliff quarry.
+pub const LOW_DROP_TIME: &str = "low quarry step: fall time";
+pub const CLIFF_DROP_TIME: &str = "cliff rim: fall time";
 
 /// Write the stopwatch's reading of the crawler, from the first timing post to the second, into the
 /// notebook. Every run gives the same reading, so it is noted once.
@@ -1382,20 +1499,17 @@ pub fn note_crawler(game: &mut Game) {
     }
 }
 
-/// Write the light gate's reading of a release from the drop tower into the notebook: with the gate
-/// clamped `gate` metres below the release, the drop and the time to the gate as a pair (`h2`, `t2`).
-/// The experiment does not run without the gate, so there is nothing to note for `gate == 0`. A pair
+/// Write Lumen's stopwatch reading of a quarry stone dropped off `ledge` into the notebook: time
+/// only (`t1`, `t2`, ...), so the player measures the drop height with the ruler. A reading
 /// already in the notebook is not noted again.
-pub fn note_reading(game: &mut Game, gate: u32) {
-    if gate == 0 {
-        return;
-    }
-    const DROP: &str = "drop from the release point to the light gate";
-    const TIME: &str = "fall time to the light gate";
-    let (drop, time) = (Quantity::metres(gate as f64), Quantity::seconds(game.layout.gate_time(gate)));
-    let notebook = &mut game.save.notebook;
-    if !(notebook.has_reading(DROP, drop) && notebook.has_reading(TIME, time)) {
-        notebook.add_pair(("h", DROP, drop), ("t", TIME, time), source::LIGHT_GATE);
+pub fn note_quarry_drop(game: &mut Game, ledge: DropLedge) {
+    let (label, seconds) = match ledge {
+        DropLedge::Low => (LOW_DROP_TIME, game.layout.low_fall_time()),
+        DropLedge::Cliff => (CLIFF_DROP_TIME, game.layout.cliff_fall_time()),
+    };
+    let reading = Quantity::seconds(seconds);
+    if !game.save.notebook.has_reading(label, reading) {
+        game.save.notebook.add_numbered("t", label, reading, source::STOPWATCH);
     }
 }
 
@@ -1598,17 +1712,11 @@ fn dashed_segments(trail: &[Vec3], dash: f32, gap: f32) -> Vec<(Vec3, Vec3)> {
     out
 }
 
-fn draw_trail(sim: Res<Sim>, sites: Res<Sites>, mut gizmos: Gizmos) {
-    // The light gate's beam across the fall line, bright once the mass has passed it.
-    let gate = &sites.pins[sites.gate_pin];
-    if gate.present() {
-        let colour = if sim.gate_tripped { Color::srgb(1.0, 0.95, 0.5) } else { Color::srgb(1.0, 0.2, 0.15) };
-        gizmos.line(gate.position - Vec3::Z * 0.56, gate.position + Vec3::Z * 0.56, colour);
-    }
+fn draw_trail(sim: Res<Sim>, mut gizmos: Gizmos) {
     // Lines keep their width on screen, so the strobe's ticks read from a distance.
     for at in &sim.strobe {
-        let base = *at - Vec3::Y * MASS_SIZE.y / 2.0;
-        gizmos.line(base + Vec3::X * (MASS_SIZE.x / 2.0 + 0.2), base + Vec3::X * 3.2, Color::srgb(1.0, 0.85, 0.3));
+        let base = *at - Vec3::Y * STONE_SIZE.y / 2.0;
+        gizmos.line(base + Vec3::X * (STONE_SIZE.x / 2.0 + 0.2), base + Vec3::X * 2.6, Color::srgb(1.0, 0.85, 0.3));
     }
     // Faint dashed ghost arcs from earlier tests at the same station, older ones dimmer.
     let past_count = sim.past_trails.len();
@@ -1730,31 +1838,40 @@ mod tests {
         assert!(ui.refusal.is_some());
         assert!(game.pending.is_none());
         assert_eq!(game.charges_left(0), 3);
-        // At the drop tower, the conceptual demo runs without the light gate; measuring waits for it.
+        // At the sea-cliff quarry, the conceptual demo runs from the console; measurements happen
+        // directly in the world via Request::DropStone (not Request::Measure).
         let gravity = game.chapter.puzzles.iter().position(|p| p.kind == PuzzleKind::Gravity).unwrap();
         solve(&mut game, PuzzleKind::Chase);
         assert!(matches!(accept(&mut game, &mut ui, Request::Demo(gravity)), Some(Accepted::Demo { .. })));
         assert!(accept(&mut game, &mut ui, Request::Measure(gravity)).is_none());
-        game.save.placed.insert(game.def(gravity).id.clone(), 5);
-        assert!(matches!(accept(&mut game, &mut ui, Request::Measure(gravity)), Some(Accepted::Measure { .. })));
+        assert!(matches!(accept(&mut game, &mut ui, Request::DropStone(DropLedge::Cliff)), Some(Accepted::DropStone(DropLedge::Cliff))));
         let _ = std::fs::remove_file(&game.save_path);
     }
 
     #[test]
-    fn the_light_gate_notes_a_pair() {
+    fn quarry_drops_note_time_only_and_once_per_ledge() {
         let mut game = game(12);
-        game.save.notebook.add_numbered("h", "tower height", Quantity::metres(game.layout.tower_h as f64), source::RULER);
-        note_reading(&mut game, 0);
-        assert!(game.save.notebook.get("t1").is_none(), "no gate, no reading");
-        note_reading(&mut game, 6);
-        note_reading(&mut game, 9);
+        note_quarry_drop(&mut game, DropLedge::Low);
+        note_quarry_drop(&mut game, DropLedge::Cliff);
         let nb = &game.save.notebook;
-        assert_eq!(nb.get("h2").unwrap().quantity, Quantity::metres(6.0));
-        assert_eq!(nb.get("t2").unwrap().quantity, Quantity::seconds(game.layout.gate_time(6)));
-        assert_eq!(nb.get("h3").unwrap().quantity, Quantity::metres(9.0));
-        assert_eq!(nb.get("t3").unwrap().source, source::LIGHT_GATE);
-        note_reading(&mut game, 6);
-        assert!(game.save.notebook.get("h4").is_none(), "the same reading is noted once");
+        assert!(nb.get("h1").is_none(), "height must be measured with the ruler, not logged by the drop");
+        assert_eq!(nb.get("t1").unwrap().quantity, Quantity::seconds(game.layout.low_fall_time()));
+        assert_eq!(nb.get("t1").unwrap().source, source::STOPWATCH);
+        assert_eq!(nb.get("t2").unwrap().quantity, Quantity::seconds(game.layout.cliff_fall_time()));
+        note_quarry_drop(&mut game, DropLedge::Cliff);
+        assert!(game.save.notebook.get("t3").is_none(), "the same drop time is noted once");
+    }
+
+    #[test]
+    fn stone_shutters_match_the_verdict_at_impact() {
+        // On a pass the shutters are wide open when the counterweight arrives.
+        assert!(shutter_open(1.5, 1.5, 1.5, true) > 0.95);
+        // On a miss where gravity is stronger (arrives early), shutters are closed at impact and open later.
+        assert_eq!(shutter_open(1.5, 1.7, 1.5, false), 0.0);
+        assert!(shutter_open(1.85, 1.7, 1.5, false) > 0.9);
+        // On a miss where gravity is weaker (arrives late), shutters open early and are closed at impact.
+        assert!(shutter_open(1.3, 1.3, 1.6, false) > 0.5);
+        assert_eq!(shutter_open(1.6, 1.3, 1.6, false), 0.0);
     }
 
     #[test]

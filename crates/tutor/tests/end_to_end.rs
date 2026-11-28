@@ -365,10 +365,10 @@ fn help_deepens_while_the_player_is_stuck_and_resets_after_a_test() {
 }
 
 #[test]
-fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
+fn the_tutor_sees_what_is_placed_at_the_rail_and_guards_g_units() {
     let chapter = chapter_1_1();
-    // A planet whose g is within the secret's margin of a whole number of metres, so a notch could be
-    // mistaken for the answer.
+    // A planet whose g is within the secret's margin of a whole number of metres, so a height could
+    // be mistaken for the answer.
     let seed = (0..).find(|s| {
         let g = Ch1Layout::generate(*s).g;
         (g.round() - g).abs() / g < tutor::context::SECRET_MARGIN / 2.0
@@ -387,19 +387,16 @@ fn the_tutor_sees_what_is_placed_at_the_rail_and_the_drop_tower() {
     save.placed.insert("1.1.0".into(), 1);
     assert_eq!(at(PuzzleKind::Rail, "1.1.0", &save).placed.as_deref(), Some("the block is on the cart"));
 
-    // The light gate's notch is the player's own choice, in plain view: never redacted, even where
-    // it is close to g. A whole number in metres is not g anyway; with g's unit after it, it is.
-    let notch = layout.g.round() as u32;
-    let line = format!("Your gate is {notch} m below the release.");
-    let unplaced = tutor::filter::LeakFilter::for_context(&at(PuzzleKind::Gravity, "1.1.2", &save), "");
-    assert_eq!(unplaced.apply(&line), line, "seed {seed}: {notch} m is a length");
-    let rounded = format!("g is about {notch} m/s^2 here.");
-    assert_ne!(unplaced.apply(&rounded), rounded, "seed {seed}: {notch} m/s^2 reads as g");
-    save.placed.insert("1.1.2".into(), notch);
+    // A whole number in metres is not g; with g's unit after it, it is. The sea-cliff quarry has no
+    // placed apparatus state.
+    let height = layout.g.round() as u32;
+    let line = format!("The cliff drop is {height} m to the slab.");
     let gravity = at(PuzzleKind::Gravity, "1.1.2", &save);
-    assert_eq!(gravity.placed, Some(format!("the light gate is clamped {notch} m below the release point")));
+    assert_eq!(gravity.placed, None);
     let filter = tutor::filter::LeakFilter::for_context(&gravity, "");
-    assert_eq!(filter.apply(&line), line);
+    assert_eq!(filter.apply(&line), line, "seed {seed}: {height} m is a length");
+    let rounded = format!("g is about {height} m/s^2 here.");
+    assert_ne!(filter.apply(&rounded), rounded, "seed {seed}: {height} m/s^2 reads as g");
     assert_eq!(at(PuzzleKind::Ridge, "1.1.4", &save).placed, None);
 }
 
